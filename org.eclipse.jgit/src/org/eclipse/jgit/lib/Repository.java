@@ -85,6 +85,7 @@ import org.eclipse.jgit.transport.RefSpec;
 import org.eclipse.jgit.transport.RemoteConfig;
 import org.eclipse.jgit.treewalk.TreeWalk;
 import org.eclipse.jgit.util.FS;
+import org.eclipse.jgit.util.FS_POSIX;
 import org.eclipse.jgit.util.FileUtils;
 import org.eclipse.jgit.util.IO;
 import org.eclipse.jgit.util.RawParseUtils;
@@ -131,7 +132,12 @@ public abstract class Repository implements AutoCloseable {
 	 */
 	protected Repository(final BaseRepositoryBuilder options) {
 		gitDir = options.getGitDir();
-		fs = options.getFS();
+		fs = new FS_POSIX() {
+			@Override
+			public boolean supportsSymlinks() {
+				return false;
+			}
+		};
 		workTree = options.getWorkTree();
 		indexFile = options.getIndexFile();
 	}

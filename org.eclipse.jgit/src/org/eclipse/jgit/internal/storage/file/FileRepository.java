@@ -165,22 +165,18 @@ public class FileRepository extends Repository {
 	 */
 	public FileRepository(final BaseRepositoryBuilder options) throws IOException {
 		super(options);
+		getFS().setUserHome(null);
+		getFS().setGitSystemConfig(null);
+		systemConfig = new FileBasedConfig(null, FS.DETECTED) {
+			public void load() {
+				// empty, do not load
+			}
 
-		if (StringUtils.isEmptyOrNull(SystemReader.getInstance().getenv(
-				Constants.GIT_CONFIG_NOSYSTEM_KEY)))
-			systemConfig = SystemReader.getInstance().openSystemConfig(null,
-					getFS());
-		else
-			systemConfig = new FileBasedConfig(null, FS.DETECTED) {
-				public void load() {
-					// empty, do not load
-				}
-
-				public boolean isOutdated() {
-					// regular class would bomb here
-					return false;
-				}
-			};
+			public boolean isOutdated() {
+				// regular class would bomb here
+				return false;
+			}
+		};
 		userConfig = SystemReader.getInstance().openUserConfig(systemConfig,
 				getFS());
 		repoConfig = new FileBasedConfig(userConfig, getFS().resolve(
