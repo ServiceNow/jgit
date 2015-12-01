@@ -925,6 +925,7 @@ public class DirCacheCheckoutTest extends RepositoryTestCase {
 
 	@Test
 	public void testCheckoutChangeLinkToEmptyDir() throws Exception {
+		org.junit.Assume.assumeTrue(db.getFS().supportsSymlinks());
 		String fname = "was_file";
 		Git git = Git.wrap(db);
 
@@ -961,6 +962,7 @@ public class DirCacheCheckoutTest extends RepositoryTestCase {
 
 	@Test
 	public void testCheckoutChangeLinkToEmptyDirs() throws Exception {
+		org.junit.Assume.assumeTrue(db.getFS().supportsSymlinks());
 		String fname = "was_file";
 		Git git = Git.wrap(db);
 
@@ -999,6 +1001,7 @@ public class DirCacheCheckoutTest extends RepositoryTestCase {
 
 	@Test
 	public void testCheckoutChangeLinkToNonEmptyDirs() throws Exception {
+		org.junit.Assume.assumeTrue(db.getFS().supportsSymlinks());
 		String fname = "file";
 		Git git = Git.wrap(db);
 
@@ -1043,6 +1046,7 @@ public class DirCacheCheckoutTest extends RepositoryTestCase {
 	@Test
 	public void testCheckoutChangeLinkToNonEmptyDirsAndNewIndexEntry()
 			throws Exception {
+		org.junit.Assume.assumeTrue(db.getFS().supportsSymlinks());
 		String fname = "file";
 		Git git = Git.wrap(db);
 

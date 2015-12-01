@@ -239,8 +239,8 @@ public class ConfigTest {
 		localConfig.setString("user", null, "email", "baz>\nqux@example.com");
 
 		UserConfig userConfig = localConfig.get(UserConfig.KEY);
-		//assertEquals("foobar", userConfig.getAuthorName());
-		//assertEquals("bazqux@example.com", userConfig.getAuthorEmail());
+		assertEquals("foobar", userConfig.getAuthorName());
+		assertEquals("bazqux@example.com", userConfig.getAuthorEmail());
 	}
 
 	@Test

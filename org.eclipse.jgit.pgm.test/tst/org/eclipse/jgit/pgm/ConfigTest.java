@@ -77,7 +77,7 @@ public class ConfigTest extends CLIRepositoryTestCase {
 		if (isMac)
 			expect.add("core.precomposeunicode=true");
 		expect.add("core.repositoryformatversion=0");
-		if (!FS.DETECTED.supportsSymlinks())
+		if (!db.getFS().supportsSymlinks())
 			expect.add("core.symlinks=false");
 		expect.add(""); // ends with LF (last line empty)
 		assertEquals("expected default configuration",
