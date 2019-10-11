@@ -1726,6 +1726,10 @@ public abstract class FS {
 			final String hookName, String[] args, PrintStream outRedirect,
 			PrintStream errRedirect, String stdinArgs)
 			throws JGitInternalException {
+
+		if (!hooksEnabled())
+			return new ProcessResult(Status.NOT_SUPPORTED);
+
 		final File hookFile = findHook(repository, hookName);
 		if (hookFile == null)
 			return new ProcessResult(Status.NOT_PRESENT);
@@ -2229,5 +2233,10 @@ public abstract class FS {
 				}
 			}
 		}
+	}
+
+	private boolean hooksEnabled() {
+		//DISABLE HOOKS
+		return false;
 	}
 }
