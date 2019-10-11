@@ -145,6 +145,9 @@ abstract class GitHook<T> implements Callable<T> {
 	 *             If the underlying hook script exited with non-zero.
 	 */
 	protected void doRun() throws AbortedByHookException {
+		if (!hooksEnabled())
+			return;
+
 		final ByteArrayOutputStream errorByteArray = new ByteArrayOutputStream();
 		final PrintStream hookErrRedirect = new PrintStream(errorByteArray);
 		ProcessResult result = FS.DETECTED.runHookIfPresent(getRepository(),
@@ -156,4 +159,8 @@ abstract class GitHook<T> implements Callable<T> {
 		}
 	}
 
+	private boolean hooksEnabled() {
+		//DISABLE ALL HOOKS
+		return false;
+	}
 }
