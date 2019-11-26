@@ -60,7 +60,10 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
+import java.util.regex.Pattern;
 
 import org.eclipse.jgit.diff.DiffAlgorithm.SupportedAlgorithm;
 import org.eclipse.jgit.diff.DiffEntry.ChangeType;
@@ -114,6 +117,7 @@ public class DiffFormatter implements AutoCloseable {
 
 	/** Magic return indicating the content is binary. */
 	private static final byte[] BINARY = new byte[] {};
+	public static final String ANY = "Any";
 
 	private final OutputStream out;
 
@@ -144,6 +148,10 @@ public class DiffFormatter implements AutoCloseable {
 	private ProgressMonitor progressMonitor;
 
 	private ContentSource.Pair source;
+
+	private static final String EMPTY_STRING = "";
+
+
 
 	/**
 	 * Create a new formatter with a default level of context.
@@ -649,6 +657,45 @@ public class DiffFormatter implements AutoCloseable {
 	public void format(List<? extends DiffEntry> entries) throws IOException {
 		for (DiffEntry ent : entries)
 			format(ent);
+	}
+
+	private Pattern buildDetlaFilterPattern(String header, Map<String,String> deltaFilter) {
+
+		StringBuilder patternString = new StringBuilder();
+
+		for (String key : deltaFilter.keySet())
+			if (key.equals(ANY) || header.contains(key))
+				patternString.append(deltaFilter.get(key));
+
+		return Pattern.compile(patternString.toString());
+	}
+
+	public void format(List<? extends DiffEntry> entries, Map<String,String> deltaFilter) throws IOException {
+
+		Iterator<? extends DiffEntry> i = entries.iterator();
+
+		while (i.hasNext()){
+
+			FormatResult res = createFormatResult(i.next());
+
+			String aContent = new String(res.a.content);
+			String bContent = new String(res.b.content);
+			String headerNewPath = res.header.newPath;
+
+
+			Pattern deltaPattern = buildDetlaFilterPattern(headerNewPath, deltaFilter);
+
+			if (deltaPattern != null) {
+				aContent = deltaPattern.matcher(aContent).replaceAll(EMPTY_STRING);
+				bContent = deltaPattern.matcher(bContent).replaceAll(EMPTY_STRING);
+			}
+
+			if (!aContent.equals(bContent)) {
+				format(res.header, res.a, res.b);
+			} else {
+				i.remove();
+			}
+		}
 	}
 
 	/**

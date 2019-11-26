@@ -48,6 +48,7 @@ import java.io.BufferedOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.api.errors.JGitInternalException;
@@ -94,12 +95,26 @@ public class DiffCommand extends GitCommand<List<DiffEntry>> {
 
 	private ProgressMonitor monitor = NullProgressMonitor.INSTANCE;
 
+	public Map<String, String> getDeltaFilter() {
+		return deltaFilter;
+	}
+
+	public void setDeltaFilter(Map<String, String> deltaFilter) {
+		this.deltaFilter = deltaFilter;
+	}
+
+	private Map<String,String> deltaFilter = null;
+
+
+
 	/**
 	 * @param repo
 	 */
 	protected DiffCommand(Repository repo) {
 		super(repo);
 	}
+
+
 
 	/**
 	 * Executes the {@code Diff} command with all the options and parameters
@@ -110,6 +125,7 @@ public class DiffCommand extends GitCommand<List<DiffEntry>> {
 	 * @return a DiffEntry for each path which is different
 	 */
 	public List<DiffEntry> call() throws GitAPIException {
+		System.out.println("Inside Diff Command");
 		final DiffFormatter diffFmt;
 		if (out != null && !showNameAndStatusOnly)
 			diffFmt = new DiffFormatter(new BufferedOutputStream(out));
@@ -149,7 +165,12 @@ public class DiffCommand extends GitCommand<List<DiffEntry>> {
 					diffFmt.setNewPrefix(destinationPrefix);
 				if (sourcePrefix != null)
 					diffFmt.setOldPrefix(sourcePrefix);
-				diffFmt.format(result);
+
+				if (this.getDeltaFilter() != null)
+					diffFmt.format(result,deltaFilter);
+				else
+					diffFmt.format(result);
+
 				diffFmt.flush();
 				return result;
 			}
