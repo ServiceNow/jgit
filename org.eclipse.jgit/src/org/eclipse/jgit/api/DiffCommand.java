@@ -166,10 +166,7 @@ public class DiffCommand extends GitCommand<List<DiffEntry>> {
 				if (sourcePrefix != null)
 					diffFmt.setOldPrefix(sourcePrefix);
 
-				if (this.getDeltaFilter() != null)
-					diffFmt.format(result,deltaFilter);
-				else
-					diffFmt.format(result);
+				diffFmt.format(result, this.getDeltaFilter());
 
 				diffFmt.flush();
 				return result;
