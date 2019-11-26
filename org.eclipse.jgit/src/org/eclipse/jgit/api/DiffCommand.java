@@ -95,17 +95,7 @@ public class DiffCommand extends GitCommand<List<DiffEntry>> {
 
 	private ProgressMonitor monitor = NullProgressMonitor.INSTANCE;
 
-	public Map<String, String> getDeltaFilter() {
-		return deltaFilter;
-	}
-
-	public void setDeltaFilter(Map<String, String> deltaFilter) {
-		this.deltaFilter = deltaFilter;
-	}
-
 	private Map<String,String> deltaFilter = null;
-
-
 
 	/**
 	 * @param repo
@@ -290,6 +280,22 @@ public class DiffCommand extends GitCommand<List<DiffEntry>> {
 			monitor = NullProgressMonitor.INSTANCE;
 		}
 		this.monitor = monitor;
+		return this;
+	}
+
+	public Map<String, String> getDeltaFilter() {
+		return deltaFilter;
+	}
+
+	/**
+	 * Set the given delta filter. Used only for Source Control.
+	 *
+	 * @param deltaFilter
+	 *            the filter
+	 * @return this instance
+	 */
+	public DiffCommand setDeltaFilter(Map<String, String> deltaFilter) {
+		this.deltaFilter = deltaFilter;
 		return this;
 	}
 }

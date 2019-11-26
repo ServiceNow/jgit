@@ -670,6 +670,15 @@ public class DiffFormatter implements AutoCloseable {
 		return Pattern.compile(patternString.toString());
 	}
 
+	/**
+	 * Format the diff entries by filtering out the noise from the given delta filter
+	 * The filter acts only for files that have MODIFY change Type.
+	 * If there are no changes detected, we will remove the diff entry.
+	 * @param entries
+	 * @param deltaFilter
+	 * @throws IOException
+	 */
+
 	public void format(List<? extends DiffEntry> entries, Map<String,String> deltaFilter) throws IOException {
 		if (deltaFilter == null || deltaFilter.isEmpty())
 			format(entries);
