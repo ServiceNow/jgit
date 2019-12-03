@@ -659,17 +659,6 @@ public class DiffFormatter implements AutoCloseable {
 			format(ent);
 	}
 
-	private Pattern buildDetlaFilterPattern(String header, Map<String,String> deltaFilter) {
-
-		StringBuilder patternString = new StringBuilder();
-
-		for (String key : deltaFilter.keySet())
-			if (key.equals(ANY) || header.contains(key))
-				patternString.append(deltaFilter.get(key));
-
-		return Pattern.compile(patternString.toString());
-	}
-
 	/**
 	 * Format the diff entries by filtering out the noise from the given delta filter
 	 * The filter acts only for files that have MODIFY change Type.
@@ -679,8 +668,8 @@ public class DiffFormatter implements AutoCloseable {
 	 * @throws IOException
 	 */
 
-	public void format(List<? extends DiffEntry> entries, Map<String,String> deltaFilter) throws IOException {
-		if (deltaFilter == null || deltaFilter.isEmpty())
+	public void format(List<? extends DiffEntry> entries, Pattern deltaFilterPattern) throws IOException {
+		if (deltaFilterPattern == null)
 			format(entries);
 		else {
 
@@ -699,12 +688,8 @@ public class DiffFormatter implements AutoCloseable {
 					String headerNewPath = res.header.newPath;
 
 
-					Pattern deltaPattern = buildDetlaFilterPattern(headerNewPath, deltaFilter);
-
-					if (deltaPattern != null) {
-						aContent = deltaPattern.matcher(aContent).replaceAll(EMPTY_STRING);
-						bContent = deltaPattern.matcher(bContent).replaceAll(EMPTY_STRING);
-					}
+					aContent = deltaFilterPattern.matcher(aContent).replaceAll(EMPTY_STRING);
+					bContent = deltaFilterPattern.matcher(bContent).replaceAll(EMPTY_STRING);
 
 					if (!aContent.equals(bContent)) {
 						format(res.header, res.a, res.b);

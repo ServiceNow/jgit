@@ -49,6 +49,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.api.errors.JGitInternalException;
@@ -95,7 +96,7 @@ public class DiffCommand extends GitCommand<List<DiffEntry>> {
 
 	private ProgressMonitor monitor = NullProgressMonitor.INSTANCE;
 
-	private Map<String,String> deltaFilter = null;
+	private Pattern deltaFilterPattern = null;
 
 	/**
 	 * @param repo
@@ -156,7 +157,7 @@ public class DiffCommand extends GitCommand<List<DiffEntry>> {
 				if (sourcePrefix != null)
 					diffFmt.setOldPrefix(sourcePrefix);
 
-				diffFmt.format(result, this.getDeltaFilter());
+				diffFmt.format(result, this.getDeltaFilterPattern());
 
 				diffFmt.flush();
 				return result;
@@ -283,8 +284,8 @@ public class DiffCommand extends GitCommand<List<DiffEntry>> {
 		return this;
 	}
 
-	public Map<String, String> getDeltaFilter() {
-		return deltaFilter;
+	public Pattern getDeltaFilterPattern() {
+		return deltaFilterPattern;
 	}
 
 	/**
@@ -294,8 +295,8 @@ public class DiffCommand extends GitCommand<List<DiffEntry>> {
 	 *            the filter
 	 * @return this instance
 	 */
-	public DiffCommand setDeltaFilter(Map<String, String> deltaFilter) {
-		this.deltaFilter = deltaFilter;
+	public DiffCommand setDeltaFilterPattern(Pattern deltaFilterPattern) {
+		this.deltaFilterPattern = deltaFilterPattern;
 		return this;
 	}
 }
