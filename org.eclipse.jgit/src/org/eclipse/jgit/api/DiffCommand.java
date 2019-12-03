@@ -116,7 +116,6 @@ public class DiffCommand extends GitCommand<List<DiffEntry>> {
 	 * @return a DiffEntry for each path which is different
 	 */
 	public List<DiffEntry> call() throws GitAPIException {
-		System.out.println("Inside Diff Command");
 		final DiffFormatter diffFmt;
 		if (out != null && !showNameAndStatusOnly)
 			diffFmt = new DiffFormatter(new BufferedOutputStream(out));
@@ -289,10 +288,10 @@ public class DiffCommand extends GitCommand<List<DiffEntry>> {
 	}
 
 	/**
-	 * Set the given delta filter. Used only for Source Control.
+	 * Set the given delta filter regex pattern. Used only for Source Control.
 	 *
-	 * @param deltaFilter
-	 *            the filter
+	 * @param deltaFilterPattern
+	 *            the filter pattern
 	 * @return this instance
 	 */
 	public DiffCommand setDeltaFilterPattern(Pattern deltaFilterPattern) {

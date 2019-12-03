@@ -117,7 +117,6 @@ public class DiffFormatter implements AutoCloseable {
 
 	/** Magic return indicating the content is binary. */
 	private static final byte[] BINARY = new byte[] {};
-	public static final String ANY = "Any";
 
 	private final OutputStream out;
 
@@ -660,11 +659,11 @@ public class DiffFormatter implements AutoCloseable {
 	}
 
 	/**
-	 * Format the diff entries by filtering out the noise from the given delta filter
+	 * Format the diff entries by filtering out the noise from the given delta filter pattern
 	 * The filter acts only for files that have MODIFY change Type.
 	 * If there are no changes detected, we will remove the diff entry.
 	 * @param entries
-	 * @param deltaFilter
+	 * @param deltaFilterPattern
 	 * @throws IOException
 	 */
 
@@ -685,8 +684,6 @@ public class DiffFormatter implements AutoCloseable {
 
 					String aContent = new String(res.a.content);
 					String bContent = new String(res.b.content);
-					String headerNewPath = res.header.newPath;
-
 
 					aContent = deltaFilterPattern.matcher(aContent).replaceAll(EMPTY_STRING);
 					bContent = deltaFilterPattern.matcher(bContent).replaceAll(EMPTY_STRING);
