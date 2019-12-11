@@ -667,37 +667,30 @@ public class DiffFormatter implements AutoCloseable {
 	 */
 
 	public void format(List<? extends DiffEntry> entries, Pattern deltaFilterPattern) throws IOException {
-		if (deltaFilterPattern == null)
+		if (deltaFilterPattern == null) {
 			format(entries);
-		else {
-
-			Iterator<? extends DiffEntry> diIterator = entries.iterator();
-
-			while (diIterator.hasNext()) {
-
-				DiffEntry diffEntry = diIterator.next();
-
-				if (MODIFY.equals(diffEntry.changeType)) {
-
-					FormatResult res = createFormatResult(diffEntry);
-
-					String aContent = new String(res.a.content);
-					String bContent = new String(res.b.content);
-
-					aContent = deltaFilterPattern.matcher(aContent).replaceAll(EMPTY_STRING);
-					bContent = deltaFilterPattern.matcher(bContent).replaceAll(EMPTY_STRING);
-
-					if (!aContent.equals(bContent)) {
-						format(res.header, res.a, res.b);
-					} else {
-						diIterator.remove();
-					}
+			return;
+		}
+		Iterator<? extends DiffEntry> diIterator = entries.iterator();
+		while (diIterator.hasNext()) {
+			DiffEntry diffEntry = diIterator.next();
+			if (MODIFY.equals(diffEntry.changeType)) {
+				FormatResult res = createFormatResult(diffEntry);
+				String aContent = new String(res.a.content);
+				String bContent = new String(res.b.content);
+				aContent = deltaFilterPattern.matcher(aContent).replaceAll(EMPTY_STRING);
+				bContent = deltaFilterPattern.matcher(bContent).replaceAll(EMPTY_STRING);
+				if (!aContent.equals(bContent)) {
+					format(res.header, res.a, res.b);
+				} else {
+					diIterator.remove();
+				}
 				} else {
 					format(diffEntry);
-				}
 			}
 		}
 	}
+
 
 	/**
 	 * Format a patch script for one file entry.
