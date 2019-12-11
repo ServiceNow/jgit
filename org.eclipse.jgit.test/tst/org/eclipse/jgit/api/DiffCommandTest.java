@@ -244,7 +244,7 @@ public class DiffCommandTest extends RepositoryTestCase {
 
 	@Test
 	/**
-	 * Setting a delta filter of type ANY (applies to any file) with regex that matches the
+	 * Setting a delta filter Pattern (applies to any file) with regex that matches the
 	 * change: diff skipped.
 	 */
 	public void testDiffModified_anyDeltaFilter() throws Exception {

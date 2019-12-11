@@ -113,6 +113,8 @@ public class DiffCommand extends GitCommand<List<DiffEntry>> {
 	 * class. Each instance of this class should only be used for one invocation
 	 * of the command. Don't call this method twice on an instance.
 	 *
+	 * Team-Devatscale SC customization to filter some files based on a regex pattern.
+	 * This filter will not be applied if showNameAndStatusOnly is set to true
 	 * @return a DiffEntry for each path which is different
 	 */
 	public List<DiffEntry> call() throws GitAPIException {
