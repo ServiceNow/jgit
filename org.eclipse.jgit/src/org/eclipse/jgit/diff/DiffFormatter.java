@@ -685,7 +685,7 @@ public class DiffFormatter implements AutoCloseable {
 				} else {
 					diIterator.remove();
 				}
-				} else {
+			} else {
 					format(diffEntry);
 			}
 		}
