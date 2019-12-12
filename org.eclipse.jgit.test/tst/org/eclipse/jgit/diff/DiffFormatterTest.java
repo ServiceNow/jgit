@@ -483,11 +483,8 @@ public class DiffFormatterTest extends RepositoryTestCase {
 		Pattern deltaFilterPattern = Pattern.compile("change");
 		dfmt.format(dfmt.scan(oldTree, newTree), deltaFilterPattern);
 		dfmt.flush();
-
-		String actual = os.toString("UTF-8");
-		String expected = "";
-
-		assertEquals(expected, actual);
+		
+		assertEquals("", os.toString("UTF-8"));
 	}
 
 	@Test

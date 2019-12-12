@@ -130,7 +130,7 @@ public class DiffCommandTest extends RepositoryTestCase {
 				+ "@@ -0,0 +1 @@\n"
 				+ "+folder\n"
 				+ "\\ No newline at end of file\n";
-		assertEquals(expected.toString(), actual);
+		assertEquals(expected, actual);
 	}
 
 	@Test
@@ -178,7 +178,7 @@ public class DiffCommandTest extends RepositoryTestCase {
 				+ "\\ No newline at end of file\n"
 				+ "+folder change\n"
 				+ "\\ No newline at end of file\n";
-		assertEquals(expected.toString(), actual);
+		assertEquals(expected, actual);
 	}
 
 	@Test
@@ -200,7 +200,7 @@ public class DiffCommandTest extends RepositoryTestCase {
 				+ "+++ new/test.txt\n" + "@@ -1 +1 @@\n" + "-test\n"
 				+ "\\ No newline at end of file\n" + "+test change\n"
 				+ "\\ No newline at end of file\n";
-		assertEquals(expected.toString(), actual);
+		assertEquals(expected, actual);
 	}
 
 	@Test
@@ -222,7 +222,7 @@ public class DiffCommandTest extends RepositoryTestCase {
 				+ "index f55b5c9..c5ec8fd 100644\n" + "--- a/test.txt\n"
 				+ "+++ b/test.txt\n" + "@@ -4,3 +4,3 @@\n" + " 3\n" + "-4\n"
 				+ "+4a\n" + " 5\n";
-		assertEquals(expected.toString(), actual);
+		assertEquals(expected, actual);
 	}
 
 	@Test
@@ -262,9 +262,7 @@ public class DiffCommandTest extends RepositoryTestCase {
 		List<DiffEntry> entries = git.diff().setDeltaFilterPattern(deltaFilterPattern).setOutputStream(out).call();
 		assertEquals(0, entries.size());
 
-		String actual = out.toString();
-		String expected = "";
-		assertEquals(expected.toString(), actual);
+		assertEquals("", out.toString());
 	}
 
 	private AbstractTreeIterator getTreeIterator(String name)

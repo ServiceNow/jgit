@@ -680,14 +680,11 @@ public class DiffFormatter implements AutoCloseable {
 				String bContent = new String(res.b.content);
 				aContent = deltaFilterPattern.matcher(aContent).replaceAll(EMPTY_STRING);
 				bContent = deltaFilterPattern.matcher(bContent).replaceAll(EMPTY_STRING);
-				if (!aContent.equals(bContent)) {
+				if (!aContent.equals(bContent))
 					format(res.header, res.a, res.b);
-				} else {
+				else
 					diIterator.remove();
-				}
-			} else {
-					format(diffEntry);
-			}
+			} else format(diffEntry);
 		}
 	}
 
