@@ -51,6 +51,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.List;
+import java.util.regex.Pattern;
 
 import org.eclipse.jgit.diff.DiffEntry;
 import org.eclipse.jgit.diff.DiffEntry.ChangeType;
@@ -129,7 +130,7 @@ public class DiffCommandTest extends RepositoryTestCase {
 				+ "@@ -0,0 +1 @@\n"
 				+ "+folder\n"
 				+ "\\ No newline at end of file\n";
-		assertEquals(expected.toString(), actual);
+		assertEquals(expected, actual);
 	}
 
 	@Test
@@ -177,7 +178,7 @@ public class DiffCommandTest extends RepositoryTestCase {
 				+ "\\ No newline at end of file\n"
 				+ "+folder change\n"
 				+ "\\ No newline at end of file\n";
-		assertEquals(expected.toString(), actual);
+		assertEquals(expected, actual);
 	}
 
 	@Test
@@ -199,7 +200,7 @@ public class DiffCommandTest extends RepositoryTestCase {
 				+ "+++ new/test.txt\n" + "@@ -1 +1 @@\n" + "-test\n"
 				+ "\\ No newline at end of file\n" + "+test change\n"
 				+ "\\ No newline at end of file\n";
-		assertEquals(expected.toString(), actual);
+		assertEquals(expected, actual);
 	}
 
 	@Test
@@ -221,7 +222,7 @@ public class DiffCommandTest extends RepositoryTestCase {
 				+ "index f55b5c9..c5ec8fd 100644\n" + "--- a/test.txt\n"
 				+ "+++ b/test.txt\n" + "@@ -4,3 +4,3 @@\n" + " 3\n" + "-4\n"
 				+ "+4a\n" + " 5\n";
-		assertEquals(expected.toString(), actual);
+		assertEquals(expected, actual);
 	}
 
 	@Test
@@ -239,6 +240,29 @@ public class DiffCommandTest extends RepositoryTestCase {
 		assertEquals(ChangeType.MODIFY, diff.getChangeType());
 		assertEquals("test.txt", diff.getOldPath());
 		assertEquals("test.txt", diff.getNewPath());
+	}
+
+	@Test
+	/**
+	 * Setting a delta filter Pattern (applies to any file) with regex that matches the
+	 * change: diff skipped.
+	 */
+	public void testDiffModified_anyDeltaFilter() throws Exception {
+		write(new File(db.getWorkTree(), "test.txt"), "test");
+		File folder = new File(db.getWorkTree(), "folder");
+		folder.mkdir();
+		write(new File(folder, "folder.txt"), "folder");
+		Git git = new Git(db);
+		git.add().addFilepattern(".").call();
+		git.commit().setMessage("Initial commit").call();
+		write(new File(folder, "folder.txt"), "folderchange");
+
+		OutputStream out = new ByteArrayOutputStream();
+		Pattern deltaFilterPattern = Pattern.compile("change");
+		List<DiffEntry> entries = git.diff().setDeltaFilterPattern(deltaFilterPattern).setOutputStream(out).call();
+		assertEquals(0, entries.size());
+
+		assertEquals("", out.toString());
 	}
 
 	private AbstractTreeIterator getTreeIterator(String name)
