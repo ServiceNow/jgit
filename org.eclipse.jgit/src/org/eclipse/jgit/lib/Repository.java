@@ -132,12 +132,16 @@ public abstract class Repository implements AutoCloseable {
 	 */
 	protected Repository(final BaseRepositoryBuilder options) {
 		gitDir = options.getGitDir();
-		fs = new FS_POSIX() {
-			@Override
-			public boolean supportsSymlinks() {
-				return false;
-			}
-		};
+		if (!SystemReader.getInstance().isWindows()){
+			fs = new FS_POSIX() {
+				@Override
+				public boolean supportsSymlinks() {
+					return false;
+				}
+			};
+		} else {
+			fs = options.getFS();
+		}
 		workTree = options.getWorkTree();
 		indexFile = options.getIndexFile();
 	}
