@@ -421,7 +421,7 @@ public class DiffFormatterTest extends RepositoryTestCase {
 		write(new File(folder, "folder.txt"), "folder change");
 
 		ByteArrayOutputStream os = new ByteArrayOutputStream();
-		DiffFormatter dfmt = new DiffFormatter(new SafeBufferedOutputStream(os));
+		DiffFormatter dfmt = new DiffFormatter(new BufferedOutputStream(os));
 		dfmt.setRepository(db);
 		dfmt.setPathFilter(PathFilter.create("folder"));
 		DirCacheIterator oldTree = new DirCacheIterator(db.readDirCache());
@@ -458,7 +458,7 @@ public class DiffFormatterTest extends RepositoryTestCase {
 		write(new File(folder, "folder.txt"), "change");
 
 		ByteArrayOutputStream os = new ByteArrayOutputStream();
-		DiffFormatter dfmt = new DiffFormatter(new SafeBufferedOutputStream(os));
+		DiffFormatter dfmt = new DiffFormatter(new BufferedOutputStream(os));
 		dfmt.setRepository(db);
 		dfmt.setPathFilter(PathFilter.create("folder"));
 		DirCacheIterator oldTree = new DirCacheIterator(db.readDirCache());
@@ -498,7 +498,7 @@ public class DiffFormatterTest extends RepositoryTestCase {
 		new File(folder, "folder.txt").delete();
 
 		ByteArrayOutputStream os = new ByteArrayOutputStream();
-		DiffFormatter dfmt = new DiffFormatter(new SafeBufferedOutputStream(os));
+		DiffFormatter dfmt = new DiffFormatter(new BufferedOutputStream(os));
 		dfmt.setRepository(db);
 		dfmt.setPathFilter(PathFilter.create("folder"));
 		DirCacheIterator oldTree = new DirCacheIterator(db.readDirCache());
@@ -538,7 +538,7 @@ public class DiffFormatterTest extends RepositoryTestCase {
 		write(new File(folder, "folder.txt"), "folderchange");
 
 		ByteArrayOutputStream os = new ByteArrayOutputStream();
-		DiffFormatter dfmt = new DiffFormatter(new SafeBufferedOutputStream(os));
+		DiffFormatter dfmt = new DiffFormatter(new BufferedOutputStream(os));
 		dfmt.setRepository(db);
 		dfmt.setPathFilter(PathFilter.create("folder"));
 		DirCacheIterator oldTree = new DirCacheIterator(db.readDirCache());
@@ -567,7 +567,7 @@ public class DiffFormatterTest extends RepositoryTestCase {
 		write(new File(folder, "folder.txt"), "folderchange");
 
 		ByteArrayOutputStream os = new ByteArrayOutputStream();
-		DiffFormatter dfmt = new DiffFormatter(new SafeBufferedOutputStream(os));
+		DiffFormatter dfmt = new DiffFormatter(new BufferedOutputStream(os));
 		dfmt.setRepository(db);
 		dfmt.setPathFilter(PathFilter.create("folder"));
 		DirCacheIterator oldTree = new DirCacheIterator(db.readDirCache());
