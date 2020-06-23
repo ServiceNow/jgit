@@ -123,7 +123,7 @@ public abstract class FS {
 	 */
 	protected static final Entry[] NO_ENTRIES = {};
 
-	private volatile Boolean supportSymlinks;
+	//private volatile Boolean supportSymlinks;
 
 	/**
 	 * This class creates FS instances. It will be overridden by a Java7 variant
@@ -815,6 +815,9 @@ public abstract class FS {
 	 * @since 3.0
 	 */
 	public boolean supportsSymlinks() {
+		return false;
+	}
+	/*public boolean supportsSymlinks() {
 		if (supportSymlinks == null) {
 			detectSymlinkSupport();
 		}
@@ -841,7 +844,7 @@ public abstract class FS {
 				}
 			}
 		}
-	}
+	}*/
 
 	/**
 	 * Is this file system case sensitive
@@ -1726,6 +1729,10 @@ public abstract class FS {
 			final String hookName, String[] args, PrintStream outRedirect,
 			PrintStream errRedirect, String stdinArgs)
 			throws JGitInternalException {
+
+		if (!hooksEnabled())
+			return new ProcessResult(Status.NOT_SUPPORTED);
+
 		final File hookFile = findHook(repository, hookName);
 		if (hookFile == null)
 			return new ProcessResult(Status.NOT_PRESENT);
@@ -2229,5 +2236,10 @@ public abstract class FS {
 				}
 			}
 		}
+	}
+
+	private boolean hooksEnabled() {
+		//DISABLE HOOKS
+		return false;
 	}
 }

@@ -45,6 +45,8 @@
 
 package org.eclipse.jgit.lib;
 
+import java.security.AccessControlException;
+
 import org.eclipse.jgit.lib.Config.SectionParser;
 import org.eclipse.jgit.util.SystemReader;
 
@@ -190,7 +192,12 @@ public class UserConfig {
 
 	private static String getNameInternal(Config rc, String envKey) {
 		// try to get the user name for the system property GIT_XXX_NAME
-		String username = system().getenv(envKey);
+		String username;
+		try {
+			username = system().getenv(envKey);
+		} catch (AccessControlException e) {
+			username = null;
+		}
 
 		if (username == null) {
 			// try to get the user name from the local and global
@@ -215,7 +222,12 @@ public class UserConfig {
 
 	private static String getEmailInternal(Config rc, String envKey) {
 		// try to get the email for the system property GIT_XXX_EMAIL
-		String email = system().getenv(envKey);
+		String email;
+		try {
+			email = system().getenv(envKey);
+		} catch (AccessControlException e) {
+			email = null;
+		}
 
 		if (email == null) {
 			// try to get the email from the local and global configurations.

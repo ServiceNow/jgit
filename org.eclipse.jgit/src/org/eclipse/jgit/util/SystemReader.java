@@ -51,9 +51,10 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.nio.file.Files;
-import java.nio.file.InvalidPathException;
+//import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
-import java.nio.file.Paths;
+//import java.nio.file.Paths;
+import java.security.AccessControlException;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.text.DateFormat;
@@ -105,7 +106,14 @@ public abstract class SystemReader {
 
 		@Override
 		public String getenv(String variable) {
-			return System.getenv(variable);
+			String envValue = null;
+			try {
+				envValue = System.getenv(variable);
+			} catch (AccessControlException ex) {
+				// do nothing
+			}
+
+			return envValue;
 		}
 
 		@Override
@@ -115,13 +123,13 @@ public abstract class SystemReader {
 
 		@Override
 		public FileBasedConfig openSystemConfig(Config parent, FS fs) {
-			if (StringUtils
+			/*if (StringUtils
 					.isEmptyOrNull(getenv(Constants.GIT_CONFIG_NOSYSTEM_KEY))) {
 				File configFile = fs.getGitSystemConfig();
 				if (configFile != null) {
 					return new FileBasedConfig(parent, configFile, fs);
 				}
-			}
+			}*/
 			return new FileBasedConfig(parent, null, fs) {
 				@Override
 				public void load() {
@@ -143,7 +151,7 @@ public abstract class SystemReader {
 		}
 
 		private Path getXDGConfigHome(FS fs) {
-			String configHomePath = getenv(Constants.XDG_CONFIG_HOME);
+			/*String configHomePath = getenv(Constants.XDG_CONFIG_HOME);
 			if (StringUtils.isEmptyOrNull(configHomePath)) {
 				configHomePath = new File(fs.userHome(), ".config") //$NON-NLS-1$
 						.getAbsolutePath();
@@ -155,7 +163,7 @@ public abstract class SystemReader {
 			} catch (IOException | InvalidPathException e) {
 				LOG.error(JGitText.get().createXDGConfigHomeFailed,
 						configHomePath, e);
-			}
+			}*/
 			return null;
 		}
 
@@ -348,10 +356,25 @@ public abstract class SystemReader {
 	 */
 	public StoredConfig getUserConfig()
 			throws ConfigInvalidException, IOException {
+		return getUserConfig(FS.DETECTED);
+	}
+
+	/**
+	 * Get the git configuration found in the user home.
+	 * @param fs the file system abstraction which will be necessary to perform
+	 *              certain file system operations.
+	 * @return the git configuration found in the user home
+	 * @throws ConfigInvalidException
+	 *              if configuration is invalid
+	 * @throws IOException
+	 *              if something went wrong when reading files
+	 */
+	public StoredConfig getUserConfig(FS fs)
+			throws ConfigInvalidException, IOException {
 		FileBasedConfig c = userConfig.get();
 		if (c == null) {
 			userConfig.compareAndSet(null,
-					openUserConfig(getSystemConfig(), FS.DETECTED));
+					openUserConfig(getSystemConfig(), fs));
 			c = userConfig.get();
 		}
 		// on the very first call this will check a second time if the system
@@ -375,10 +398,15 @@ public abstract class SystemReader {
 	 */
 	public StoredConfig getJGitConfig()
 			throws ConfigInvalidException, IOException {
+		return getJGitConfig(FS.DETECTED);
+	}
+
+	private StoredConfig getJGitConfig(FS fs)
+			throws ConfigInvalidException, IOException {
 		FileBasedConfig c = jgitConfig.get();
 		if (c == null) {
 			jgitConfig.compareAndSet(null,
-					openJGitConfig(null, FS.DETECTED));
+					openJGitConfig(null, fs));
 			c = jgitConfig.get();
 		}
 		updateAll(c);
@@ -400,10 +428,15 @@ public abstract class SystemReader {
 	 */
 	public StoredConfig getSystemConfig()
 			throws ConfigInvalidException, IOException {
+		return getSystemConfig(FS.DETECTED);
+	}
+
+	private StoredConfig getSystemConfig(FS fs)
+			throws ConfigInvalidException, IOException {
 		FileBasedConfig c = systemConfig.get();
 		if (c == null) {
 			systemConfig.compareAndSet(null,
-					openSystemConfig(getJGitConfig(), FS.DETECTED));
+					openSystemConfig(getJGitConfig(), fs));
 			c = systemConfig.get();
 		}
 		updateAll(c);
