@@ -51,9 +51,9 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.nio.file.Files;
-//import java.nio.file.InvalidPathException;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
-//import java.nio.file.Paths;
+import java.nio.file.Paths;
 import java.security.AccessControlException;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
@@ -151,7 +151,7 @@ public abstract class SystemReader {
 		}
 
 		private Path getXDGConfigHome(FS fs) {
-			/*String configHomePath = getenv(Constants.XDG_CONFIG_HOME);
+			String configHomePath = getenv(Constants.XDG_CONFIG_HOME);
 			if (StringUtils.isEmptyOrNull(configHomePath)) {
 				configHomePath = new File(fs.userHome(), ".config") //$NON-NLS-1$
 						.getAbsolutePath();
@@ -163,7 +163,7 @@ public abstract class SystemReader {
 			} catch (IOException | InvalidPathException e) {
 				LOG.error(JGitText.get().createXDGConfigHomeFailed,
 						configHomePath, e);
-			}*/
+			}
 			return null;
 		}
 
