@@ -31,6 +31,7 @@ import org.eclipse.jgit.errors.NoRemoteRepositoryException;
 import org.eclipse.jgit.hooks.PrePushHook;
 import org.eclipse.jgit.junit.JGitTestUtil;
 import org.eclipse.jgit.junit.RepositoryTestCase;
+import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.lib.RefUpdate;
 import org.eclipse.jgit.lib.Repository;
