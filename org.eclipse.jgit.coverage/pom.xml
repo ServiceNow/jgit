@@ -14,7 +14,11 @@
   <parent>
     <groupId>org.eclipse.jgit</groupId>
     <artifactId>org.eclipse.jgit-parent</artifactId>
+<<<<<<< HEAD
     <version>6.1.1-SNAPSHOT</version>
+=======
+    <version>5.9.0-snc-2</version>
+>>>>>>> stable-5.9
   </parent>
   <modelVersion>4.0.0</modelVersion>
 
@@ -27,88 +31,156 @@
     <dependency>
       <groupId>org.eclipse.jgit</groupId>
       <artifactId>org.eclipse.jgit</artifactId>
+<<<<<<< HEAD
       <version>6.1.1-SNAPSHOT</version>
+=======
+      <version>5.9.0-snc-2</version>
+>>>>>>> stable-5.9
     </dependency>
     <dependency>
       <groupId>org.eclipse.jgit</groupId>
       <artifactId>org.eclipse.jgit.ant</artifactId>
+<<<<<<< HEAD
       <version>6.1.1-SNAPSHOT</version>
+=======
+      <version>5.9.0-snc-2</version>
+>>>>>>> stable-5.9
     </dependency>
     <dependency>
       <groupId>org.eclipse.jgit</groupId>
       <artifactId>org.eclipse.jgit.archive</artifactId>
+<<<<<<< HEAD
       <version>6.1.1-SNAPSHOT</version>
+=======
+      <version>5.9.0-snc-2</version>
+>>>>>>> stable-5.9
     </dependency>
     <dependency>
       <groupId>org.eclipse.jgit</groupId>
       <artifactId>org.eclipse.jgit.http.apache</artifactId>
+<<<<<<< HEAD
       <version>6.1.1-SNAPSHOT</version>
+=======
+      <version>5.9.0-snc-2</version>
+>>>>>>> stable-5.9
     </dependency>
     <dependency>
       <groupId>org.eclipse.jgit</groupId>
       <artifactId>org.eclipse.jgit.http.server</artifactId>
+<<<<<<< HEAD
       <version>6.1.1-SNAPSHOT</version>
+=======
+      <version>5.9.0-snc-2</version>
+>>>>>>> stable-5.9
     </dependency>
     <dependency>
       <groupId>org.eclipse.jgit</groupId>
       <artifactId>org.eclipse.jgit.lfs</artifactId>
+<<<<<<< HEAD
       <version>6.1.1-SNAPSHOT</version>
+=======
+      <version>5.9.0-snc-2</version>
+>>>>>>> stable-5.9
     </dependency>
     <dependency>
       <groupId>org.eclipse.jgit</groupId>
       <artifactId>org.eclipse.jgit.lfs.server</artifactId>
+<<<<<<< HEAD
       <version>6.1.1-SNAPSHOT</version>
+=======
+      <version>5.9.0-snc-2</version>
+>>>>>>> stable-5.9
     </dependency>
     <dependency>
       <groupId>org.eclipse.jgit</groupId>
       <artifactId>org.eclipse.jgit.pgm</artifactId>
+<<<<<<< HEAD
       <version>6.1.1-SNAPSHOT</version>
+=======
+      <version>5.9.0-snc-2</version>
+>>>>>>> stable-5.9
     </dependency>
     <dependency>
       <groupId>org.eclipse.jgit</groupId>
       <artifactId>org.eclipse.jgit.ui</artifactId>
+<<<<<<< HEAD
       <version>6.1.1-SNAPSHOT</version>
+=======
+      <version>5.9.0-snc-2</version>
+>>>>>>> stable-5.9
     </dependency>
     <dependency>
       <groupId>org.eclipse.jgit</groupId>
       <artifactId>org.eclipse.jgit.ssh.apache</artifactId>
+<<<<<<< HEAD
       <version>6.1.1-SNAPSHOT</version>
+=======
+      <version>5.9.0-snc-2</version>
+>>>>>>> stable-5.9
     </dependency>
 
     <dependency>
       <groupId>org.eclipse.jgit</groupId>
       <artifactId>org.eclipse.jgit.test</artifactId>
+<<<<<<< HEAD
       <version>6.1.1-SNAPSHOT</version>
+=======
+      <version>5.9.0-snc-2</version>
+>>>>>>> stable-5.9
     </dependency>
     <dependency>
       <groupId>org.eclipse.jgit</groupId>
       <artifactId>org.eclipse.jgit.ant.test</artifactId>
+<<<<<<< HEAD
       <version>6.1.1-SNAPSHOT</version>
+=======
+      <version>5.9.0-snc-2</version>
+>>>>>>> stable-5.9
     </dependency>
     <dependency>
       <groupId>org.eclipse.jgit</groupId>
       <artifactId>org.eclipse.jgit.http.test</artifactId>
+<<<<<<< HEAD
       <version>6.1.1-SNAPSHOT</version>
+=======
+      <version>5.9.0-snc-2</version>
+>>>>>>> stable-5.9
     </dependency>
     <dependency>
       <groupId>org.eclipse.jgit</groupId>
       <artifactId>org.eclipse.jgit.pgm.test</artifactId>
+<<<<<<< HEAD
       <version>6.1.1-SNAPSHOT</version>
+=======
+      <version>5.9.0-snc-2</version>
+>>>>>>> stable-5.9
     </dependency>
     <dependency>
       <groupId>org.eclipse.jgit</groupId>
       <artifactId>org.eclipse.jgit.lfs.test</artifactId>
+<<<<<<< HEAD
       <version>6.1.1-SNAPSHOT</version>
+=======
+      <version>5.9.0-snc-2</version>
+>>>>>>> stable-5.9
     </dependency>
     <dependency>
       <groupId>org.eclipse.jgit</groupId>
       <artifactId>org.eclipse.jgit.lfs.server.test</artifactId>
+<<<<<<< HEAD
       <version>6.1.1-SNAPSHOT</version>
+=======
+      <version>5.9.0-snc-2</version>
+>>>>>>> stable-5.9
     </dependency>
     <dependency>
       <groupId>org.eclipse.jgit</groupId>
       <artifactId>org.eclipse.jgit.ssh.apache.test</artifactId>
+<<<<<<< HEAD
       <version>6.1.1-SNAPSHOT</version>
+=======
+      <version>5.9.0-snc-2</version>
+>>>>>>> stable-5.9
     </dependency>
   </dependencies>
 

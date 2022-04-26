@@ -49,6 +49,14 @@ import org.apache.sshd.sftp.client.SftpClient;
 import org.apache.sshd.sftp.client.SftpClient.CopyMode;
 import org.apache.sshd.sftp.client.SftpClientFactory;
 import org.apache.sshd.sftp.common.SftpException;
+import org.apache.sshd.client.subsystem.sftp.SftpClient;
+import org.apache.sshd.client.subsystem.sftp.SftpClient.CloseableHandle;
+import org.apache.sshd.client.subsystem.sftp.SftpClient.CopyMode;
+import org.apache.sshd.client.subsystem.sftp.SftpClientFactory;
+import org.apache.sshd.common.channel.PtyChannelConfiguration;
+import org.apache.sshd.common.session.Session;
+import org.apache.sshd.common.session.SessionListener;
+import org.apache.sshd.common.subsystem.sftp.SftpException;
 import org.eclipse.jgit.annotations.NonNull;
 import org.eclipse.jgit.errors.TransportException;
 import org.eclipse.jgit.internal.transport.ssh.OpenSshConfigFile;
@@ -305,8 +313,11 @@ public class SshdSession implements RemoteSession2 {
 	public Process exec(String commandName, Map<String, String> environment,
 			int timeout) throws IOException {
 		@SuppressWarnings("resource")
-		ChannelExec exec = session.createExecChannel(commandName, null,
-				environment);
+		PtyChannelConfiguration config = new PtyChannelConfiguration();
+		config.setPtyType("dummy");
+		// todo: check this one
+		// it was: ChannelExec exec = session.createExecChannel(commandName, null, environment);
+		ChannelExec exec = session.createExecChannel(commandName, config, environment);
 		if (timeout <= 0) {
 			try {
 				exec.open().verify();

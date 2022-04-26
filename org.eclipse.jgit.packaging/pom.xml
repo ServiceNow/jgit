@@ -16,7 +16,11 @@
 
   <groupId>org.eclipse.jgit</groupId>
   <artifactId>jgit.tycho.parent</artifactId>
+<<<<<<< HEAD
   <version>6.1.1-SNAPSHOT</version>
+=======
+  <version>5.9.0-snc-2</version>
+>>>>>>> stable-5.9
   <packaging>pom</packaging>
 
   <name>JGit Tycho Parent</name>
@@ -304,7 +308,7 @@
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-deploy-plugin</artifactId>
-          <version>3.0.0-M1</version>
+          <version>2.7</version>
         </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
