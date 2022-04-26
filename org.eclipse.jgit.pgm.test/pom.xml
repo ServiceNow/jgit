@@ -17,11 +17,7 @@
   <parent>
     <groupId>org.eclipse.jgit</groupId>
     <artifactId>org.eclipse.jgit-parent</artifactId>
-<<<<<<< HEAD
     <version>6.1.1-SNAPSHOT</version>
-=======
-    <version>5.9.0-snc-2</version>
->>>>>>> stable-5.9
   </parent>
 
   <artifactId>org.eclipse.jgit.pgm.test</artifactId>
