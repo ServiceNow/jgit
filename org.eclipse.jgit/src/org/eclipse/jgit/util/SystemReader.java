@@ -68,7 +68,10 @@ public abstract class SystemReader {
 
 	//private static final String GIT_TRACE_PERFORMANCE = "GIT_TRACE_PERFORMANCE"; //$NON-NLS-1$
 
-	private static final boolean performanceTrace = initPerformanceTrace();
+	/**
+	 * Enable performance trace
+	 */
+	protected boolean performanceTrace = initPerformanceTrace();
 
 	private static boolean initPerformanceTrace() {
 		//Comment out for SourceControl integration
