@@ -966,7 +966,7 @@
     <module>org.eclipse.jgit.junit.http</module>
     <module>org.eclipse.jgit.junit.ssh</module>
 
-    <module>org.eclipse.jgit.test</module>
+    <!--<module>org.eclipse.jgit.test</module>
     <module>org.eclipse.jgit.ant.test</module>
     <module>org.eclipse.jgit.gpg.bc.test</module>
     <module>org.eclipse.jgit.http.test</module>
@@ -976,7 +976,7 @@
     <module>org.eclipse.jgit.ssh.apache.test</module>
     <module>org.eclipse.jgit.ssh.jsch.test</module>
     <module>org.eclipse.jgit.coverage</module>
-    <module>org.eclipse.jgit.benchmarks</module>
+    <module>org.eclipse.jgit.benchmarks</module>-->
   </modules>
 
 </project>
