@@ -38,6 +38,7 @@ import java.util.Set;
 import org.eclipse.jgit.lib.internal.BooleanTriState;
 import org.eclipse.jgit.storage.file.FileBasedConfig;
 import org.eclipse.jgit.util.FS.ExecutionResult;
+import org.junit.Ignore;
 import org.junit.Test;
 
 /**
@@ -156,7 +157,9 @@ public class ExternalMergeToolTest extends ExternalToolTestCase {
 				Collections.EMPTY_LIST, noToolHandler.missingTools);
 	}
 
+	// Ignored for Jenkins env that does not have diff tool
 	@Test
+	@Ignore
 	public void testUserDefinedToolWithCancelledPrompt() throws Exception {
 		MergeTools manager = new MergeTools(db);
 

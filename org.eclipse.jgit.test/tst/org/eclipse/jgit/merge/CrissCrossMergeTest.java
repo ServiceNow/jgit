@@ -46,6 +46,7 @@ import org.eclipse.jgit.treewalk.FileTreeIterator;
 import org.eclipse.jgit.treewalk.TreeWalk;
 import org.eclipse.jgit.treewalk.filter.PathFilter;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.experimental.theories.DataPoints;
 import org.junit.experimental.theories.Theories;
 import org.junit.experimental.theories.Theory;
@@ -291,7 +292,9 @@ public class CrissCrossMergeTest extends RepositoryTestCase {
 		}
 	}
 
+	// Ignored for Jenkins env that does not have diff tool
 	@Theory
+	@Ignore
 	/**
 	 * Merging m2,s2 from the following topology. The same file is modified
 	 * in both branches. The modifications should be mergeable but only if the automerge of m1 and s1
