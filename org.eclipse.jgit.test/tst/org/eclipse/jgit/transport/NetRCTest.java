@@ -42,6 +42,7 @@
 
 package org.eclipse.jgit.transport;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 
@@ -62,6 +63,7 @@ public class NetRCTest extends RepositoryTestCase {
 
 	private File configFile;
 
+	@Override
 	@Before
 	public void setUp() throws Exception {
 		super.setUp();
@@ -72,11 +74,11 @@ public class NetRCTest extends RepositoryTestCase {
 		configFile = new File(home, ".netrc");
 	}
 
-	private void config(final String data) throws IOException {
-		final OutputStreamWriter fw = new OutputStreamWriter(
-				new FileOutputStream(configFile), "UTF-8");
-		fw.write(data);
-		fw.close();
+	private void config(String data) throws IOException {
+		try (OutputStreamWriter fw = new OutputStreamWriter(
+				new FileOutputStream(configFile), UTF_8)) {
+			fw.write(data);
+		}
 	}
 
 	@Test

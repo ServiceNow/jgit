@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2010, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.util;
@@ -48,7 +15,10 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.function.BinaryOperator;
+import java.util.stream.Collector;
 
+import org.eclipse.jgit.annotations.Nullable;
 import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.lib.RefComparator;
 
@@ -68,12 +38,12 @@ import org.eclipse.jgit.lib.RefComparator;
  *            the type of reference being stored in the collection.
  */
 public class RefList<T extends Ref> implements Iterable<Ref> {
-	private static final RefList<Ref> EMPTY = new RefList<Ref>(new Ref[0], 0);
+	private static final RefList<Ref> EMPTY = new RefList<>(new Ref[0], 0);
 
 	/**
+	 * Create an empty unmodifiable reference list.
+	 *
 	 * @return an empty unmodifiable reference list.
-	 * @param <T>
-	 *            the type of reference being stored in the collection.
 	 */
 	@SuppressWarnings("unchecked")
 	public static <T extends Ref> RefList<T> emptyList() {
@@ -100,38 +70,55 @@ public class RefList<T extends Ref> implements Iterable<Ref> {
 		this.cnt = src.cnt;
 	}
 
+	/** {@inheritDoc} */
+	@Override
 	public Iterator<Ref> iterator() {
-		return new Iterator<Ref>() {
+		return new Iterator<>() {
 			private int idx;
 
+			@Override
 			public boolean hasNext() {
 				return idx < cnt;
 			}
 
+			@Override
 			public Ref next() {
 				if (idx < cnt)
 					return list[idx++];
 				throw new NoSuchElementException();
 			}
 
+			@Override
 			public void remove() {
 				throw new UnsupportedOperationException();
 			}
 		};
 	}
 
-	/** @return this cast as an immutable, standard {@link java.util.List}. */
+	/**
+	 * Cast {@code this} as an immutable, standard {@link java.util.List}.
+	 *
+	 * @return {@code this} as an immutable, standard {@link java.util.List}.
+	 */
 	public final List<Ref> asList() {
 		final List<Ref> r = Arrays.asList(list).subList(0, cnt);
 		return Collections.unmodifiableList(r);
 	}
 
-	/** @return number of items in this list. */
+	/**
+	 * Get number of items in this list.
+	 *
+	 * @return number of items in this list.
+	 */
 	public final int size() {
 		return cnt;
 	}
 
-	/** @return true if the size of this list is 0. */
+	/**
+	 * Get if this list is empty.
+	 *
+	 * @return true if the size of this list is 0.
+	 */
 	public final boolean isEmpty() {
 		return cnt == 0;
 	}
@@ -209,7 +196,7 @@ public class RefList<T extends Ref> implements Iterable<Ref> {
 	 * @return a new builder with the first {@code n} elements already added.
 	 */
 	public final Builder<T> copy(int n) {
-		Builder<T> r = new Builder<T>(Math.max(16, n));
+		Builder<T> r = new Builder<>(Math.max(16, n));
 		r.addAll(list, 0, n);
 		return r;
 	}
@@ -230,7 +217,7 @@ public class RefList<T extends Ref> implements Iterable<Ref> {
 		Ref[] newList = new Ref[cnt];
 		System.arraycopy(list, 0, newList, 0, cnt);
 		newList[idx] = ref;
-		return new RefList<T>(newList, cnt);
+		return new RefList<>(newList, cnt);
 	}
 
 	/**
@@ -257,7 +244,7 @@ public class RefList<T extends Ref> implements Iterable<Ref> {
 		newList[idx] = ref;
 		if (idx < cnt)
 			System.arraycopy(list, idx, newList, idx + 1, cnt - idx);
-		return new RefList<T>(newList, cnt + 1);
+		return new RefList<>(newList, cnt + 1);
 	}
 
 	/**
@@ -278,7 +265,7 @@ public class RefList<T extends Ref> implements Iterable<Ref> {
 			System.arraycopy(list, 0, newList, 0, idx);
 		if (idx + 1 < cnt)
 			System.arraycopy(list, idx + 1, newList, idx, cnt - (idx + 1));
-		return new RefList<T>(newList, cnt - 1);
+		return new RefList<>(newList, cnt - 1);
 	}
 
 	/**
@@ -299,6 +286,7 @@ public class RefList<T extends Ref> implements Iterable<Ref> {
 		return add(idx, ref);
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public String toString() {
 		StringBuilder r = new StringBuilder();
@@ -312,6 +300,32 @@ public class RefList<T extends Ref> implements Iterable<Ref> {
 		}
 		r.append(']');
 		return r.toString();
+	}
+
+	/**
+	 * Create a {@link Collector} for {@link Ref}.
+	 *
+	 * @param mergeFunction
+	 *            if specified the result will be sorted and deduped.
+	 * @return {@link Collector} for {@link Ref}
+	 * @since 5.4
+	 */
+	public static <T extends Ref> Collector<T, ?, RefList<T>> toRefList(
+			@Nullable BinaryOperator<T> mergeFunction) {
+		return Collector.of(
+				() -> new Builder<>(),
+				Builder<T>::add, (b1, b2) -> {
+					Builder<T> b = new Builder<>();
+					b.addAll(b1);
+					b.addAll(b2);
+					return b;
+				}, (b) -> {
+					if (mergeFunction != null) {
+						b.sort();
+						b.dedupe(mergeFunction);
+					}
+					return b.toRefList();
+				});
 	}
 
 	/**
@@ -334,10 +348,11 @@ public class RefList<T extends Ref> implements Iterable<Ref> {
 		 * Create an empty list with at least the specified capacity.
 		 *
 		 * @param capacity
-		 *            the new capacity.
+		 *            the new capacity; if zero or negative, behavior is the same as
+		 *            {@link #Builder()}.
 		 */
 		public Builder(int capacity) {
-			list = new Ref[capacity];
+			list = new Ref[Math.max(capacity, 16)];
 		}
 
 		/** @return number of items in this builder's internal collection. */
@@ -386,6 +401,16 @@ public class RefList<T extends Ref> implements Iterable<Ref> {
 		}
 
 		/**
+		 * Add all items from another builder.
+		 *
+		 * @param other
+		 * @since 5.4
+		 */
+		public void addAll(Builder other) {
+			addAll(other.list, 0, other.size);
+		}
+
+		/**
 		 * Add all items from a source array.
 		 * <p>
 		 * References must be added in sort order, or the array must be sorted
@@ -425,9 +450,34 @@ public class RefList<T extends Ref> implements Iterable<Ref> {
 			Arrays.sort(list, 0, size, RefComparator.INSTANCE);
 		}
 
+		/**
+		 * Dedupe the refs in place. Must be called after {@link #sort}.
+		 *
+		 * @param mergeFunction
+		 */
+		@SuppressWarnings("unchecked")
+		void dedupe(BinaryOperator<T> mergeFunction) {
+			if (size == 0) {
+				return;
+			}
+			int lastElement = 0;
+			for (int i = 1; i < size; i++) {
+				if (RefComparator.INSTANCE.compare(list[lastElement],
+						list[i]) == 0) {
+					list[lastElement] = mergeFunction
+							.apply((T) list[lastElement], (T) list[i]);
+				} else {
+					list[lastElement + 1] = list[i];
+					lastElement++;
+				}
+			}
+			size = lastElement + 1;
+			Arrays.fill(list, size, list.length, null);
+		}
+
 		/** @return an unmodifiable list using this collection's backing array. */
 		public RefList<T> toRefList() {
-			return new RefList<T>(list, size);
+			return new RefList<>(list, size);
 		}
 
 		@Override

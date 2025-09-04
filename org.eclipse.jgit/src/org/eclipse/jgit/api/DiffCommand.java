@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2011, Tomasz Zarna <Tomasz.Zarna@pl.ibm.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2011, Tomasz Zarna <Tomasz.Zarna@pl.ibm.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 package org.eclipse.jgit.api;
 
@@ -48,6 +15,7 @@ import java.io.BufferedOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.List;
+import java.util.regex.Pattern;
 
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.api.errors.JGitInternalException;
@@ -84,6 +52,8 @@ public class DiffCommand extends GitCommand<List<DiffEntry>> {
 
 	private boolean showNameAndStatusOnly;
 
+	private boolean showNameOnly;
+
 	private OutputStream out;
 
 	private int contextLines = -1;
@@ -94,30 +64,42 @@ public class DiffCommand extends GitCommand<List<DiffEntry>> {
 
 	private ProgressMonitor monitor = NullProgressMonitor.INSTANCE;
 
+	private Pattern deltaFilterPattern = null;
+
 	/**
+	 * Constructor for DiffCommand
+	 *
 	 * @param repo
+	 *            a {@link org.eclipse.jgit.lib.Repository} object.
 	 */
 	protected DiffCommand(Repository repo) {
 		super(repo);
 	}
 
+	private DiffFormatter getDiffFormatter() {
+		return out != null && !showNameAndStatusOnly && !showNameOnly
+				? new DiffFormatter(new BufferedOutputStream(out))
+				: new DiffFormatter(NullOutputStream.INSTANCE);
+	}
+
 	/**
+	 * {@inheritDoc}
+	 * <p>
 	 * Executes the {@code Diff} command with all the options and parameters
 	 * collected by the setter methods (e.g. {@link #setCached(boolean)} of this
 	 * class. Each instance of this class should only be used for one invocation
 	 * of the command. Don't call this method twice on an instance.
 	 *
-	 * @return a DiffEntry for each path which is different
+	 * Team-Devatscale SC customization to filter some files based on a regex pattern.
+	 * This filter will not be applied if showNameAndStatusOnly is set to true and no
+	 * regex pattern is passed. Formatting is applied to all files returned by
+	 * DiffFormatter.scan() if showNameAndStatusOnly is false.
 	 */
+	@Override
 	public List<DiffEntry> call() throws GitAPIException {
-		final DiffFormatter diffFmt;
-		if (out != null && !showNameAndStatusOnly)
-			diffFmt = new DiffFormatter(new BufferedOutputStream(out));
-		else
-			diffFmt = new DiffFormatter(NullOutputStream.INSTANCE);
-		diffFmt.setRepository(repo);
-		diffFmt.setProgressMonitor(monitor);
-		try {
+		try (DiffFormatter diffFmt = getDiffFormatter()) {
+			diffFmt.setRepository(repo);
+			diffFmt.setProgressMonitor(monitor);
 			if (cached) {
 				if (oldTree == null) {
 					ObjectId head = repo.resolve(HEAD + "^{tree}"); //$NON-NLS-1$
@@ -131,39 +113,48 @@ public class DiffCommand extends GitCommand<List<DiffEntry>> {
 				}
 				newTree = new DirCacheIterator(repo.readDirCache());
 			} else {
-				if (oldTree == null)
+				if (oldTree == null) {
 					oldTree = new DirCacheIterator(repo.readDirCache());
-				if (newTree == null)
+				}
+				if (newTree == null) {
 					newTree = new FileTreeIterator(repo);
+				}
 			}
 
 			diffFmt.setPathFilter(pathFilter);
 
 			List<DiffEntry> result = diffFmt.scan(oldTree, newTree);
-			if (showNameAndStatusOnly)
-				return result;
-			else {
-				if (contextLines >= 0)
-					diffFmt.setContext(contextLines);
-				if (destinationPrefix != null)
-					diffFmt.setNewPrefix(destinationPrefix);
-				if (sourcePrefix != null)
-					diffFmt.setOldPrefix(sourcePrefix);
-				diffFmt.format(result);
-				diffFmt.flush();
-				return result;
+			if (contextLines >= 0) {
+				diffFmt.setContext(contextLines);
 			}
+			if (destinationPrefix != null) {
+				diffFmt.setNewPrefix(destinationPrefix);
+			}
+			if (sourcePrefix != null) {
+				diffFmt.setOldPrefix(sourcePrefix);
+			}
+
+			if (showNameAndStatusOnly) {
+				if (this.getDeltaFilterPattern() != null) {
+					diffFmt.filterModifiedFiles(result, this.getDeltaFilterPattern());
+			diffFmt.flush();
+				}
+			return result;
+			}
+
+			diffFmt.format(result, this.getDeltaFilterPattern());
+			diffFmt.flush();
+			return result;
 		} catch (IOException e) {
 			throw new JGitInternalException(e.getMessage(), e);
-		} finally {
-			diffFmt.close();
 		}
 	}
 
 	/**
+	 * Whether to view the changes staged for the next commit
 	 *
 	 * @param cached
-	 *            whether to view the changes you staged for the next commit
+	 *            whether to view the changes staged for the next commit
 	 * @return this instance
 	 */
 	public DiffCommand setCached(boolean cached) {
@@ -172,6 +163,8 @@ public class DiffCommand extends GitCommand<List<DiffEntry>> {
 	}
 
 	/**
+	 * Set path filter
+	 *
 	 * @param pathFilter
 	 *            parameter, used to limit the diff to the named path
 	 * @return this instance
@@ -182,6 +175,8 @@ public class DiffCommand extends GitCommand<List<DiffEntry>> {
 	}
 
 	/**
+	 * Set old tree
+	 *
 	 * @param oldTree
 	 *            the previous state
 	 * @return this instance
@@ -192,6 +187,8 @@ public class DiffCommand extends GitCommand<List<DiffEntry>> {
 	}
 
 	/**
+	 * Set new tree
+	 *
 	 * @param newTree
 	 *            the updated state
 	 * @return this instance
@@ -202,6 +199,8 @@ public class DiffCommand extends GitCommand<List<DiffEntry>> {
 	}
 
 	/**
+	 * Set whether to return only names and status of changed files
+	 *
 	 * @param showNameAndStatusOnly
 	 *            whether to return only names and status of changed files
 	 * @return this instance
@@ -212,6 +211,21 @@ public class DiffCommand extends GitCommand<List<DiffEntry>> {
 	}
 
 	/**
+	 * Set whether to return only names of changed files
+	 *
+	 * @param showNameOnly
+	 *            whether to return only names files
+	 * @return this instance
+	 * @since 6.4
+	 */
+	public DiffCommand setShowNameOnly(boolean showNameOnly) {
+		this.showNameOnly = showNameOnly;
+		return this;
+	}
+
+	/**
+	 * Set output stream
+	 *
 	 * @param out
 	 *            the stream to write line data
 	 * @return this instance
@@ -262,7 +276,6 @@ public class DiffCommand extends GitCommand<List<DiffEntry>> {
 	 * is set to <code>NullProgressMonitor</code>
 	 *
 	 * @see NullProgressMonitor
-	 *
 	 * @param monitor
 	 *            a progress monitor
 	 * @return this instance
@@ -272,6 +285,26 @@ public class DiffCommand extends GitCommand<List<DiffEntry>> {
 			monitor = NullProgressMonitor.INSTANCE;
 		}
 		this.monitor = monitor;
+		return this;
+	}
+
+	/**
+	 * Get deltaFilterPattern
+	 * @return deltaFilterPattern
+	 */
+	public Pattern getDeltaFilterPattern() {
+		return deltaFilterPattern;
+	}
+
+	/**
+	 * Set the given delta filter regex pattern. Used only for Source Control.
+	 *
+	 * @param deltaFilterPattern
+	 *            the filter pattern
+	 * @return this instance
+	 */
+	public DiffCommand setDeltaFilterPattern(Pattern deltaFilterPattern) {
+		this.deltaFilterPattern = deltaFilterPattern;
 		return this;
 	}
 }

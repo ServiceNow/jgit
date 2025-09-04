@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.revwalk;
@@ -50,7 +17,8 @@ import java.util.Iterator;
 import java.util.List;
 
 /**
- * Multiple application level mark bits for {@link RevObject}s.
+ * Multiple application level mark bits for
+ * {@link org.eclipse.jgit.revwalk.RevObject}s.
  *
  * @see RevFlag
  */
@@ -59,9 +27,11 @@ public class RevFlagSet extends AbstractSet<RevFlag> {
 
 	private final List<RevFlag> active;
 
-	/** Create an empty set of flags. */
+	/**
+	 * Create an empty set of flags.
+	 */
 	public RevFlagSet() {
-		active = new ArrayList<RevFlag>();
+		active = new ArrayList<>();
 	}
 
 	/**
@@ -70,9 +40,9 @@ public class RevFlagSet extends AbstractSet<RevFlag> {
 	 * @param s
 	 *            the set to copy flags from.
 	 */
-	public RevFlagSet(final RevFlagSet s) {
+	public RevFlagSet(RevFlagSet s) {
 		mask = s.mask;
-		active = new ArrayList<RevFlag>(s.active);
+		active = new ArrayList<>(s.active);
 	}
 
 	/**
@@ -81,20 +51,22 @@ public class RevFlagSet extends AbstractSet<RevFlag> {
 	 * @param s
 	 *            the collection to copy flags from.
 	 */
-	public RevFlagSet(final Collection<RevFlag> s) {
+	public RevFlagSet(Collection<RevFlag> s) {
 		this();
 		addAll(s);
 	}
 
+	/** {@inheritDoc} */
 	@Override
-	public boolean contains(final Object o) {
+	public boolean contains(Object o) {
 		if (o instanceof RevFlag)
 			return (mask & ((RevFlag) o).mask) != 0;
 		return false;
 	}
 
+	/** {@inheritDoc} */
 	@Override
-	public boolean containsAll(final Collection<?> c) {
+	public boolean containsAll(Collection<?> c) {
 		if (c instanceof RevFlagSet) {
 			final int cMask = ((RevFlagSet) c).mask;
 			return (mask & cMask) == cMask;
@@ -102,8 +74,9 @@ public class RevFlagSet extends AbstractSet<RevFlag> {
 		return super.containsAll(c);
 	}
 
+	/** {@inheritDoc} */
 	@Override
-	public boolean add(final RevFlag flag) {
+	public boolean add(RevFlag flag) {
 		if ((mask & flag.mask) != 0)
 			return false;
 		mask |= flag.mask;
@@ -114,8 +87,9 @@ public class RevFlagSet extends AbstractSet<RevFlag> {
 		return true;
 	}
 
+	/** {@inheritDoc} */
 	@Override
-	public boolean remove(final Object o) {
+	public boolean remove(Object o) {
 		final RevFlag flag = (RevFlag) o;
 		if ((mask & flag.mask) == 0)
 			return false;
@@ -126,20 +100,24 @@ public class RevFlagSet extends AbstractSet<RevFlag> {
 		return true;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public Iterator<RevFlag> iterator() {
 		final Iterator<RevFlag> i = active.iterator();
-		return new Iterator<RevFlag>() {
+		return new Iterator<>() {
 			private RevFlag current;
 
+			@Override
 			public boolean hasNext() {
 				return i.hasNext();
 			}
 
+			@Override
 			public RevFlag next() {
 				return current = i.next();
 			}
 
+			@Override
 			public void remove() {
 				mask &= ~current.mask;
 				i.remove();
@@ -147,6 +125,7 @@ public class RevFlagSet extends AbstractSet<RevFlag> {
 		};
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public int size() {
 		return active.size();

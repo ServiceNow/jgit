@@ -1,46 +1,13 @@
 /*
  * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org>,
  * Copyright (C) 2010, Christian Halstrick <christian.halstrick@sap.com>
- * Copyright (C) 2014, Konrad Kügler
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2014, Konrad Kügler and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.revplot;
@@ -57,13 +24,13 @@ import org.eclipse.jgit.revwalk.RevCommitList;
 import org.eclipse.jgit.revwalk.RevWalk;
 
 /**
- * An ordered list of {@link PlotCommit} subclasses.
+ * An ordered list of {@link org.eclipse.jgit.revplot.PlotCommit} subclasses.
  * <p>
  * Commits are allocated into lanes as they enter the list, based upon their
  * connections between descendant (child) commits and ancestor (parent) commits.
  * <p>
- * The source of the list must be a {@link PlotWalk} and {@link #fillTo(int)}
- * must be used to populate the list.
+ * The source of the list must be a {@link org.eclipse.jgit.revplot.PlotWalk}
+ * and {@link #fillTo(int)} must be used to populate the list.
  *
  * @param <L>
  *            type of lane used by the application.
@@ -74,14 +41,15 @@ public class PlotCommitList<L extends PlotLane> extends
 
 	private int positionsAllocated;
 
-	private final TreeSet<Integer> freePositions = new TreeSet<Integer>();
+	private final TreeSet<Integer> freePositions = new TreeSet<>();
 
-	private final HashSet<PlotLane> activeLanes = new HashSet<PlotLane>(32);
+	private final HashSet<PlotLane> activeLanes = new HashSet<>(32);
 
 	/** number of (child) commits on a lane */
-	private final HashMap<PlotLane, Integer> laneLength = new HashMap<PlotLane, Integer>(
+	private final HashMap<PlotLane, Integer> laneLength = new HashMap<>(
 			32);
 
+	/** {@inheritDoc} */
 	@Override
 	public void clear() {
 		super.clear();
@@ -91,8 +59,9 @@ public class PlotCommitList<L extends PlotLane> extends
 		laneLength.clear();
 	}
 
+	/** {@inheritDoc} */
 	@Override
-	public void source(final RevWalk w) {
+	public void source(RevWalk w) {
 		if (!(w instanceof PlotWalk))
 			throw new ClassCastException(MessageFormat.format(JGitText.get().classCastNotA, PlotWalk.class.getName()));
 		super.source(w);
@@ -118,12 +87,14 @@ public class PlotCommitList<L extends PlotLane> extends
 	@SuppressWarnings("unchecked")
 	public void findPassingThrough(final PlotCommit<L> currCommit,
 			final Collection<L> result) {
-		for (final PlotLane p : currCommit.passingLanes)
+		for (PlotLane p : currCommit.passingLanes)
 			result.add((L) p);
 	}
 
+	/** {@inheritDoc} */
+	@SuppressWarnings("ReferenceEquality")
 	@Override
-	protected void enter(final int index, final PlotCommit<L> currCommit) {
+	protected void enter(int index, PlotCommit<L> currCommit) {
 		setupChildren(currCommit);
 
 		final int nChildren = currCommit.getChildCount();
@@ -138,7 +109,8 @@ public class PlotCommitList<L extends PlotLane> extends
 			final PlotCommit<L> c = currCommit.children[0];
 			currCommit.lane = c.lane;
 			Integer len = laneLength.get(currCommit.lane);
-			len = Integer.valueOf(len.intValue() + 1);
+			len = len != null ? Integer.valueOf(len.intValue() + 1)
+					: Integer.valueOf(0);
 			laneLength.put(currCommit.lane, len);
 		} else {
 			// More than one child, or our child is a merge.
@@ -199,7 +171,7 @@ public class PlotCommitList<L extends PlotLane> extends
 			closeLane(currCommit.lane);
 	}
 
-	private void continueActiveLanes(final PlotCommit currCommit) {
+	private void continueActiveLanes(PlotCommit currCommit) {
 		for (PlotLane lane : activeLanes)
 			if (lane != currCommit.lane)
 				currCommit.addPassingLane(lane);
@@ -217,6 +189,7 @@ public class PlotCommitList<L extends PlotLane> extends
 	 *            may be null if <code>currCommit</code> is the first commit on
 	 *            the lane
 	 */
+	@SuppressWarnings("ReferenceEquality")
 	private void handleBlockedLanes(final int index, final PlotCommit currCommit,
 			final PlotCommit childOnLane) {
 		for (PlotCommit child : currCommit.children) {
@@ -243,6 +216,7 @@ public class PlotCommitList<L extends PlotLane> extends
 	}
 
 	// Handles the case where currCommit is a non-first parent of the child
+	@SuppressWarnings("ReferenceEquality")
 	private PlotLane handleMerge(final int index, final PlotCommit currCommit,
 			final PlotCommit childOnLane, PlotCommit child, PlotLane laneToUse) {
 
@@ -316,6 +290,7 @@ public class PlotCommitList<L extends PlotLane> extends
 	 * @param child
 	 * @param laneToContinue
 	 */
+	@SuppressWarnings("ReferenceEquality")
 	private void drawLaneToChild(final int commitIndex, PlotCommit child,
 			PlotLane laneToContinue) {
 		for (int r = commitIndex - 1; r >= 0; r--) {
@@ -353,7 +328,7 @@ public class PlotCommitList<L extends PlotLane> extends
 		}
 	}
 
-	private void setupChildren(final PlotCommit<L> currCommit) {
+	private void setupChildren(PlotCommit<L> currCommit) {
 		final int nParents = currCommit.getParentCount();
 		for (int i = 0; i < nParents; i++)
 			((PlotCommit) currCommit.getParent(i)).addChild(currCommit);
@@ -387,15 +362,18 @@ public class PlotCommitList<L extends PlotLane> extends
 					return pos.intValue();
 				}
 			return positionsAllocated++;
-		} else {
-			final Integer min = freePositions.first();
-			freePositions.remove(min);
-			return min.intValue();
 		}
+		final Integer min = freePositions.first();
+		freePositions.remove(min);
+		return min.intValue();
 	}
 
 	/**
-	 * @return a new Lane appropriate for this particular PlotList.
+	 * Create a new {@link PlotLane} appropriate for this particular
+	 * {@link PlotCommitList}.
+	 *
+	 * @return a new {@link PlotLane} appropriate for this particular
+	 *         {@link PlotCommitList}.
 	 */
 	@SuppressWarnings("unchecked")
 	protected L createLane() {
@@ -407,8 +385,9 @@ public class PlotCommitList<L extends PlotLane> extends
 	 * is no longer needed.
 	 *
 	 * @param lane
+	 *            a lane
 	 */
-	protected void recycleLane(final L lane) {
+	protected void recycleLane(L lane) {
 		// Nothing.
 	}
 }

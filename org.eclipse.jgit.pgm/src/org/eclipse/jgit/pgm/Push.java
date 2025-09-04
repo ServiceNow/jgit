@@ -1,45 +1,12 @@
 /*
  * Copyright (C) 2010, Chris Aniszczyk <caniszczyk@gmail.com>
- * Copyright (C) 2008, Marek Zawirski <marek.zawirski@gmail.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, Marek Zawirski <marek.zawirski@gmail.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.pgm;
@@ -53,6 +20,7 @@ import java.util.List;
 
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.PushCommand;
+import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectReader;
@@ -77,10 +45,13 @@ class Push extends TextBuiltin {
 	private String remote = Constants.DEFAULT_REMOTE_NAME;
 
 	@Argument(index = 1, metaVar = "metaVar_refspec")
-	private final List<RefSpec> refSpecs = new ArrayList<RefSpec>();
+	private List<RefSpec> refSpecs = new ArrayList<>();
 
 	@Option(name = "--all")
 	private boolean all;
+
+	@Option(name = "--atomic")
+	private boolean atomic;
 
 	@Option(name = "--tags")
 	private boolean tags;
@@ -105,10 +76,14 @@ class Push extends TextBuiltin {
 	@Option(name = "--dry-run")
 	private boolean dryRun;
 
+	@Option(name = "--push-option", aliases = { "-t" })
+	private List<String> pushOptions = new ArrayList<>();
+
 	private boolean shownURI;
 
+	/** {@inheritDoc} */
 	@Override
-	protected void run() throws Exception {
+	protected void run() {
 		try (Git git = new Git(db)) {
 			PushCommand push = git.push();
 			push.setDryRun(dryRun);
@@ -116,19 +91,27 @@ class Push extends TextBuiltin {
 			push.setProgressMonitor(new TextProgressMonitor(errw));
 			push.setReceivePack(receivePack);
 			push.setRefSpecs(refSpecs);
-			if (all)
+			if (all) {
 				push.setPushAll();
-			if (tags)
+			}
+			if (tags) {
 				push.setPushTags();
+			}
 			push.setRemote(remote);
 			push.setThin(thin);
+			push.setAtomic(atomic);
 			push.setTimeout(timeout);
+			if (!pushOptions.isEmpty()) {
+				push.setPushOptions(pushOptions);
+			}
 			Iterable<PushResult> results = push.call();
 			for (PushResult result : results) {
 				try (ObjectReader reader = db.newObjectReader()) {
 					printPushResult(reader, result.getURI(), result);
 				}
 			}
+		} catch (GitAPIException | IOException e) {
+			throw die(e.getMessage(), e);
 		}
 	}
 
@@ -138,7 +121,7 @@ class Push extends TextBuiltin {
 		boolean everythingUpToDate = true;
 
 		// at first, print up-to-date ones...
-		for (final RemoteRefUpdate rru : result.getRemoteUpdates()) {
+		for (RemoteRefUpdate rru : result.getRemoteUpdates()) {
 			if (rru.getStatus() == Status.UP_TO_DATE) {
 				if (verbose)
 					printRefUpdateResult(reader, uri, result, rru);
@@ -146,13 +129,13 @@ class Push extends TextBuiltin {
 				everythingUpToDate = false;
 		}
 
-		for (final RemoteRefUpdate rru : result.getRemoteUpdates()) {
+		for (RemoteRefUpdate rru : result.getRemoteUpdates()) {
 			// ...then successful updates...
 			if (rru.getStatus() == Status.OK)
 				printRefUpdateResult(reader, uri, result, rru);
 		}
 
-		for (final RemoteRefUpdate rru : result.getRemoteUpdates()) {
+		for (RemoteRefUpdate rru : result.getRemoteUpdates()) {
 			// ...finally, others (problematic)
 			if (rru.getStatus() != Status.OK
 					&& rru.getStatus() != Status.UP_TO_DATE)
@@ -178,15 +161,15 @@ class Push extends TextBuiltin {
 		switch (rru.getStatus()) {
 		case OK:
 			if (rru.isDelete())
-				printUpdateLine('-', "[deleted]", null, remoteName, null);
+				printUpdateLine('-', "[deleted]", null, remoteName, null); //$NON-NLS-1$
 			else {
 				final Ref oldRef = result.getAdvertisedRef(remoteName);
 				if (oldRef == null) {
 					final String summary;
 					if (remoteName.startsWith(Constants.R_TAGS))
-						summary = "[new tag]";
+						summary = "[new tag]"; //$NON-NLS-1$
 					else
-						summary = "[new branch]";
+						summary = "[new branch]"; //$NON-NLS-1$
 					printUpdateLine('*', summary, srcRef, remoteName, null);
 				} else {
 					boolean fastForward = rru.isFastForward();
@@ -202,16 +185,16 @@ class Push extends TextBuiltin {
 			break;
 
 		case NON_EXISTING:
-			printUpdateLine('X', "[no match]", null, remoteName, null);
+			printUpdateLine('X', "[no match]", null, remoteName, null); //$NON-NLS-1$
 			break;
 
 		case REJECTED_NODELETE:
-			printUpdateLine('!', "[rejected]", null, remoteName,
+			printUpdateLine('!', "[rejected]", null, remoteName, //$NON-NLS-1$
 					CLIText.get().remoteSideDoesNotSupportDeletingRefs);
 			break;
 
 		case REJECTED_NONFASTFORWARD:
-			printUpdateLine('!', "[rejected]", srcRef, remoteName,
+			printUpdateLine('!', "[rejected]", srcRef, remoteName, //$NON-NLS-1$
 					CLIText.get().nonFastForward);
 			break;
 
@@ -219,22 +202,22 @@ class Push extends TextBuiltin {
 			final String message = MessageFormat.format(
 					CLIText.get().remoteRefObjectChangedIsNotExpectedOne,
 					safeAbbreviate(reader, rru.getExpectedOldObjectId()));
-			printUpdateLine('!', "[rejected]", srcRef, remoteName, message);
+			printUpdateLine('!', "[rejected]", srcRef, remoteName, message); //$NON-NLS-1$
 			break;
 
 		case REJECTED_OTHER_REASON:
-			printUpdateLine('!', "[remote rejected]", srcRef, remoteName, rru
+			printUpdateLine('!', "[remote rejected]", srcRef, remoteName, rru //$NON-NLS-1$
 					.getMessage());
 			break;
 
 		case UP_TO_DATE:
 			if (verbose)
-				printUpdateLine('=', "[up to date]", srcRef, remoteName, null);
+				printUpdateLine('=', "[up to date]", srcRef, remoteName, null); //$NON-NLS-1$
 			break;
 
 		case NOT_ATTEMPTED:
 		case AWAITING_REPORT:
-			printUpdateLine('?', "[unexpected push-process behavior]", srcRef,
+			printUpdateLine('?', "[unexpected push-process behavior]", srcRef, //$NON-NLS-1$
 					remoteName, rru.getMessage());
 			break;
 		}

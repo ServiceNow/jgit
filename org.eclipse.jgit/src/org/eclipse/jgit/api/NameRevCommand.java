@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2013, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2013, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.api;
@@ -57,7 +24,6 @@ import org.eclipse.jgit.lib.AnyObjectId;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.Ref;
-import org.eclipse.jgit.lib.RefDatabase;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.revwalk.FIFORevQueue;
 import org.eclipse.jgit.revwalk.RevCommit;
@@ -100,12 +66,13 @@ public class NameRevCommand extends GitCommand<Map<ObjectId, String>> {
 		public String toString() {
 			StringBuilder sb = new StringBuilder(getClass().getSimpleName())
 				.append('[');
-			if (tip != null)
+			if (tip != null) {
 				sb.append(format());
-			else
+			} else {
 				sb.append((Object) null);
+			}
 			sb.append(',').append(cost).append(']').append(' ')
-				.append(super.toString()).toString();
+					.append(super.toString());
 			return sb.toString();
 		}
 	}
@@ -120,12 +87,13 @@ public class NameRevCommand extends GitCommand<Map<ObjectId, String>> {
 	 * Create a new name-rev command.
 	 *
 	 * @param repo
+	 *            the {@link org.eclipse.jgit.lib.Repository}
 	 */
 	protected NameRevCommand(Repository repo) {
 		super(repo);
 		mergeCost = MERGE_COST;
-		prefixes = new ArrayList<String>(2);
-		revs = new ArrayList<ObjectId>(2);
+		prefixes = new ArrayList<>(2);
+		revs = new ArrayList<>(2);
 		walk = new RevWalk(repo) {
 			@Override
 			public NameRevCommit createCommit(AnyObjectId id) {
@@ -134,10 +102,11 @@ public class NameRevCommand extends GitCommand<Map<ObjectId, String>> {
 		};
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public Map<ObjectId, String> call() throws GitAPIException {
 		try {
-			Map<ObjectId, String> nonCommits = new HashMap<ObjectId, String>();
+			Map<ObjectId, String> nonCommits = new HashMap<>();
 			FIFORevQueue pending = new FIFORevQueue();
 			if (refs != null) {
 				for (Ref ref : refs)
@@ -170,7 +139,7 @@ public class NameRevCommand extends GitCommand<Map<ObjectId, String>> {
 			}
 
 			Map<ObjectId, String> result =
-				new LinkedHashMap<ObjectId, String>(revs.size());
+				new LinkedHashMap<>(revs.size());
 			for (ObjectId id : revs) {
 				RevObject o = walk.parseAny(id);
 				if (o instanceof NameRevCommit) {
@@ -199,13 +168,13 @@ public class NameRevCommand extends GitCommand<Map<ObjectId, String>> {
 	 * @param id
 	 *            object ID to add.
 	 * @return {@code this}
-	 * @throws MissingObjectException
+	 * @throws org.eclipse.jgit.errors.MissingObjectException
 	 *             the object supplied is not available from the object
 	 *             database.
-	 * @throws JGitInternalException
+	 * @throws org.eclipse.jgit.api.errors.JGitInternalException
 	 *             a low-level exception of JGit has occurred. The original
 	 *             exception can be retrieved by calling
-	 *             {@link Exception#getCause()}.
+	 *             {@link java.lang.Exception#getCause()}.
 	 */
 	public NameRevCommand add(ObjectId id) throws MissingObjectException,
 			JGitInternalException {
@@ -227,13 +196,13 @@ public class NameRevCommand extends GitCommand<Map<ObjectId, String>> {
 	 * @param ids
 	 *            object IDs to add.
 	 * @return {@code this}
-	 * @throws MissingObjectException
+	 * @throws org.eclipse.jgit.errors.MissingObjectException
 	 *             the object supplied is not available from the object
 	 *             database.
-	 * @throws JGitInternalException
+	 * @throws org.eclipse.jgit.api.errors.JGitInternalException
 	 *             a low-level exception of JGit has occurred. The original
 	 *             exception can be retrieved by calling
-	 *             {@link Exception#getCause()}.
+	 *             {@link java.lang.Exception#getCause()}.
 	 */
 	public NameRevCommand add(Iterable<ObjectId> ids)
 			throws MissingObjectException, JGitInternalException {
@@ -250,7 +219,7 @@ public class NameRevCommand extends GitCommand<Map<ObjectId, String>> {
 	 * prefix added by {@link #addPrefix(String)}.
 	 *
 	 * @param prefix
-	 *            prefix to add; see {@link RefDatabase#getRefs(String)}
+	 *            prefix to add; the prefix must end with a slash
 	 * @return {@code this}
 	 */
 	public NameRevCommand addPrefix(String prefix) {
@@ -260,8 +229,8 @@ public class NameRevCommand extends GitCommand<Map<ObjectId, String>> {
 	}
 
 	/**
-	 * Add all annotated tags under {@code refs/tags/} to the set that all results
-	 * must match.
+	 * Add all annotated tags under {@code refs/tags/} to the set that all
+	 * results must match.
 	 * <p>
 	 * Calls {@link #addRef(Ref)}; see that method for a note on matching
 	 * priority.
@@ -270,14 +239,15 @@ public class NameRevCommand extends GitCommand<Map<ObjectId, String>> {
 	 * @throws JGitInternalException
 	 *             a low-level exception of JGit has occurred. The original
 	 *             exception can be retrieved by calling
-	 *             {@link Exception#getCause()}.
+	 *             {@link java.lang.Exception#getCause()}.
 	 */
 	public NameRevCommand addAnnotatedTags() {
 		checkCallable();
 		if (refs == null)
-			refs = new ArrayList<Ref>();
+			refs = new ArrayList<>();
 		try {
-			for (Ref ref : repo.getRefDatabase().getRefs(Constants.R_TAGS).values()) {
+			for (Ref ref : repo.getRefDatabase()
+					.getRefsByPrefix(Constants.R_TAGS)) {
 				ObjectId id = ref.getObjectId();
 				if (id != null && (walk.parseAny(id) instanceof RevTag))
 					addRef(ref);
@@ -302,7 +272,7 @@ public class NameRevCommand extends GitCommand<Map<ObjectId, String>> {
 	public NameRevCommand addRef(Ref ref) {
 		checkCallable();
 		if (refs == null)
-			refs = new ArrayList<Ref>();
+			refs = new ArrayList<>();
 		refs.add(ref);
 		return this;
 	}
@@ -323,7 +293,7 @@ public class NameRevCommand extends GitCommand<Map<ObjectId, String>> {
 
 	private void addPrefix(String prefix, Map<ObjectId, String> nonCommits,
 			FIFORevQueue pending) throws IOException {
-		for (Ref ref : repo.getRefDatabase().getRefs(prefix).values())
+		for (Ref ref : repo.getRefDatabase().getRefsByPrefix(prefix))
 			addRef(ref, nonCommits, pending);
 	}
 

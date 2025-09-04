@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2012, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2012, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.lib;
@@ -46,6 +13,8 @@ package org.eclipse.jgit.lib;
 import java.util.Iterator;
 
 import org.eclipse.jgit.internal.storage.file.PackBitmapIndex;
+
+import com.googlecode.javaewah.EWAHCompressedBitmap;
 
 /**
  * A compressed bitmap representation of the entire object graph.
@@ -63,7 +32,11 @@ public interface BitmapIndex {
 	 */
 	Bitmap getBitmap(AnyObjectId objectId);
 
-	/** @return a new {@code BitmapBuilder} based on the values in the index. */
+	/**
+	 * Create a new {@code BitmapBuilder} based on the values in the index.
+	 *
+	 * @return a new {@code BitmapBuilder} based on the values in the index.
+	 */
 	BitmapBuilder newBitmapBuilder();
 
 	/**
@@ -108,7 +81,16 @@ public interface BitmapIndex {
 		 *
 		 * @return an Iterator.
 		 */
+		@Override
 		Iterator<BitmapObject> iterator();
+
+		/**
+		 * Returns the corresponding raw compressed EWAH bitmap of the bitmap.
+		 *
+		 * @return the corresponding {@code EWAHCompressedBitmap}
+		 * @since 5.8
+		 */
+		EWAHCompressedBitmap retrieveCompressed();
 	}
 
 	/**
@@ -116,19 +98,6 @@ public interface BitmapIndex {
 	 * return a reference to the current builder.
 	 */
 	public interface BitmapBuilder extends Bitmap {
-		/**
-		 * Adds the id and the existing bitmap for the id, if one exists, to the
-		 * bitmap.
-		 *
-		 * @param objectId
-		 *            the object ID
-		 * @param type
-		 *            the Git object type. See {@link Constants}.
-		 * @return true if the value was not contained or able to be loaded.
-		 * @deprecated use {@link #or} or {@link #addObject} instead.
-		 */
-		@Deprecated
-		boolean add(AnyObjectId objectId, int type);
 
 		/**
 		 * Whether the bitmap has the id set.
@@ -166,6 +135,7 @@ public interface BitmapIndex {
 		 *            the other bitmap
 		 * @return the current builder.
 		 */
+		@Override
 		BitmapBuilder or(Bitmap other);
 
 		/**
@@ -176,6 +146,7 @@ public interface BitmapIndex {
 		 *            the other bitmap
 		 * @return the current builder.
 		 */
+		@Override
 		BitmapBuilder andNot(Bitmap other);
 
 		/**
@@ -185,6 +156,7 @@ public interface BitmapIndex {
 		 *            the other bitmap
 		 * @return the current builder.
 		 */
+		@Override
 		BitmapBuilder xor(Bitmap other);
 
 		/** @return the fully built immutable bitmap */

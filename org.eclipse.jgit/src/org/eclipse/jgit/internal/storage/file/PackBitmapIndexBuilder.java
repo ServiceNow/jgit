@@ -1,70 +1,36 @@
 /*
- * Copyright (C) 2012, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2012, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.internal.storage.file;
 
 import java.text.MessageFormat;
+import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
-import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.List;
-import java.util.NoSuchElementException;
-
-import com.googlecode.javaewah.EWAHCompressedBitmap;
 
 import org.eclipse.jgit.internal.JGitText;
-import org.eclipse.jgit.internal.storage.file.BitmapIndexImpl.CompressedBitmap;
+import org.eclipse.jgit.internal.storage.pack.BitmapCommit;
 import org.eclipse.jgit.internal.storage.pack.ObjectToPack;
 import org.eclipse.jgit.lib.AnyObjectId;
 import org.eclipse.jgit.lib.BitmapIndex.Bitmap;
-import org.eclipse.jgit.lib.BitmapIndex.BitmapBuilder;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectIdOwnerMap;
 import org.eclipse.jgit.util.BlockList;
 
+import com.googlecode.javaewah.EWAHCompressedBitmap;
+
 /**
- * Helper for constructing {@link PackBitmapIndex}es.
+ * Helper for constructing
+ * {@link org.eclipse.jgit.internal.storage.file.PackBitmapIndex}es.
  */
 public class PackBitmapIndexBuilder extends BasePackBitmapIndex {
 	private static final int MAX_XOR_OFFSET_SEARCH = 10;
@@ -74,10 +40,14 @@ public class PackBitmapIndexBuilder extends BasePackBitmapIndex {
 	private final EWAHCompressedBitmap blobs;
 	private final EWAHCompressedBitmap tags;
 	private final BlockList<PositionEntry> byOffset;
-	final BlockList<StoredBitmap>
-			byAddOrder = new BlockList<StoredBitmap>();
+
+	private final LinkedList<StoredBitmap>
+			bitmapsToWriteXorBuffer = new LinkedList<>();
+
+	private List<StoredEntry> bitmapsToWrite = new ArrayList<>();
+
 	final ObjectIdOwnerMap<PositionEntry>
-			positionEntries = new ObjectIdOwnerMap<PositionEntry>();
+			positionEntries = new ObjectIdOwnerMap<>();
 
 	/**
 	 * Creates a PackBitmapIndex used for building the contents of an index
@@ -132,11 +102,8 @@ public class PackBitmapIndexBuilder extends BasePackBitmapIndex {
 		for (int i = 0; i < entries.size(); i++) {
 			positionEntries.add(new PositionEntry(entries.get(i), i));
 		}
-		Collections.sort(entries, new Comparator<ObjectToPack>() {
-			public int compare(ObjectToPack a, ObjectToPack b) {
-				return Long.signum(a.getOffset() - b.getOffset());
-			}
-		});
+		Collections.sort(entries, (ObjectToPack a, ObjectToPack b) -> Long
+				.signum(a.getOffset() - b.getOffset()));
 		for (int i = 0; i < entries.size(); i++) {
 			PositionEntry e = positionEntries.get(entries.get(i));
 			e.offsetPosition = i;
@@ -144,7 +111,11 @@ public class PackBitmapIndexBuilder extends BasePackBitmapIndex {
 		}
 	}
 
-	/** @return set of objects included in the pack. */
+	/**
+	 * Get set of objects included in the pack.
+	 *
+	 * @return set of objects included in the pack.
+	 */
 	public ObjectIdOwnerMap<ObjectIdOwnerMap.Entry> getObjectSet() {
 		ObjectIdOwnerMap<ObjectIdOwnerMap.Entry> r = new ObjectIdOwnerMap<>();
 		for (PositionEntry e : byOffset) {
@@ -166,16 +137,64 @@ public class PackBitmapIndexBuilder extends BasePackBitmapIndex {
 	 *            the flags to be stored with the bitmap
 	 */
 	public void addBitmap(AnyObjectId objectId, Bitmap bitmap, int flags) {
-		if (bitmap instanceof BitmapBuilder)
-			bitmap = ((BitmapBuilder) bitmap).build();
+		addBitmap(objectId, bitmap.retrieveCompressed(), flags);
+	}
 
-		EWAHCompressedBitmap compressed;
-		if (bitmap instanceof CompressedBitmap)
-			compressed = ((CompressedBitmap) bitmap).getEwahCompressedBitmap();
-		else
-			throw new IllegalArgumentException(bitmap.getClass().toString());
+	/**
+	 * Processes a commit and prepares its bitmap to write to the bitmap index
+	 * file.
+	 *
+	 * @param c
+	 *            the commit corresponds to the bitmap.
+	 * @param bitmap
+	 *            the bitmap to be written.
+	 * @param flags
+	 *            the flags of the commit.
+	 */
+	public void processBitmapForWrite(BitmapCommit c, Bitmap bitmap,
+			int flags) {
+		EWAHCompressedBitmap compressed = bitmap.retrieveCompressed();
+		compressed.trim();
+		StoredBitmap newest = new StoredBitmap(c, compressed, null, flags);
 
-		addBitmap(objectId, compressed, flags);
+		bitmapsToWriteXorBuffer.add(newest);
+		if (bitmapsToWriteXorBuffer.size() > MAX_XOR_OFFSET_SEARCH) {
+			bitmapsToWrite.add(
+					generateStoredEntry(bitmapsToWriteXorBuffer.pollFirst()));
+		}
+
+		if (c.isAddToIndex()) {
+			// The Bitmap map in the base class is used to make revwalks
+			// efficient, so only add bitmaps that keep it efficient without
+			// bloating memory.
+			addBitmap(c, bitmap, flags);
+		}
+	}
+
+	private StoredEntry generateStoredEntry(StoredBitmap bitmapToWrite) {
+		int bestXorOffset = 0;
+		EWAHCompressedBitmap bestBitmap = bitmapToWrite.getBitmap();
+
+		int offset = 1;
+		for (StoredBitmap curr : bitmapsToWriteXorBuffer) {
+			EWAHCompressedBitmap bitmap = curr.getBitmap()
+					.xor(bitmapToWrite.getBitmap());
+			if (bitmap.sizeInBytes() < bestBitmap.sizeInBytes()) {
+				bestBitmap = bitmap;
+				bestXorOffset = offset;
+			}
+			offset++;
+		}
+
+		PositionEntry entry = positionEntries.get(bitmapToWrite);
+		if (entry == null) {
+			throw new IllegalStateException();
+		}
+		bestBitmap.trim();
+		StoredEntry result = new StoredEntry(entry.namePosition, bestBitmap,
+				bestXorOffset, bitmapToWrite.getFlags());
+
+		return result;
 	}
 
 	/**
@@ -193,9 +212,9 @@ public class PackBitmapIndexBuilder extends BasePackBitmapIndex {
 		bitmap.trim();
 		StoredBitmap result = new StoredBitmap(objectId, bitmap, null, flags);
 		getBitmaps().add(result);
-		byAddOrder.add(result);
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public EWAHCompressedBitmap ofObjectType(
 			EWAHCompressedBitmap bitmap, int type) {
@@ -212,6 +231,7 @@ public class PackBitmapIndexBuilder extends BasePackBitmapIndex {
 		throw new IllegalArgumentException();
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public int findPosition(AnyObjectId objectId) {
 		PositionEntry entry = positionEntries.get(objectId);
@@ -220,6 +240,7 @@ public class PackBitmapIndexBuilder extends BasePackBitmapIndex {
 		return entry.offsetPosition;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public ObjectId getObject(int position) throws IllegalArgumentException {
 		ObjectId objectId = byOffset.get(position);
@@ -228,99 +249,87 @@ public class PackBitmapIndexBuilder extends BasePackBitmapIndex {
 		return objectId;
 	}
 
-	/** @return the commit object bitmap. */
+	/**
+	 * Get the commit object bitmap.
+	 *
+	 * @return the commit object bitmap.
+	 */
 	public EWAHCompressedBitmap getCommits() {
 		return commits;
 	}
 
-	/** @return the tree object bitmap. */
+	/**
+	 * Get the tree object bitmap.
+	 *
+	 * @return the tree object bitmap.
+	 */
 	public EWAHCompressedBitmap getTrees() {
 		return trees;
 	}
 
-	/** @return the blob object bitmap. */
+	/**
+	 * Get the blob object bitmap.
+	 *
+	 * @return the blob object bitmap.
+	 */
 	public EWAHCompressedBitmap getBlobs() {
 		return blobs;
 	}
 
-	/** @return the tag object bitmap. */
+	/**
+	 * Get the tag object bitmap.
+	 *
+	 * @return the tag object bitmap.
+	 */
 	public EWAHCompressedBitmap getTags() {
 		return tags;
 	}
 
-	/** @return the index storage options. */
+	/**
+	 * Get the index storage options.
+	 *
+	 * @return the index storage options.
+	 */
 	public int getOptions() {
 		return PackBitmapIndexV1.OPT_FULL;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public int getBitmapCount() {
-		return getBitmaps().size();
+		return bitmapsToWriteXorBuffer.size() + bitmapsToWrite.size();
 	}
 
-	/** Removes all the bitmaps entries added. */
-	public void clearBitmaps() {
-		byAddOrder.clear();
+	/**
+	 * Remove all the bitmaps entries added.
+	 *
+	 * @param size
+	 *            the expected number of bitmap entries to be written.
+	 */
+	public void resetBitmaps(int size) {
 		getBitmaps().clear();
+		bitmapsToWrite = new ArrayList<>(size);
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public int getObjectCount() {
 		return byOffset.size();
 	}
 
-	/** @return an iterator over the xor compressed entries. */
-	public Iterable<StoredEntry> getCompressedBitmaps() {
-		// Add order is from oldest to newest. The reverse add order is the
-		// output order.
-		return new Iterable<StoredEntry>() {
-			public Iterator<StoredEntry> iterator() {
-				return new Iterator<StoredEntry>() {
-					private int index = byAddOrder.size() - 1;
+	/**
+	 * Get list of xor compressed entries that need to be written.
+	 *
+	 * @return a list of the xor compressed entries.
+	 */
+	public List<StoredEntry> getCompressedBitmaps() {
+		while (!bitmapsToWriteXorBuffer.isEmpty()) {
+			bitmapsToWrite.add(
+					generateStoredEntry(bitmapsToWriteXorBuffer.pollFirst()));
+		}
 
-					public boolean hasNext() {
-						return index >= 0;
-					}
-
-					public StoredEntry next() {
-						if (!hasNext())
-							throw new NoSuchElementException();
-						StoredBitmap item = byAddOrder.get(index);
-						int bestXorOffset = 0;
-						EWAHCompressedBitmap bestBitmap = item.getBitmap();
-
-						// Attempt to compress the bitmap with an XOR of the
-						// previously written entries.
-						for (int i = 1; i <= MAX_XOR_OFFSET_SEARCH; i++) {
-							int curr = i + index;
-							if (curr >= byAddOrder.size())
-								break;
-
-							StoredBitmap other = byAddOrder.get(curr);
-							EWAHCompressedBitmap bitmap = other.getBitmap()
-									.xor(item.getBitmap());
-
-							if (bitmap.sizeInBytes()
-									< bestBitmap.sizeInBytes()) {
-								bestBitmap = bitmap;
-								bestXorOffset = i;
-							}
-						}
-						index--;
-
-						PositionEntry entry = positionEntries.get(item);
-						if (entry == null)
-							throw new IllegalStateException();
-						return new StoredEntry(entry.namePosition, bestBitmap,
-								bestXorOffset, item.getFlags());
-					}
-
-					public void remove() {
-						throw new UnsupportedOperationException();
-					}
-				};
-			}
-		};
+		Collections.reverse(bitmapsToWrite);
+		return bitmapsToWrite;
 	}
 
 	/** Data object for the on disk representation of a bitmap entry. */

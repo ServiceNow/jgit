@@ -1,59 +1,26 @@
 /*
- * Copyright (C) 2012, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2012, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.http.server;
 
-import static org.eclipse.jgit.http.server.ServletUtils.isChunked;
-
 import javax.servlet.http.HttpServletRequest;
 
-/** Parses Git client User-Agent strings. */
+/**
+ * Parses Git client User-Agent strings.
+ */
 public class ClientVersionUtil {
-	private static final int[] v1_7_5 = { 1, 7, 5 };
-	private static final int[] v1_7_8_6 = { 1, 7, 8, 6 };
-	private static final int[] v1_7_9 = { 1, 7, 9 };
-
-	/** @return maximum version array, indicating an invalid version of Git. */
+	/**
+	 * An invalid version of Git
+	 *
+	 * @return maximum version array, indicating an invalid version of Git.
+	 */
 	public static int[] invalidVersion() {
 		return new int[] { Integer.MAX_VALUE };
 	}
@@ -168,17 +135,11 @@ public class ClientVersionUtil {
 	 * @param version
 	 *            parsed version of the Git client software.
 	 * @return true if the bug is present.
+	 * @deprecated no widely used Git versions need this any more
 	 */
+	@Deprecated
 	public static boolean hasPushStatusBug(int[] version) {
-		int cmp = compare(version, v1_7_8_6);
-		if (cmp < 0)
-			return true; // Everything before 1.7.8.6 is known broken.
-		else if (cmp == 0)
-			return false; // 1.7.8.6 contained the bug fix.
-
-		if (compare(version, v1_7_9) <= 0)
-			return true; // 1.7.9 shipped before 1.7.8.6 and has the bug.
-		return false; // 1.7.9.1 and later are fixed.
+		return false;
 	}
 
 	/**
@@ -192,10 +153,12 @@ public class ClientVersionUtil {
 	 * @param request
 	 *            incoming HTTP request.
 	 * @return true if the client has the chunked encoding bug.
+	 * @deprecated no widely used Git versions need this any more
 	 */
+	@Deprecated
 	public static boolean hasChunkedEncodingRequestBug(
 			int[] version, HttpServletRequest request) {
-		return compare(version, v1_7_5) == 0 && isChunked(request);
+		return false;
 	}
 
 	private ClientVersionUtil() {

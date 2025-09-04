@@ -1,48 +1,16 @@
 /*
- * Copyright (C) 2015, Christian Halstrick <christian.halstrick@sap.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2015, Christian Halstrick <christian.halstrick@sap.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.util;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.Assert.assertEquals;
 
 import java.io.ByteArrayInputStream;
@@ -75,10 +43,10 @@ public class RunExternalScriptTest {
 		File script = writeTempFile("cat -");
 		int rc = FS.DETECTED.runProcess(
 				new ProcessBuilder("sh", script.getPath()), out, err,
-				new ByteArrayInputStream(inputStr.getBytes()));
+				new ByteArrayInputStream(inputStr.getBytes(UTF_8)));
 		assertEquals(0, rc);
-		assertEquals(inputStr, new String(out.toByteArray()));
-		assertEquals("", new String(err.toByteArray()));
+		assertEquals(inputStr, new String(out.toByteArray(), UTF_8));
+		assertEquals("", new String(err.toByteArray(), UTF_8));
 	}
 
 	@Test
@@ -88,8 +56,8 @@ public class RunExternalScriptTest {
 				new ProcessBuilder("sh", script.getPath()), out, err,
 				(InputStream) null);
 		assertEquals(0, rc);
-		assertEquals("", new String(out.toByteArray()));
-		assertEquals("", new String(err.toByteArray()));
+		assertEquals("", new String(out.toByteArray(), UTF_8));
+		assertEquals("", new String(err.toByteArray(), UTF_8));
 	}
 
 	@Test
@@ -99,8 +67,8 @@ public class RunExternalScriptTest {
 				new ProcessBuilder("sh",
 				script.getPath(), "a", "b", "c"), out, err, (InputStream) null);
 		assertEquals(0, rc);
-		assertEquals("3,a,b,c,,,\n", new String(out.toByteArray()));
-		assertEquals("", new String(err.toByteArray()));
+		assertEquals("3,a,b,c,,,\n", new String(out.toByteArray(), UTF_8));
+		assertEquals("", new String(err.toByteArray(), UTF_8));
 	}
 
 	@Test
@@ -110,8 +78,8 @@ public class RunExternalScriptTest {
 				new ProcessBuilder("sh", script.getPath(), "a", "b", "c"),
 				out, err, (InputStream) null);
 		assertEquals(3, rc);
-		assertEquals("", new String(out.toByteArray()));
-		assertEquals("", new String(err.toByteArray()));
+		assertEquals("", new String(out.toByteArray(), UTF_8));
+		assertEquals("", new String(err.toByteArray(), UTF_8));
 	}
 
 	@Test
@@ -121,8 +89,8 @@ public class RunExternalScriptTest {
 				new ProcessBuilder("sh", script.getPath()), null, err,
 				(InputStream) null);
 		assertEquals(0, rc);
-		assertEquals("", new String(out.toByteArray()));
-		assertEquals("", new String(err.toByteArray()));
+		assertEquals("", new String(out.toByteArray(), UTF_8));
+		assertEquals("", new String(err.toByteArray(), UTF_8));
 	}
 
 	@Test
@@ -132,8 +100,8 @@ public class RunExternalScriptTest {
 				new ProcessBuilder("sh", script.getPath()), null, err,
 				(InputStream) null);
 		assertEquals(0, rc);
-		assertEquals("", new String(out.toByteArray()));
-		assertEquals("hi" + LF, new String(err.toByteArray()));
+		assertEquals("", new String(out.toByteArray(), UTF_8));
+		assertEquals("hi" + LF, new String(err.toByteArray(), UTF_8));
 	}
 
 	@Test
@@ -142,10 +110,10 @@ public class RunExternalScriptTest {
 		File script = writeTempFile("echo $#,$1,$2,$3,$4,$5,$6 >&2 ; cat -; exit 5");
 		int rc = FS.DETECTED.runProcess(
 				new ProcessBuilder("sh", script.getPath(), "a", "b", "c"),
-				out, err, new ByteArrayInputStream(inputStr.getBytes()));
+				out, err, new ByteArrayInputStream(inputStr.getBytes(UTF_8)));
 		assertEquals(5, rc);
-		assertEquals(inputStr, new String(out.toByteArray()));
-		assertEquals("3,a,b,c,,," + LF, new String(err.toByteArray()));
+		assertEquals(inputStr, new String(out.toByteArray(), UTF_8));
+		assertEquals("3,a,b,c,,," + LF, new String(err.toByteArray(), UTF_8));
 	}
 
 	@Test(expected = IOException.class)
@@ -172,10 +140,11 @@ public class RunExternalScriptTest {
 		File script = writeTempFile("cat -");
 		ProcessBuilder pb = new ProcessBuilder("sh", script.getPath());
 		ExecutionResult res = FS.DETECTED.execute(pb,
-				new ByteArrayInputStream(inputStr.getBytes()));
+				new ByteArrayInputStream(inputStr.getBytes(UTF_8)));
 		assertEquals(0, res.getRc());
-		assertEquals(inputStr, new String(res.getStdout().toByteArray()));
-		assertEquals("", new String(res.getStderr().toByteArray()));
+		assertEquals(inputStr,
+				new String(res.getStdout().toByteArray(), UTF_8));
+		assertEquals("", new String(res.getStderr().toByteArray(), UTF_8));
 	}
 
 	@Test
@@ -184,8 +153,9 @@ public class RunExternalScriptTest {
 		ProcessBuilder pb = new ProcessBuilder("sh", script.getPath());
 		ExecutionResult res = FS.DETECTED.execute(pb, null);
 		assertEquals(0, res.getRc());
-		assertEquals("", new String(res.getStdout().toByteArray()));
-		assertEquals("hi" + LF, new String(res.getStderr().toByteArray()));
+		assertEquals("", new String(res.getStdout().toByteArray(), UTF_8));
+		assertEquals("hi" + LF,
+				new String(res.getStderr().toByteArray(), UTF_8));
 	}
 
 	@Test
@@ -197,11 +167,12 @@ public class RunExternalScriptTest {
 		ProcessBuilder pb = new ProcessBuilder("sh", script.getPath(), "a",
 				"b", "c");
 		ExecutionResult res = FS.DETECTED.execute(pb,
-				new ByteArrayInputStream(inputStr.getBytes()));
+				new ByteArrayInputStream(inputStr.getBytes(UTF_8)));
 		assertEquals(5, res.getRc());
-		assertEquals(inputStr, new String(res.getStdout().toByteArray()));
+		assertEquals(inputStr,
+				new String(res.getStdout().toByteArray(), UTF_8));
 		assertEquals("3,a,b,c,,," + LF,
-				new String(res.getStderr().toByteArray()));
+				new String(res.getStderr().toByteArray(), UTF_8));
 	}
 
 	private File writeTempFile(String body) throws IOException {

@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2009, Christian Halstrick <christian.halstrick@sap.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2009, Christian Halstrick <christian.halstrick@sap.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.merge;
@@ -51,14 +18,14 @@ import org.eclipse.jgit.merge.MergeChunk.ConflictState;
 import org.eclipse.jgit.util.IntList;
 
 /**
- * The result of merging a number of {@link Sequence} objects. These sequences
- * have one common predecessor sequence. The result of a merge is a list of
- * MergeChunks. Each MergeChunk contains either a range (a subsequence) from
- * one of the merged sequences, a range from the common predecessor or a
- * conflicting range from one of the merged sequences. A conflict will be
- * reported as multiple chunks, one for each conflicting range. The first chunk
- * for a conflict is marked specially to distinguish the border between two
- * consecutive conflicts.
+ * The result of merging a number of {@link org.eclipse.jgit.diff.Sequence}
+ * objects. These sequences have one common predecessor sequence. The result of
+ * a merge is a list of MergeChunks. Each MergeChunk contains either a range (a
+ * subsequence) from one of the merged sequences, a range from the common
+ * predecessor or a conflicting range from one of the merged sequences. A
+ * conflict will be reported as multiple chunks, one for each conflicting range.
+ * The first chunk for a conflict is marked specially to distinguish the border
+ * between two consecutive conflicts.
  * <p>
  * This class does not know anything about how to present the merge result to
  * the end-user. MergeFormatters have to be used to construct something human
@@ -80,7 +47,8 @@ public class MergeResult<S extends Sequence> implements Iterable<MergeChunk> {
 	 * @param sequences
 	 *            contains the common predecessor sequence at position 0
 	 *            followed by the merged sequences. This list should not be
-	 *            modified anymore during the lifetime of this {@link MergeResult}.
+	 *            modified anymore during the lifetime of this
+	 *            {@link org.eclipse.jgit.merge.MergeResult}.
 	 */
 	public MergeResult(List<S> sequences) {
 		this.sequences = sequences;
@@ -118,7 +86,7 @@ public class MergeResult<S extends Sequence> implements Iterable<MergeChunk> {
 
 	/**
 	 * Returns the common predecessor sequence and the merged sequence in one
-	 * list. The common predecessor is is the first element in the list
+	 * list. The common predecessor is the first element in the list
 	 *
 	 * @return the common predecessor at position 0 followed by the merged
 	 *         sequences.
@@ -129,18 +97,18 @@ public class MergeResult<S extends Sequence> implements Iterable<MergeChunk> {
 
 	static final ConflictState[] states = ConflictState.values();
 
-	/**
-	 * @return an iterator over the MergeChunks. The iterator does not support
-	 * the remove operation
-	 */
+	/** {@inheritDoc} */
+	@Override
 	public Iterator<MergeChunk> iterator() {
-		return new Iterator<MergeChunk>() {
+		return new Iterator<>() {
 			int idx;
 
+			@Override
 			public boolean hasNext() {
 				return (idx < chunks.size());
 			}
 
+			@Override
 			public MergeChunk next() {
 				ConflictState state = states[chunks.get(idx++)];
 				int srcIdx = chunks.get(idx++);
@@ -149,6 +117,7 @@ public class MergeResult<S extends Sequence> implements Iterable<MergeChunk> {
 				return new MergeChunk(srcIdx, begin, end, state);
 			}
 
+			@Override
 			public void remove() {
 				throw new UnsupportedOperationException();
 			}
@@ -156,6 +125,8 @@ public class MergeResult<S extends Sequence> implements Iterable<MergeChunk> {
 	}
 
 	/**
+	 * Whether this merge result contains conflicts
+	 *
 	 * @return true if this merge result contains conflicts
 	 */
 	public boolean containsConflicts() {
@@ -169,6 +140,8 @@ public class MergeResult<S extends Sequence> implements Iterable<MergeChunk> {
 	 * markers!) as new conflict-free content
 	 *
 	 * @param containsConflicts
+	 *            whether this merge should be seen as containing a conflict or
+	 *            not.
 	 * @since 3.5
 	 */
 	protected void setContainsConflicts(boolean containsConflicts) {

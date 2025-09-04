@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2011, Chris Aniszczyk <caniszczyk@gmail.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2011, Chris Aniszczyk <caniszczyk@gmail.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 package org.eclipse.jgit.api;
 
@@ -75,26 +42,31 @@ public class AddNoteCommand extends GitCommand<Note> {
 	private String notesRef = Constants.R_NOTES_COMMITS;
 
 	/**
+	 * Constructor for AddNoteCommand
+	 *
 	 * @param repo
+	 *            the {@link org.eclipse.jgit.lib.Repository}
 	 */
 	protected AddNoteCommand(Repository repo) {
 		super(repo);
 	}
 
+	/** {@inheritDoc} */
+	@Override
 	public Note call() throws GitAPIException {
 		checkCallable();
 		NoteMap map = NoteMap.newEmptyMap();
 		RevCommit notesCommit = null;
 		try (RevWalk walk = new RevWalk(repo);
 				ObjectInserter inserter = repo.newObjectInserter()) {
-			Ref ref = repo.getRef(notesRef);
+			Ref ref = repo.findRef(notesRef);
 			// if we have a notes ref, use it
 			if (ref != null) {
 				notesCommit = walk.parseCommit(ref.getObjectId());
 				map = NoteMap.read(walk.getObjectReader(), notesCommit);
 			}
 			map.set(id, message, inserter);
-			commitNoteMap(walk, map, notesCommit, inserter,
+			commitNoteMap(repo, notesRef, walk, map, notesCommit, inserter,
 					"Notes added by 'git notes add'"); //$NON-NLS-1$
 			return map.getNote(id);
 		} catch (IOException e) {
@@ -107,6 +79,7 @@ public class AddNoteCommand extends GitCommand<Note> {
 	 * has a note, the existing note will be replaced.
 	 *
 	 * @param id
+	 *            a {@link org.eclipse.jgit.revwalk.RevObject}
 	 * @return {@code this}
 	 */
 	public AddNoteCommand setObjectId(RevObject id) {
@@ -116,6 +89,8 @@ public class AddNoteCommand extends GitCommand<Note> {
 	}
 
 	/**
+	 * Set the notes message
+	 *
 	 * @param message
 	 *            the notes message used when adding a note
 	 * @return {@code this}
@@ -126,7 +101,8 @@ public class AddNoteCommand extends GitCommand<Note> {
 		return this;
 	}
 
-	private void commitNoteMap(RevWalk walk, NoteMap map,
+	static void commitNoteMap(Repository r, String ref, RevWalk walk,
+			NoteMap map,
 			RevCommit notesCommit,
 			ObjectInserter inserter,
 			String msg)
@@ -134,14 +110,14 @@ public class AddNoteCommand extends GitCommand<Note> {
 		// commit the note
 		CommitBuilder builder = new CommitBuilder();
 		builder.setTreeId(map.writeTree(inserter));
-		builder.setAuthor(new PersonIdent(repo));
+		builder.setAuthor(new PersonIdent(r));
 		builder.setCommitter(builder.getAuthor());
 		builder.setMessage(msg);
 		if (notesCommit != null)
 			builder.setParentIds(notesCommit);
 		ObjectId commit = inserter.insert(builder);
 		inserter.flush();
-		RefUpdate refUpdate = repo.updateRef(notesRef);
+		RefUpdate refUpdate = r.updateRef(ref);
 		if (notesCommit != null)
 			refUpdate.setExpectedOldObjectId(notesCommit);
 		else
@@ -151,12 +127,13 @@ public class AddNoteCommand extends GitCommand<Note> {
 	}
 
 	/**
+	 * Set name of a {@code Ref} to read notes from
+	 *
 	 * @param notesRef
 	 *            the ref to read notes from. Note, the default value of
-	 *            {@link Constants#R_NOTES_COMMITS} will be used if nothing is
-	 *            set
+	 *            {@link org.eclipse.jgit.lib.Constants#R_NOTES_COMMITS} will be
+	 *            used if nothing is set
 	 * @return {@code this}
-	 *
 	 * @see Constants#R_NOTES_COMMITS
 	 */
 	public AddNoteCommand setNotesRef(String notesRef) {

@@ -2,7 +2,7 @@
 <feature
       id="org.eclipse.jgit.pgm"
       label="%featureName"
-      version="4.2.0.qualifier"
+      version="6.6.1.qualifier"
       provider-name="%providerName">
 
    <description url="http://www.eclipse.org/jgit/">
@@ -18,16 +18,26 @@
    </license>
 
    <url>
-      <update label="%updateSiteName" url="http://download.eclipse.org/egit/updates"/>
-      <discovery label="%updateSiteName" url="http://download.eclipse.org/egit/updates"/>
+      <update label="%updateSiteName" url="https://download.eclipse.org/egit/updates"/>
+      <discovery label="%updateSiteName" url="https://download.eclipse.org/egit/updates"/>
    </url>
 
    <includes
          id="org.eclipse.jgit"
          version="0.0.0"/>
 
+   <includes
+         id="org.eclipse.jgit.lfs"
+         version="0.0.0"/>
+
+   <includes
+         id="org.eclipse.jgit.ssh.apache"
+         version="0.0.0"/>
+
    <requires>
-      <import feature="org.eclipse.jgit" version="4.2.0" match="equivalent"/>
+      <import feature="org.eclipse.jgit" version="6.6.1" match="equivalent"/>
+      <import feature="org.eclipse.jgit.lfs" version="6.6.1" match="equivalent"/>
+      <import feature="org.eclipse.jgit.ssh.apache" version="6.6.1" match="equivalent"/>
    </requires>
 
    <plugin
@@ -39,27 +49,6 @@
 
    <plugin
          id="org.eclipse.jgit.ui"
-         download-size="0"
-         install-size="0"
-         version="0.0.0"
-         unpack="false"/>
-
-   <plugin
-         id="org.apache.commons.compress"
-         download-size="0"
-         install-size="0"
-         version="0.0.0"
-         unpack="false"/>
-
-   <plugin
-         id="org.kohsuke.args4j"
-         download-size="0"
-         install-size="0"
-         version="0.0.0"
-         unpack="false"/>
-
-   <plugin
-         id="javaewah"
          download-size="0"
          install-size="0"
          version="0.0.0"

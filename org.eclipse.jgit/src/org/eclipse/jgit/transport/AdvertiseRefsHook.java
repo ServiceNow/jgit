@@ -42,6 +42,8 @@
 
 package org.eclipse.jgit.transport;
 
+import java.io.IOException;
+
 /**
  * Hook to allow callers to take over advertising refs to the client.
  *
@@ -51,16 +53,18 @@ public interface AdvertiseRefsHook {
 	/**
 	 * A simple hook that advertises the default refs.
 	 * <p>
-	 * The method implementations do nothing to preserve the default behavior; see
-	 * {@link UploadPack#setAdvertisedRefs(java.util.Map)} and
-	 * {@link BaseReceivePack#setAdvertisedRefs(java.util.Map,java.util.Set)}.
+	 * The method implementations do nothing to preserve the default behavior;
+	 * see {@link UploadPack#setAdvertisedRefs(java.util.Map)} and
+	 * {@link ReceivePack#setAdvertisedRefs(java.util.Map,java.util.Set)}.
 	 */
-	public static final AdvertiseRefsHook DEFAULT = new AdvertiseRefsHook() {
+	AdvertiseRefsHook DEFAULT = new AdvertiseRefsHook() {
+		@Override
 		public void advertiseRefs(UploadPack uploadPack) {
 			// Do nothing.
 		}
 
-		public void advertiseRefs(BaseReceivePack receivePack) {
+		@Override
+		public void advertiseRefs(ReceivePack receivePack) {
 			// Do nothing.
 		}
 	};
@@ -68,24 +72,28 @@ public interface AdvertiseRefsHook {
 	/**
 	 * Advertise refs for upload-pack.
 	 *
-	 * @param uploadPack instance on which to call
-	 *            {@link UploadPack#setAdvertisedRefs(java.util.Map)}
+	 * @param uploadPack
+	 *            instance on which to call
+	 *            {@link org.eclipse.jgit.transport.UploadPack#setAdvertisedRefs(java.util.Map)}
 	 *            if necessary.
-	 * @throws ServiceMayNotContinueException
+	 * @throws org.eclipse.jgit.transport.ServiceMayNotContinueException
 	 *             abort; the message will be sent to the user.
 	 */
-	public void advertiseRefs(UploadPack uploadPack)
+	void advertiseRefs(UploadPack uploadPack)
 			throws ServiceMayNotContinueException;
 
 	/**
 	 * Advertise refs for receive-pack.
 	 *
-	 * @param receivePack instance on which to call
-	 *            {@link BaseReceivePack#setAdvertisedRefs(java.util.Map,java.util.Set)}
+	 * @param receivePack
+	 *            instance on which to call
+	 *            {@link org.eclipse.jgit.transport.ReceivePack#setAdvertisedRefs(java.util.Map,java.util.Set)}
 	 *            if necessary.
-	 * @throws ServiceMayNotContinueException
+	 * @throws org.eclipse.jgit.transport.ServiceMayNotContinueException
 	 *             abort; the message will be sent to the user.
+	 * @throws IOException
+	 * @since 5.6
 	 */
-	public void advertiseRefs(BaseReceivePack receivePack)
-			throws ServiceMayNotContinueException;
+	void advertiseRefs(ReceivePack receivePack)
+			throws ServiceMayNotContinueException, IOException;
 }

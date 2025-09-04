@@ -1,50 +1,19 @@
 /*
- * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.transport;
 
 import static org.eclipse.jgit.transport.WalkRemoteObjectDatabase.ROOT_DIR;
 
+import java.io.BufferedOutputStream;
+import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.ArrayList;
@@ -58,6 +27,8 @@ import java.util.TreeMap;
 
 import org.eclipse.jgit.errors.TransportException;
 import org.eclipse.jgit.internal.JGitText;
+import org.eclipse.jgit.internal.storage.file.PackFile;
+import org.eclipse.jgit.internal.storage.pack.PackExt;
 import org.eclipse.jgit.internal.storage.pack.PackWriter;
 import org.eclipse.jgit.lib.AnyObjectId;
 import org.eclipse.jgit.lib.Constants;
@@ -69,7 +40,6 @@ import org.eclipse.jgit.lib.Ref.Storage;
 import org.eclipse.jgit.lib.RefWriter;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.transport.RemoteRefUpdate.Status;
-import org.eclipse.jgit.util.io.SafeBufferedOutputStream;
 
 /**
  * Generic push support for dumb transport protocols.
@@ -134,26 +104,30 @@ class WalkPushConnection extends BaseConnection implements PushConnection {
 		dest = w;
 	}
 
+	/** {@inheritDoc} */
+	@Override
 	public void push(final ProgressMonitor monitor,
 			final Map<String, RemoteRefUpdate> refUpdates)
 			throws TransportException {
 		push(monitor, refUpdates, null);
 	}
 
+	/** {@inheritDoc} */
+	@Override
 	public void push(final ProgressMonitor monitor,
 			final Map<String, RemoteRefUpdate> refUpdates, OutputStream out)
 			throws TransportException {
 		markStartedOperation();
 		packNames = null;
-		newRefs = new TreeMap<String, Ref>(getRefsMap());
-		packedRefUpdates = new ArrayList<RemoteRefUpdate>(refUpdates.size());
+		newRefs = new TreeMap<>(getRefsMap());
+		packedRefUpdates = new ArrayList<>(refUpdates.size());
 
 		// Filter the commands and issue all deletes first. This way we
 		// can correctly handle a directory being cleared out and a new
 		// ref using the directory name being created.
 		//
-		final List<RemoteRefUpdate> updates = new ArrayList<RemoteRefUpdate>();
-		for (final RemoteRefUpdate u : refUpdates.values()) {
+		final List<RemoteRefUpdate> updates = new ArrayList<>();
+		for (RemoteRefUpdate u : refUpdates.values()) {
 			final String n = u.getRemoteName();
 			if (!n.startsWith("refs/") || !Repository.isValidRefName(n)) { //$NON-NLS-1$
 				u.setStatus(Status.REJECTED_OTHER_REASON);
@@ -161,7 +135,7 @@ class WalkPushConnection extends BaseConnection implements PushConnection {
 				continue;
 			}
 
-			if (AnyObjectId.equals(ObjectId.zeroId(), u.getNewObjectId()))
+			if (AnyObjectId.isEqual(ObjectId.zeroId(), u.getNewObjectId()))
 				deleteCommand(u);
 			else
 				updates.add(u);
@@ -173,7 +147,7 @@ class WalkPushConnection extends BaseConnection implements PushConnection {
 		//
 		if (!updates.isEmpty())
 			sendpack(updates, monitor);
-		for (final RemoteRefUpdate u : updates)
+		for (RemoteRefUpdate u : updates)
 			updateCommand(u);
 
 		// Is this a new repository? If so we should create additional
@@ -192,10 +166,10 @@ class WalkPushConnection extends BaseConnection implements PushConnection {
 		if (!packedRefUpdates.isEmpty()) {
 			try {
 				refWriter.writePackedRefs();
-				for (final RemoteRefUpdate u : packedRefUpdates)
+				for (RemoteRefUpdate u : packedRefUpdates)
 					u.setStatus(Status.OK);
 			} catch (IOException err) {
-				for (final RemoteRefUpdate u : packedRefUpdates) {
+				for (RemoteRefUpdate u : packedRefUpdates) {
 					u.setStatus(Status.REJECTED_OTHER_REASON);
 					u.setMessage(err.getMessage());
 				}
@@ -210,6 +184,7 @@ class WalkPushConnection extends BaseConnection implements PushConnection {
 		}
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public void close() {
 		dest.close();
@@ -217,17 +192,16 @@ class WalkPushConnection extends BaseConnection implements PushConnection {
 
 	private void sendpack(final List<RemoteRefUpdate> updates,
 			final ProgressMonitor monitor) throws TransportException {
-		String pathPack = null;
-		String pathIdx = null;
-
-		try (final PackWriter writer = new PackWriter(transport.getPackConfig(),
+		PackFile pack = null;
+		PackFile idx = null;
+		try (PackWriter writer = new PackWriter(transport.getPackConfig(),
 				local.newObjectReader())) {
 
-			final Set<ObjectId> need = new HashSet<ObjectId>();
-			final Set<ObjectId> have = new HashSet<ObjectId>();
-			for (final RemoteRefUpdate r : updates)
+			final Set<ObjectId> need = new HashSet<>();
+			final Set<ObjectId> have = new HashSet<>();
+			for (RemoteRefUpdate r : updates)
 				need.add(r.getNewObjectId());
-			for (final Ref r : getRefs()) {
+			for (Ref r : getRefs()) {
 				have.add(r.getObjectId());
 				if (r.getPeeledObjectId() != null)
 					have.add(r.getPeeledObjectId());
@@ -241,65 +215,61 @@ class WalkPushConnection extends BaseConnection implements PushConnection {
 			if (writer.getObjectCount() == 0)
 				return;
 
-			packNames = new LinkedHashMap<String, String>();
-			for (final String n : dest.getPackNames())
+			packNames = new LinkedHashMap<>();
+			for (String n : dest.getPackNames())
 				packNames.put(n, n);
 
-			final String base = "pack-" + writer.computeName().name(); //$NON-NLS-1$
-			final String packName = base + ".pack"; //$NON-NLS-1$
-			pathPack = "pack/" + packName; //$NON-NLS-1$
-			pathIdx = "pack/" + base + ".idx"; //$NON-NLS-1$ //$NON-NLS-2$
+			File packDir = new File("pack"); //$NON-NLS-1$
+			pack = new PackFile(packDir, writer.computeName(),
+					PackExt.PACK);
+			idx = pack.create(PackExt.INDEX);
 
-			if (packNames.remove(packName) != null) {
+			if (packNames.remove(pack.getName()) != null) {
 				// The remote already contains this pack. We should
 				// remove the index before overwriting to prevent bad
 				// offsets from appearing to clients.
 				//
 				dest.writeInfoPacks(packNames.keySet());
-				dest.deleteFile(pathIdx);
+				dest.deleteFile(sanitizedPath(idx));
 			}
 
 			// Write the pack file, then the index, as readers look the
 			// other direction (index, then pack file).
 			//
-			final String wt = "Put " + base.substring(0, 12); //$NON-NLS-1$
-			OutputStream os = dest.writeFile(pathPack, monitor, wt + "..pack"); //$NON-NLS-1$
-			try {
-				os = new SafeBufferedOutputStream(os);
+			String wt = "Put " + pack.getName().substring(0, 12); //$NON-NLS-1$
+			try (OutputStream os = new BufferedOutputStream(
+					dest.writeFile(sanitizedPath(pack), monitor,
+							wt + "." + pack.getPackExt().getExtension()))) { //$NON-NLS-1$
 				writer.writePack(monitor, monitor, os);
-			} finally {
-				os.close();
 			}
 
-			os = dest.writeFile(pathIdx, monitor, wt + "..idx"); //$NON-NLS-1$
-			try {
-				os = new SafeBufferedOutputStream(os);
+			try (OutputStream os = new BufferedOutputStream(
+					dest.writeFile(sanitizedPath(idx), monitor,
+							wt + "." + idx.getPackExt().getExtension()))) { //$NON-NLS-1$
 				writer.writeIndex(os);
-			} finally {
-				os.close();
 			}
 
 			// Record the pack at the start of the pack info list. This
 			// way clients are likely to consult the newest pack first,
 			// and discover the most recent objects there.
 			//
-			final ArrayList<String> infoPacks = new ArrayList<String>();
-			infoPacks.add(packName);
+			final ArrayList<String> infoPacks = new ArrayList<>();
+			infoPacks.add(pack.getName());
 			infoPacks.addAll(packNames.keySet());
 			dest.writeInfoPacks(infoPacks);
 
 		} catch (IOException err) {
-			safeDelete(pathIdx);
-			safeDelete(pathPack);
+			safeDelete(idx);
+			safeDelete(pack);
 
 			throw new TransportException(uri, JGitText.get().cannotStoreObjects, err);
 		}
 	}
 
-	private void safeDelete(final String path) {
+	private void safeDelete(File path) {
 		if (path != null) {
 			try {
-				dest.deleteFile(path);
+				dest.deleteFile(sanitizedPath(path));
 			} catch (IOException cleanupFailure) {
 				// Ignore the deletion failure. We probably are
 				// already failing and were just trying to pick
@@ -308,7 +278,7 @@ class WalkPushConnection extends BaseConnection implements PushConnection {
 		}
 	}
 
-	private void deleteCommand(final RemoteRefUpdate u) {
+	private void deleteCommand(RemoteRefUpdate u) {
 		final Ref r = newRefs.remove(u.getRemoteName());
 		if (r == null) {
 			// Already gone.
@@ -338,7 +308,7 @@ class WalkPushConnection extends BaseConnection implements PushConnection {
 		}
 	}
 
-	private void updateCommand(final RemoteRefUpdate u) {
+	private void updateCommand(RemoteRefUpdate u) {
 		try {
 			dest.writeRef(u.getRemoteName(), u.getNewObjectId());
 			newRefs.put(u.getRemoteName(), new ObjectIdRef.Unpeeled(
@@ -355,7 +325,7 @@ class WalkPushConnection extends BaseConnection implements PushConnection {
 				&& packNames.isEmpty();
 	}
 
-	private void createNewRepository(final List<RemoteRefUpdate> updates)
+	private void createNewRepository(List<RemoteRefUpdate> updates)
 			throws TransportException {
 		try {
 			final String ref = "ref: " + pickHEAD(updates) + "\n"; //$NON-NLS-1$ //$NON-NLS-2$
@@ -375,12 +345,12 @@ class WalkPushConnection extends BaseConnection implements PushConnection {
 		}
 	}
 
-	private static String pickHEAD(final List<RemoteRefUpdate> updates) {
+	private static String pickHEAD(List<RemoteRefUpdate> updates) {
 		// Try to use master if the user is pushing that, it is the
 		// default branch and is likely what they want to remain as
 		// the default on the new remote.
 		//
-		for (final RemoteRefUpdate u : updates) {
+		for (RemoteRefUpdate u : updates) {
 			final String n = u.getRemoteName();
 			if (n.equals(Constants.R_HEADS + Constants.MASTER))
 				return n;
@@ -389,11 +359,20 @@ class WalkPushConnection extends BaseConnection implements PushConnection {
 		// Pick any branch, under the assumption the user pushed only
 		// one to the remote side.
 		//
-		for (final RemoteRefUpdate u : updates) {
+		for (RemoteRefUpdate u : updates) {
 			final String n = u.getRemoteName();
 			if (n.startsWith(Constants.R_HEADS))
 				return n;
 		}
 		return updates.get(0).getRemoteName();
 	}
+
+	private static String sanitizedPath(File file) {
+		String path = file.getPath();
+		if (File.separatorChar != '/') {
+			path = path.replace(File.separatorChar, '/');
+		}
+		return path;
+	}
+
 }

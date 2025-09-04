@@ -1,49 +1,18 @@
 /*
  * Copyright (C) 2008, Google Inc.
  * Copyright (C) 2008, Robin Rosenberg <robin.rosenberg@dewire.com>
- * Copyright (C) 2006-2012, Shawn O. Pearce <spearce@spearce.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2006, 2022, Shawn O. Pearce <spearce@spearce.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.lib;
+
+import static java.nio.charset.StandardCharsets.UTF_8;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
@@ -55,7 +24,9 @@ import org.eclipse.jgit.errors.CorruptObjectException;
 import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.util.MutableInteger;
 
-/** Misc. constants used throughout JGit. */
+/**
+ * Misc. constants and helpers used throughout JGit.
+ */
 @SuppressWarnings("nls")
 public final class Constants {
 	/** Hash function used natively by Git for all objects. */
@@ -76,6 +47,15 @@ public final class Constants {
 	 * @see #OBJECT_ID_LENGTH
 	 */
 	public static final int OBJECT_ID_STRING_LENGTH = OBJECT_ID_LENGTH * 2;
+
+	/**
+	 * The historic length of an abbreviated Git object hash string. Git 2.11
+	 * changed this static number to a dynamically calculated one that scales
+	 * as the repository grows.
+	 *
+	 * @since 6.1
+	 */
+	public static final int OBJECT_ID_ABBREV_STRING_LENGTH = 7;
 
 	/** Special name for the "HEAD" symbolic-ref. */
 	public static final String HEAD = "HEAD";
@@ -223,11 +203,23 @@ public final class Constants {
 	 */
 	public static final byte[] PACK_SIGNATURE = { 'P', 'A', 'C', 'K' };
 
-	/** Native character encoding for commit messages, file names... */
-	public static final String CHARACTER_ENCODING = "UTF-8";
-
-	/** Native character encoding for commit messages, file names... */
+	/**
+	 * Native character encoding for commit messages, file names...
+	 *
+	 * @deprecated Use {@link java.nio.charset.StandardCharsets#UTF_8} directly
+	 *             instead.
+	 */
+	@Deprecated
 	public static final Charset CHARSET;
+
+	/**
+	 * Native character encoding for commit messages, file names...
+	 *
+	 * @deprecated Use {@link java.nio.charset.StandardCharsets#UTF_8} directly
+	 *             instead.
+	 */
+	@Deprecated
+	public static final String CHARACTER_ENCODING;
 
 	/** Default main branch name */
 	public static final String MASTER = "master";
@@ -259,8 +251,44 @@ public final class Constants {
 	/** Logs folder name */
 	public static final String LOGS = "logs";
 
+	/**
+	 * Objects folder name
+	 * @since 5.5
+	 */
+	public static final String OBJECTS = "objects";
+
+	/**
+	 * Reftable folder name
+	 * @since 5.6
+	 */
+	public static final String REFTABLE = "reftable";
+
+	/**
+	 * Reftable table list name.
+	 * @since 5.6.2
+	 */
+	public static final String TABLES_LIST = "tables.list";
+
 	/** Info refs folder */
 	public static final String INFO_REFS = "info/refs";
+
+	/**
+	 * Info alternates file (goes under OBJECTS)
+	 * @since 5.5
+	 */
+	public static final String INFO_ALTERNATES = "info/alternates";
+
+	/**
+	 * HTTP alternates file (goes under OBJECTS)
+	 * @since 5.5
+	 */
+	public static final String INFO_HTTP_ALTERNATES = "info/http-alternates";
+
+	/**
+	 * info commit-graph file (goes under OBJECTS)
+	 * @since 6.5
+	 */
+	public static final String INFO_COMMIT_GRAPH = "info/commit-graph";
 
 	/** Packed refs file */
 	public static final String PACKED_REFS = "packed-refs";
@@ -307,6 +335,15 @@ public final class Constants {
 	 * @since 3.3
 	 */
 	public static final String GIT_CONFIG_NOSYSTEM_KEY = "GIT_CONFIG_NOSYSTEM";
+
+	/**
+	 * The key of the XDG_CONFIG_HOME directory defined in the XDG base
+	 * directory specification, see
+	 * {@link "https://wiki.archlinux.org/index.php/XDG_Base_Directory"}
+	 *
+	 * @since 5.5.2
+	 */
+	public static final String XDG_CONFIG_HOME = "XDG_CONFIG_HOME";
 
 	/**
 	 * The environment variable that limits how close to the root of the file
@@ -364,6 +401,13 @@ public final class Constants {
 	public static final String DOT_GIT_EXT = ".git";
 
 	/**
+	 * The default extension for local bundle files
+	 *
+	 * @since 5.8
+	 */
+	public static final String DOT_BUNDLE_EXT = ".bundle";
+
+	/**
 	 * Name of the attributes file
 	 *
 	 * @since 3.7
@@ -390,6 +434,13 @@ public final class Constants {
 	 * @since 4.2
 	 */
 	public static final String ATTR_FILTER_TYPE_SMUDGE = "smudge";
+
+	/**
+	 * Builtin filter commands start with this prefix
+	 *
+	 * @since 4.6
+	 */
+	public static final String BUILTIN_FILTER_PREFIX = "jgit://builtin/";
 
 	/** Name of the ignore file */
 	public static final String DOT_GIT_IGNORE = ".gitignore";
@@ -422,10 +473,31 @@ public final class Constants {
 	public static final String HOOKS = "hooks";
 
 	/**
+	 * Merge attribute.
+	 *
+	 * @since 4.9
+	 */
+	public static final String ATTR_MERGE = "merge"; //$NON-NLS-1$
+
+	/**
+	 * Diff attribute.
+	 *
+	 * @since 4.11
+	 */
+	public static final String ATTR_DIFF = "diff"; //$NON-NLS-1$
+
+	/**
+	 * Binary value for custom merger.
+	 *
+	 * @since 4.9
+	 */
+	public static final String ATTR_BUILTIN_BINARY_MERGER = "binary"; //$NON-NLS-1$
+
+	/**
 	 * Create a new digest function for objects.
 	 *
 	 * @return a new digest object.
-	 * @throws RuntimeException
+	 * @throws java.lang.RuntimeException
 	 *             this Java virtual machine does not support the required hash
 	 *             function. Very unlikely given that JGit uses a hash function
 	 *             that is in the Java reference specification.
@@ -445,7 +517,7 @@ public final class Constants {
 	 * @param typeCode the type code, from a pack representation.
 	 * @return the canonical string name of this type.
 	 */
-	public static String typeString(final int typeCode) {
+	public static String typeString(int typeCode) {
 		switch (typeCode) {
 		case OBJ_COMMIT:
 			return TYPE_COMMIT;
@@ -470,7 +542,7 @@ public final class Constants {
 	 * @param typeCode the type code, from a pack representation.
 	 * @return the canonical ASCII encoded name of this type.
 	 */
-	public static byte[] encodedTypeString(final int typeCode) {
+	public static byte[] encodedTypeString(int typeCode) {
 		switch (typeCode) {
 		case OBJ_COMMIT:
 			return ENCODED_TYPE_COMMIT;
@@ -503,7 +575,7 @@ public final class Constants {
 	 *            <code>endMark</code> when the parse is successful.
 	 * @return a type code constant (one of {@link #OBJ_BLOB},
 	 *         {@link #OBJ_COMMIT}, {@link #OBJ_TAG}, {@link #OBJ_TREE}.
-	 * @throws CorruptObjectException
+	 * @throws org.eclipse.jgit.errors.CorruptObjectException
 	 *             there is no valid type identified by <code>typeString</code>.
 	 */
 	public static int decodeTypeString(final AnyObjectId id,
@@ -557,7 +629,10 @@ public final class Constants {
 				throw new CorruptObjectException(id, JGitText.get().corruptObjectInvalidType);
 			}
 		} catch (ArrayIndexOutOfBoundsException bad) {
-			throw new CorruptObjectException(id, JGitText.get().corruptObjectInvalidType);
+			CorruptObjectException coe = new CorruptObjectException(id,
+					JGitText.get().corruptObjectInvalidType);
+			coe.initCause(bad);
+			throw coe;
 		}
 	}
 
@@ -569,7 +644,7 @@ public final class Constants {
 	 * @return a decimal representation of the input integer. The returned array
 	 *         is the smallest array that will hold the value.
 	 */
-	public static byte[] encodeASCII(final long s) {
+	public static byte[] encodeASCII(long s) {
 		return encodeASCII(Long.toString(s));
 	}
 
@@ -581,11 +656,11 @@ public final class Constants {
 	 *            127 (outside of 7-bit ASCII).
 	 * @return a byte array of the same length as the input string, holding the
 	 *         same characters, in the same order.
-	 * @throws IllegalArgumentException
+	 * @throws java.lang.IllegalArgumentException
 	 *             the input string contains one or more characters outside of
 	 *             the 7-bit ASCII character space.
 	 */
-	public static byte[] encodeASCII(final String s) {
+	public static byte[] encodeASCII(String s) {
 		final byte[] r = new byte[s.length()];
 		for (int k = r.length - 1; k >= 0; k--) {
 			final char c = s.charAt(k);
@@ -605,8 +680,8 @@ public final class Constants {
 	 *         default character encoding (UTF-8).
 	 * @see #CHARACTER_ENCODING
 	 */
-	public static byte[] encode(final String str) {
-		final ByteBuffer bb = Constants.CHARSET.encode(str);
+	public static byte[] encode(String str) {
+		final ByteBuffer bb = UTF_8.encode(str);
 		final int len = bb.limit();
 		if (bb.hasArray() && bb.arrayOffset() == 0) {
 			final byte[] arr = bb.array();
@@ -622,7 +697,8 @@ public final class Constants {
 	static {
 		if (OBJECT_ID_LENGTH != newMessageDigest().getDigestLength())
 			throw new LinkageError(JGitText.get().incorrectOBJECT_ID_LENGTH);
-		CHARSET = Charset.forName(CHARACTER_ENCODING);
+		CHARSET = UTF_8;
+		CHARACTER_ENCODING = UTF_8.name();
 	}
 
 	/** name of the file containing the commit msg for a merge commit */
@@ -654,9 +730,52 @@ public final class Constants {
 	 */
 	public static final String COMMIT_EDITMSG = "COMMIT_EDITMSG";
 
-	/** objectid for the empty blob */
+	/**
+	 * Well-known object ID for the empty blob.
+	 *
+	 * @since 0.9.1
+	 */
 	public static final ObjectId EMPTY_BLOB_ID = ObjectId
 			.fromString("e69de29bb2d1d6434b8b29ae775ad8c2e48c5391");
+
+	/**
+	 * Well-known object ID for the empty tree.
+	 *
+	 * @since 5.1
+	 */
+	public static final ObjectId EMPTY_TREE_ID = ObjectId
+			.fromString("4b825dc642cb6eb9a060e54bf8d69288fbee4904");
+
+	/**
+	 * Suffix of lock file name
+	 *
+	 * @since 4.7
+	 */
+	public static final String LOCK_SUFFIX = ".lock"; //$NON-NLS-1$
+
+	/**
+	 * Depth used to unshallow a repository
+	 *
+	 * @since 6.3
+	 */
+	public static final int INFINITE_DEPTH = 0x7fffffff;
+
+	/**
+	 * We use ({@value}) as generation number for commits not in the
+	 * commit-graph file.
+	 *
+	 * @since 6.5
+	 */
+	public static int COMMIT_GENERATION_UNKNOWN = Integer.MAX_VALUE;
+
+	/**
+	 * If a commit-graph file was written by a version of Git that did not
+	 * compute generation numbers, then those commits will have generation
+	 * number represented by ({@value}).
+	 *
+	 * @since 6.5
+	 */
+	public static int COMMIT_GENERATION_NOT_COMPUTED = 0;
 
 	private Constants() {
 		// Hide the default constructor

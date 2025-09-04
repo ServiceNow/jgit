@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2012 Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2012 Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 package org.eclipse.jgit.api;
 
@@ -52,17 +19,21 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.api.errors.JGitInternalException;
+import org.eclipse.jgit.errors.IncorrectObjectTypeException;
 import org.eclipse.jgit.internal.JGitText;
+import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.FileMode;
 import org.eclipse.jgit.lib.MutableObjectId;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectLoader;
 import org.eclipse.jgit.lib.ObjectReader;
 import org.eclipse.jgit.lib.Repository;
+import org.eclipse.jgit.revwalk.RevCommit;
+import org.eclipse.jgit.revwalk.RevObject;
+import org.eclipse.jgit.revwalk.RevTree;
 import org.eclipse.jgit.revwalk.RevWalk;
 import org.eclipse.jgit.treewalk.TreeWalk;
 import org.eclipse.jgit.treewalk.filter.PathFilterGroup;
@@ -70,19 +41,16 @@ import org.eclipse.jgit.treewalk.filter.PathFilterGroup;
 /**
  * Create an archive of files from a named tree.
  * <p>
- * Examples (<code>git</code> is a {@link Git} instance):
+ * Examples (<code>git</code> is a {@link org.eclipse.jgit.api.Git} instance):
  * <p>
  * Create a tarball from HEAD:
  *
  * <pre>
  * ArchiveCommand.registerFormat("tar", new TarFormat());
  * try {
- *	git.archive()
- *		.setTree(db.resolve(&quot;HEAD&quot;))
- *		.setOutputStream(out)
- *		.call();
+ * 	git.archive().setTree(db.resolve(&quot;HEAD&quot;)).setOutputStream(out).call();
  * } finally {
- *	ArchiveCommand.unregisterFormat("tar");
+ * 	ArchiveCommand.unregisterFormat("tar");
  * }
  * </pre>
  * <p>
@@ -103,7 +71,6 @@ import org.eclipse.jgit.treewalk.filter.PathFilterGroup;
  *
  * @see <a href="http://git-htmldocs.googlecode.com/git/git-archive.html" >Git
  *      documentation about archive</a>
- *
  * @since 3.1
  */
 public class ArchiveCommand extends GitCommand<OutputStream> {
@@ -161,9 +128,11 @@ public class ArchiveCommand extends GitCommand<OutputStream> {
 		 *
 		 * @param out
 		 *            archive object from createArchiveOutputStream
+		 * @param tree
+		 *            the tag, commit, or tree object to produce an archive for
 		 * @param path
-		 *            full filename relative to the root of the archive
-		 *            (with trailing '/' for directories)
+		 *            full filename relative to the root of the archive (with
+		 *            trailing '/' for directories)
 		 * @param mode
 		 *            mode (for example FileMode.REGULAR_FILE or
 		 *            FileMode.SYMLINK)
@@ -171,9 +140,10 @@ public class ArchiveCommand extends GitCommand<OutputStream> {
 		 *            blob object with data for this entry (null for
 		 *            directories)
 		 * @throws IOException
-		 *            thrown by the underlying output stream for I/O errors
+		 *             thrown by the underlying output stream for I/O errors
+		 * @since 4.7
 		 */
-		void putEntry(T out, String path, FileMode mode,
+		void putEntry(T out, ObjectId tree, String path, FileMode mode,
 				ObjectLoader loader) throws IOException;
 
 		/**
@@ -231,8 +201,8 @@ public class ArchiveCommand extends GitCommand<OutputStream> {
 	 * Available archival formats (corresponding to values for
 	 * the --format= option)
 	 */
-	private static final ConcurrentMap<String, FormatEntry> formats =
-			new ConcurrentHashMap<String, FormatEntry>();
+	private static final Map<String, FormatEntry> formats =
+			new ConcurrentHashMap<>();
 
 	/**
 	 * Replaces the entry for a key only if currently mapped to a given
@@ -244,7 +214,7 @@ public class ArchiveCommand extends GitCommand<OutputStream> {
 	 * @param newValue value to be associated with the key (null to remove).
 	 * @return true if the value was replaced
 	 */
-	private static <K, V> boolean replace(ConcurrentMap<K, V> map,
+	private static <K, V> boolean replace(Map<K, V> map,
 			K key, V oldValue, V newValue) {
 		if (oldValue == null && newValue == null) // Nothing to do.
 			return true;
@@ -350,13 +320,16 @@ public class ArchiveCommand extends GitCommand<OutputStream> {
 	private String prefix;
 	private String format;
 	private Map<String, Object> formatOptions = new HashMap<>();
-	private List<String> paths = new ArrayList<String>();
+	private List<String> paths = new ArrayList<>();
 
 	/** Filename suffix, for automatically choosing a format. */
 	private String suffix;
 
 	/**
+	 * Constructor for ArchiveCommand
+	 *
 	 * @param repo
+	 *            the {@link org.eclipse.jgit.lib.Repository}
 	 */
 	public ArchiveCommand(Repository repo) {
 		super(repo);
@@ -366,15 +339,24 @@ public class ArchiveCommand extends GitCommand<OutputStream> {
 	private <T extends Closeable> OutputStream writeArchive(Format<T> fmt) {
 		try {
 			try (TreeWalk walk = new TreeWalk(repo);
-					RevWalk rw = new RevWalk(walk.getObjectReader())) {
+					RevWalk rw = new RevWalk(walk.getObjectReader());
+					T outa = fmt.createArchiveOutputStream(out,
+							formatOptions)) {
 				String pfx = prefix == null ? "" : prefix; //$NON-NLS-1$
-				T outa = fmt.createArchiveOutputStream(out, formatOptions);
 				MutableObjectId idBuf = new MutableObjectId();
 				ObjectReader reader = walk.getObjectReader();
 
-				walk.reset(rw.parseTree(tree));
-				if (!paths.isEmpty())
+				RevObject o = rw.peel(rw.parseAny(tree));
+				walk.reset(getTree(o));
+				if (!paths.isEmpty()) {
 					walk.setFilter(PathFilterGroup.createFromStrings(paths));
+				}
+
+				// Put base directory into archive
+				if (pfx.endsWith("/")) { //$NON-NLS-1$
+					fmt.putEntry(outa, o, pfx.replaceAll("[/]+$", "/"), //$NON-NLS-1$ //$NON-NLS-2$
+							FileMode.TREE, null);
+				}
 
 				while (walk.next()) {
 					String name = pfx + walk.getPathString();
@@ -383,19 +365,19 @@ public class ArchiveCommand extends GitCommand<OutputStream> {
 					if (walk.isSubtree())
 						walk.enterSubtree();
 
-					if (mode == FileMode.GITLINK)
+					if (mode == FileMode.GITLINK) {
 						// TODO(jrn): Take a callback to recurse
 						// into submodules.
 						mode = FileMode.TREE;
+					}
 
 					if (mode == FileMode.TREE) {
-						fmt.putEntry(outa, name + "/", mode, null); //$NON-NLS-1$
+						fmt.putEntry(outa, o, name + "/", mode, null); //$NON-NLS-1$
 						continue;
 					}
 					walk.getObjectId(idBuf, 0);
-					fmt.putEntry(outa, name, mode, reader.open(idBuf));
+					fmt.putEntry(outa, o, name, mode, reader.open(idBuf));
 				}
-				outa.close();
 				return out;
 			} finally {
 				out.close();
@@ -407,9 +389,7 @@ public class ArchiveCommand extends GitCommand<OutputStream> {
 		}
 	}
 
-	/**
-	 * @return the stream to which the archive has been written
-	 */
+	/** {@inheritDoc} */
 	@Override
 	public OutputStream call() throws GitAPIException {
 		checkCallable();
@@ -423,6 +403,8 @@ public class ArchiveCommand extends GitCommand<OutputStream> {
 	}
 
 	/**
+	 * Set the tag, commit, or tree object to produce an archive for
+	 *
 	 * @param tree
 	 *            the tag, commit, or tree object to produce an archive for
 	 * @return this
@@ -437,6 +419,8 @@ public class ArchiveCommand extends GitCommand<OutputStream> {
 	}
 
 	/**
+	 * Set string prefixed to filenames in archive
+	 *
 	 * @param prefix
 	 *            string prefixed to filenames in archive (e.g., "master/").
 	 *            null means to not use any leading prefix.
@@ -469,8 +453,10 @@ public class ArchiveCommand extends GitCommand<OutputStream> {
 	}
 
 	/**
+	 * Set output stream
+	 *
 	 * @param out
-	 *	      the stream to which to write the archive
+	 *            the stream to which to write the archive
 	 * @return this
 	 */
 	public ArchiveCommand setOutputStream(OutputStream out) {
@@ -479,10 +465,11 @@ public class ArchiveCommand extends GitCommand<OutputStream> {
 	}
 
 	/**
+	 * Set archive format
+	 *
 	 * @param fmt
-	 *	      archive format (e.g., "tar" or "zip").
-	 *	      null means to choose automatically based on
-	 *	      the archive filename.
+	 *            archive format (e.g., "tar" or "zip"). null means to choose
+	 *            automatically based on the archive filename.
 	 * @return this
 	 */
 	public ArchiveCommand setFormat(String fmt) {
@@ -491,6 +478,8 @@ public class ArchiveCommand extends GitCommand<OutputStream> {
 	}
 
 	/**
+	 * Set archive format options
+	 *
 	 * @param options
 	 *            archive format options (e.g., level=9 for zip compression).
 	 * @return this
@@ -519,4 +508,19 @@ public class ArchiveCommand extends GitCommand<OutputStream> {
 		this.paths = Arrays.asList(paths);
 		return this;
 	}
+
+	private RevTree getTree(RevObject o)
+			throws IncorrectObjectTypeException {
+		final RevTree t;
+		if (o instanceof RevCommit) {
+			t = ((RevCommit) o).getTree();
+		} else if (!(o instanceof RevTree)) {
+			throw new IncorrectObjectTypeException(tree.toObjectId(),
+					Constants.TYPE_TREE);
+		} else {
+			t = (RevTree) o;
+		}
+		return t;
+	}
+
 }

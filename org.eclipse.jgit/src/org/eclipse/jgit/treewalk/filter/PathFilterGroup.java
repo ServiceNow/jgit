@@ -1,45 +1,12 @@
 /*
  * Copyright (C) 2007, Robin Rosenberg <robin.rosenberg@dewire.com>
- * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.treewalk.filter;
@@ -55,10 +22,11 @@ import org.eclipse.jgit.util.RawParseUtils;
 /**
  * Includes tree entries only if they match one or more configured paths.
  * <p>
- * Operates like {@link PathFilter} but causes the walk to abort as soon as the
- * tree can no longer match any of the paths within the group. This may bypass
- * the boolean logic of a higher level AND or OR group, but does improve
- * performance for the common case of examining one or more modified paths.
+ * Operates like {@link org.eclipse.jgit.treewalk.filter.PathFilter} but causes
+ * the walk to abort as soon as the tree can no longer match any of the paths
+ * within the group. This may bypass the boolean logic of a higher level AND or
+ * OR group, but does improve performance for the common case of examining one
+ * or more modified paths.
  * <p>
  * This filter is effectively an OR group around paths, with the early abort
  * feature described above.
@@ -81,13 +49,13 @@ public class PathFilterGroup {
 	 *            the paths to test against. Must have at least one entry.
 	 * @return a new filter for the list of paths supplied.
 	 */
-	public static TreeFilter createFromStrings(final Collection<String> paths) {
+	public static TreeFilter createFromStrings(Collection<String> paths) {
 		if (paths.isEmpty())
 			throw new IllegalArgumentException(
 					JGitText.get().atLeastOnePathIsRequired);
 		final PathFilter[] p = new PathFilter[paths.size()];
 		int i = 0;
-		for (final String s : paths)
+		for (String s : paths)
 			p[i++] = PathFilter.create(s);
 		return create(p);
 	}
@@ -108,7 +76,7 @@ public class PathFilterGroup {
 	 *            the paths to test against. Must have at least one entry.
 	 * @return a new filter for the paths supplied.
 	 */
-	public static TreeFilter createFromStrings(final String... paths) {
+	public static TreeFilter createFromStrings(String... paths) {
 		if (paths.length == 0)
 			throw new IllegalArgumentException(
 					JGitText.get().atLeastOnePathIsRequired);
@@ -130,7 +98,7 @@ public class PathFilterGroup {
 	 *            the paths to test against. Must have at least one entry.
 	 * @return a new filter for the list of paths supplied.
 	 */
-	public static TreeFilter create(final Collection<PathFilter> paths) {
+	public static TreeFilter create(Collection<PathFilter> paths) {
 		if (paths.isEmpty())
 			throw new IllegalArgumentException(
 					JGitText.get().atLeastOnePathIsRequired);
@@ -139,7 +107,7 @@ public class PathFilterGroup {
 		return create(p);
 	}
 
-	private static TreeFilter create(final PathFilter[] p) {
+	private static TreeFilter create(PathFilter[] p) {
 		if (p.length == 1)
 			return new Single(p[0]);
 		return new Group(p);
@@ -150,13 +118,13 @@ public class PathFilterGroup {
 
 		private final byte[] raw;
 
-		private Single(final PathFilter p) {
+		private Single(PathFilter p) {
 			path = p;
 			raw = path.pathRaw;
 		}
 
 		@Override
-		public boolean include(final TreeWalk walker) {
+		public boolean include(TreeWalk walker) {
 			final int cmp = walker.isPathPrefix(raw, raw.length);
 			if (cmp > 0)
 				throw StopWalkException.INSTANCE;
@@ -173,6 +141,7 @@ public class PathFilterGroup {
 			return this;
 		}
 
+		@Override
 		public String toString() {
 			return "FAST_" + path.toString(); //$NON-NLS-1$
 		}
@@ -186,7 +155,7 @@ public class PathFilterGroup {
 
 		private byte[] max;
 
-		private Group(final PathFilter[] pathFilters) {
+		private Group(PathFilter[] pathFilters) {
 			fullpaths = new ByteArraySet(pathFilters.length);
 			prefixes = new ByteArraySet(pathFilters.length / 5);
 			// 5 is an empirically derived ratio of #paths/#prefixes from:
@@ -237,7 +206,7 @@ public class PathFilterGroup {
 		}
 
 		@Override
-		public boolean include(final TreeWalk walker) {
+		public boolean include(TreeWalk walker) {
 
 			byte[] rp = walker.getRawPath();
 			Hasher hasher = new Hasher(rp, walker.getPathLength());
@@ -245,9 +214,9 @@ public class PathFilterGroup {
 				int hash = hasher.nextHash();
 				if (fullpaths.contains(rp, hasher.length(), hash))
 					return true;
-				if (!hasher.hasNext())
-					if (prefixes.contains(rp, hasher.length(), hash))
-						return true;
+				if (!hasher.hasNext() && walker.isSubtree()
+						&& prefixes.contains(rp, hasher.length(), hash))
+					return true;
 			}
 
 			final int cmp = walker.isPathPrefix(max, max.length);
@@ -267,6 +236,7 @@ public class PathFilterGroup {
 			return this;
 		}
 
+		@Override
 		public String toString() {
 			final StringBuilder r = new StringBuilder();
 			r.append("FAST("); //$NON-NLS-1$

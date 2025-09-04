@@ -1,44 +1,12 @@
 /*
  * Copyright (C) 2008-2013, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2016, Laurent Delaigue <laurent.delaigue@obeo.fr> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.merge;
@@ -46,14 +14,17 @@ package org.eclipse.jgit.merge;
 import java.io.IOException;
 import java.text.MessageFormat;
 
+import org.eclipse.jgit.annotations.Nullable;
 import org.eclipse.jgit.errors.IncorrectObjectTypeException;
 import org.eclipse.jgit.errors.NoMergeBaseException;
 import org.eclipse.jgit.errors.NoMergeBaseException.MergeBaseFailureReason;
 import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.lib.AnyObjectId;
+import org.eclipse.jgit.lib.NullProgressMonitor;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectInserter;
 import org.eclipse.jgit.lib.ObjectReader;
+import org.eclipse.jgit.lib.ProgressMonitor;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.revwalk.RevObject;
@@ -64,10 +35,19 @@ import org.eclipse.jgit.treewalk.AbstractTreeIterator;
 import org.eclipse.jgit.treewalk.CanonicalTreeParser;
 
 /**
- * Instance of a specific {@link MergeStrategy} for a single {@link Repository}.
+ * Instance of a specific {@link org.eclipse.jgit.merge.MergeStrategy} for a
+ * single {@link org.eclipse.jgit.lib.Repository}.
  */
 public abstract class Merger {
-	/** The repository this merger operates on. */
+	/**
+	 * The repository this merger operates on.
+	 * <p>
+	 * Null if and only if the merger was constructed with {@link
+	 * #Merger(ObjectInserter)}. Callers that want to assume the repo is not null
+	 * (e.g. because of a previous check that the merger is not in-core) may use
+	 * {@link #nonNullRepo()}.
+	 */
+	@Nullable
 	protected final Repository db;
 
 	/** Reader to support {@link #walk} and other object loading. */
@@ -88,26 +68,75 @@ public abstract class Merger {
 	protected RevTree[] sourceTrees;
 
 	/**
+	 * A progress monitor.
+	 *
+	 * @since 4.2
+	 */
+	protected ProgressMonitor monitor = NullProgressMonitor.INSTANCE;
+
+	/**
 	 * Create a new merge instance for a repository.
 	 *
 	 * @param local
 	 *            the repository this merger will read and write data on.
 	 */
-	protected Merger(final Repository local) {
+	protected Merger(Repository local) {
+		if (local == null) {
+			throw new NullPointerException(JGitText.get().repositoryIsRequired);
+		}
 		db = local;
-		inserter = db.newObjectInserter();
+		inserter = local.newObjectInserter();
 		reader = inserter.newReader();
 		walk = new RevWalk(reader);
 	}
 
 	/**
+	 * Create a new in-core merge instance from an inserter.
+	 *
+	 * @param oi
+	 *            the inserter to write objects to. Will be closed at the
+	 *            conclusion of {@code merge}, unless {@code flush} is false.
+	 * @since 4.8
+	 */
+	protected Merger(ObjectInserter oi) {
+		db = null;
+		inserter = oi;
+		reader = oi.newReader();
+		walk = new RevWalk(reader);
+	}
+
+	/**
+	 * Get the repository this merger operates on.
+	 *
 	 * @return the repository this merger operates on.
 	 */
+	@Nullable
 	public Repository getRepository() {
 		return db;
 	}
 
-	/** @return an object writer to create objects in {@link #getRepository()}. */
+	/**
+	 * Get non-null repository instance
+	 *
+	 * @return non-null repository instance
+	 * @throws java.lang.NullPointerException
+	 *             if the merger was constructed without a repository.
+	 * @since 4.8
+	 */
+	protected Repository nonNullRepo() {
+		if (db == null) {
+			throw new NullPointerException(JGitText.get().repositoryIsRequired);
+		}
+		return db;
+	}
+
+	/**
+	 * Get an object writer to create objects, writing objects to
+	 * {@link #getRepository()}
+	 *
+	 * @return an object writer to create objects, writing objects to
+	 *         {@link #getRepository()} (if a repository was provided).
+	 */
 	public ObjectInserter getObjectInserter() {
 		return inserter;
 	}
@@ -121,7 +150,9 @@ public abstract class Merger {
 	 *
 	 * @param oi
 	 *            the inserter instance to use. Must be associated with the
-	 *            repository instance returned by {@link #getRepository()}.
+	 *            repository instance returned by {@link #getRepository()} (if a
+	 *            repository was provided). Will be closed at the conclusion of
+	 *            {@code merge}, unless {@code flush} is false.
 	 */
 	public void setObjectInserter(ObjectInserter oi) {
 		walk.close();
@@ -147,11 +178,11 @@ public abstract class Merger {
 	 * @throws IncorrectObjectTypeException
 	 *             one of the input objects is not a commit, but the strategy
 	 *             requires it to be a commit.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             one or more sources could not be read, or outputs could not
 	 *             be written to the Repository.
 	 */
-	public boolean merge(final AnyObjectId... tips) throws IOException {
+	public boolean merge(AnyObjectId... tips) throws IOException {
 		return merge(true, tips);
 	}
 
@@ -163,9 +194,9 @@ public abstract class Merger {
 	 *
 	 * @since 3.5
 	 * @param flush
-	 *            whether to flush the underlying object inserter when finished to
-	 *            store any content-merged blobs and virtual merged bases; if
-	 *            false, callers are responsible for flushing.
+	 *            whether to flush and close the underlying object inserter when
+	 *            finished to store any content-merged blobs and virtual merged
+	 *            bases; if false, callers are responsible for flushing.
 	 * @param tips
 	 *            source trees to be combined together. The merge base is not
 	 *            included in this set.
@@ -175,11 +206,11 @@ public abstract class Merger {
 	 * @throws IncorrectObjectTypeException
 	 *             one of the input objects is not a commit, but the strategy
 	 *             requires it to be a commit.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             one or more sources could not be read, or outputs could not
 	 *             be written to the Repository.
 	 */
-	public boolean merge(final boolean flush, final AnyObjectId... tips)
+	public boolean merge(boolean flush, AnyObjectId... tips)
 			throws IOException {
 		sourceObjects = new RevObject[tips.length];
 		for (int i = 0; i < tips.length; i++)
@@ -211,6 +242,8 @@ public abstract class Merger {
 	}
 
 	/**
+	 * Get the ID of the commit that was used as merge base for merging
+	 *
 	 * @return the ID of the commit that was used as merge base for merging, or
 	 *         null if no merge base was used or it was set manually
 	 * @since 3.2
@@ -225,9 +258,9 @@ public abstract class Merger {
 	 * @param b
 	 *            the second commit in {@link #sourceObjects}.
 	 * @return the merge base of two commits
-	 * @throws IncorrectObjectTypeException
+	 * @throws org.eclipse.jgit.errors.IncorrectObjectTypeException
 	 *             one of the input objects is not a commit.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             objects are missing or multiple merge bases were found.
 	 * @since 3.0
 	 */
@@ -257,12 +290,12 @@ public abstract class Merger {
 	 * @param treeId
 	 *            the tree to scan; must be a tree (not a treeish).
 	 * @return an iterator for the tree.
-	 * @throws IncorrectObjectTypeException
+	 * @throws org.eclipse.jgit.errors.IncorrectObjectTypeException
 	 *             the input object is not a tree.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the tree object is not found or cannot be read.
 	 */
-	protected AbstractTreeIterator openTree(final AnyObjectId treeId)
+	protected AbstractTreeIterator openTree(AnyObjectId treeId)
 			throws IncorrectObjectTypeException, IOException {
 		return new CanonicalTreeParser(null, reader, treeId);
 	}
@@ -280,14 +313,32 @@ public abstract class Merger {
 	 * @throws IncorrectObjectTypeException
 	 *             one of the input objects is not a commit, but the strategy
 	 *             requires it to be a commit.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             one or more sources could not be read, or outputs could not
 	 *             be written to the Repository.
 	 */
 	protected abstract boolean mergeImpl() throws IOException;
 
 	/**
+	 * Get resulting tree.
+	 *
 	 * @return resulting tree, if {@link #merge(AnyObjectId[])} returned true.
 	 */
 	public abstract ObjectId getResultTreeId();
+
+	/**
+	 * Set a progress monitor.
+	 *
+	 * @param monitor
+	 *            Monitor to use, can be null to indicate no progress reporting
+	 *            is desired.
+	 * @since 4.2
+	 */
+	public void setProgressMonitor(ProgressMonitor monitor) {
+		if (monitor == null) {
+			this.monitor = NullProgressMonitor.INSTANCE;
+		} else {
+			this.monitor = monitor;
+		}
+	}
 }

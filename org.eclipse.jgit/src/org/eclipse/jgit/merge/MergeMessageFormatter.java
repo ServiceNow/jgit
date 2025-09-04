@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2010-2012, Robin Stocker <robin@nibor.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010-2012, Robin Stocker <robin@nibor.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 package org.eclipse.jgit.merge;
 
@@ -46,6 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.jgit.lib.Constants;
+import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.util.ChangeIdUtil;
@@ -70,31 +38,31 @@ public class MergeMessageFormatter {
 		StringBuilder sb = new StringBuilder();
 		sb.append("Merge "); //$NON-NLS-1$
 
-		List<String> branches = new ArrayList<String>();
-		List<String> remoteBranches = new ArrayList<String>();
-		List<String> tags = new ArrayList<String>();
-		List<String> commits = new ArrayList<String>();
-		List<String> others = new ArrayList<String>();
+		List<String> branches = new ArrayList<>();
+		List<String> remoteBranches = new ArrayList<>();
+		List<String> tags = new ArrayList<>();
+		List<String> commits = new ArrayList<>();
+		List<String> others = new ArrayList<>();
 		for (Ref ref : refsToMerge) {
-			if (ref.getName().startsWith(Constants.R_HEADS))
+			if (ref.getName().startsWith(Constants.R_HEADS)) {
 				branches.add("'" + Repository.shortenRefName(ref.getName()) //$NON-NLS-1$
 						+ "'"); //$NON-NLS-1$
-
-			else if (ref.getName().startsWith(Constants.R_REMOTES))
+			} else if (ref.getName().startsWith(Constants.R_REMOTES)) {
 				remoteBranches.add("'" //$NON-NLS-1$
 						+ Repository.shortenRefName(ref.getName()) + "'"); //$NON-NLS-1$
-
-			else if (ref.getName().startsWith(Constants.R_TAGS))
+			} else if (ref.getName().startsWith(Constants.R_TAGS)) {
 				tags.add("'" + Repository.shortenRefName(ref.getName()) + "'"); //$NON-NLS-1$ //$NON-NLS-2$
-
-			else if (ref.getName().equals(ref.getObjectId().getName()))
-				commits.add("'" + ref.getName() + "'"); //$NON-NLS-1$ //$NON-NLS-2$
-
-			else
-				others.add(ref.getName());
+			} else {
+				ObjectId objectId = ref.getObjectId();
+				if (objectId != null && ref.getName().equals(objectId.getName())) {
+					commits.add("'" + ref.getName() + "'"); //$NON-NLS-1$ //$NON-NLS-2$
+				} else {
+					others.add(ref.getName());
+				}
+			}
 		}
 
-		List<String> listings = new ArrayList<String>();
+		List<String> listings = new ArrayList<>();
 
 		if (!branches.isEmpty())
 			listings.add(joinNames(branches, "branch", "branches")); //$NON-NLS-1$//$NON-NLS-2$
@@ -124,43 +92,70 @@ public class MergeMessageFormatter {
 	}
 
 	/**
-	 * Add section with conflicting paths to merge message.
+	 * Add section with conflicting paths to merge message. Lines are prefixed
+	 * with a hash.
 	 *
 	 * @param message
 	 *            the original merge message
 	 * @param conflictingPaths
 	 *            the paths with conflicts
 	 * @return merge message with conflicting paths added
+	 * @deprecated since 6.1; use
+	 *             {@link #formatWithConflicts(String, Iterable, char)} instead
 	 */
+	@Deprecated
 	public String formatWithConflicts(String message,
 			List<String> conflictingPaths) {
+		return formatWithConflicts(message, conflictingPaths, '#');
+	}
+
+	/**
+	 * Add section with conflicting paths to merge message.
+	 *
+	 * @param message
+	 *            the original merge message
+	 * @param conflictingPaths
+	 *            the paths with conflicts
+	 * @param commentChar
+	 *            comment character to use for prefixing the conflict lines
+	 * @return merge message with conflicting paths added
+	 * @since 6.1
+	 */
+	public String formatWithConflicts(String message,
+			Iterable<String> conflictingPaths, char commentChar) {
 		StringBuilder sb = new StringBuilder();
 		String[] lines = message.split("\n"); //$NON-NLS-1$
 		int firstFooterLine = ChangeIdUtil.indexOfFirstFooterLine(lines);
-		for (int i = 0; i < firstFooterLine; i++)
+		for (int i = 0; i < firstFooterLine; i++) {
 			sb.append(lines[i]).append('\n');
-		if (firstFooterLine == lines.length && message.length() != 0)
+		}
+		if (firstFooterLine == lines.length && message.length() != 0) {
 			sb.append('\n');
-		addConflictsMessage(conflictingPaths, sb);
-		if (firstFooterLine < lines.length)
+		}
+		addConflictsMessage(conflictingPaths, sb, commentChar);
+		if (firstFooterLine < lines.length) {
 			sb.append('\n');
-		for (int i = firstFooterLine; i < lines.length; i++)
+		}
+		for (int i = firstFooterLine; i < lines.length; i++) {
 			sb.append(lines[i]).append('\n');
+		}
 		return sb.toString();
 	}
 
-	private static void addConflictsMessage(List<String> conflictingPaths,
-			StringBuilder sb) {
-		sb.append("Conflicts:\n"); //$NON-NLS-1$
-		for (String conflictingPath : conflictingPaths)
-			sb.append('\t').append(conflictingPath).append('\n');
+	private static void addConflictsMessage(Iterable<String> conflictingPaths,
+			StringBuilder sb, char commentChar) {
+		sb.append(commentChar).append(" Conflicts:\n"); //$NON-NLS-1$
+		for (String conflictingPath : conflictingPaths) {
+			sb.append(commentChar).append('\t').append(conflictingPath)
+					.append('\n');
+		}
 	}
 
 	private static String joinNames(List<String> names, String singular,
 			String plural) {
-		if (names.size() == 1)
+		if (names.size() == 1) {
 			return singular + " " + names.get(0); //$NON-NLS-1$
-		else
-			return plural + " " + StringUtils.join(names, ", ", " and "); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+		}
+		return plural + " " + StringUtils.join(names, ", ", " and "); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 	}
 }

@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2012, Robin Rosenberg <robin.rosenberg@dewire.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2012, Robin Rosenberg <robin.rosenberg@dewire.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 package org.eclipse.jgit.api;
 
@@ -51,6 +18,8 @@ import java.util.Collection;
 
 import org.eclipse.jgit.api.ResetCommand.ResetType;
 import org.eclipse.jgit.junit.RepositoryTestCase;
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -60,10 +29,24 @@ public class HugeFileTest extends RepositoryTestCase {
 
 	private long lastt = t;
 
+	private Git git;
+
 	private void measure(String name) {
 		long c = System.currentTimeMillis();
 		System.out.println(name + ", dt=" + (c - lastt) / 1000.0 + "s");
 		lastt = c;
+	}
+
+	@Before
+	public void before() {
+		git = new Git(db);
+	}
+
+	@After
+	public void after() {
+		if (git != null) {
+			git.close();
+		}
 	}
 
 	@Ignore("Test takes way too long (~10 minutes) to be part of the standard suite")
@@ -71,11 +54,10 @@ public class HugeFileTest extends RepositoryTestCase {
 	public void testAddHugeFile() throws Exception {
 		measure("Commencing test");
 		File file = new File(db.getWorkTree(), "a.txt");
-		RandomAccessFile rf = new RandomAccessFile(file, "rw");
-		rf.setLength(4429185024L);
-		rf.close();
+		try (RandomAccessFile rf = new RandomAccessFile(file, "rw")) {
+			rf.setLength(4429185024L);
+		}
 		measure("Created file");
-		Git git = new Git(db);
 
 		git.add().addFilepattern("a.txt").call();
 		measure("Added file");
@@ -94,9 +76,9 @@ public class HugeFileTest extends RepositoryTestCase {
 		assertEquals(0, status.getUntracked().size());
 
 		// Does not change anything, but modified timestamp
-		rf = new RandomAccessFile(file, "rw");
-		rf.write(0);
-		rf.close();
+		try (RandomAccessFile rf = new RandomAccessFile(file, "rw")) {
+			rf.write(0);
+		}
 
 		status = git.status().call();
 		measure("Status after non-modifying update");
@@ -110,9 +92,9 @@ public class HugeFileTest extends RepositoryTestCase {
 		assertEquals(0, status.getUntracked().size());
 
 		// Change something
-		rf = new RandomAccessFile(file, "rw");
-		rf.write('a');
-		rf.close();
+		try (RandomAccessFile rf = new RandomAccessFile(file, "rw")) {
+			rf.write('a');
+		}
 
 		status = git.status().call();
 		measure("Status after modifying update");
@@ -126,10 +108,10 @@ public class HugeFileTest extends RepositoryTestCase {
 		assertEquals(0, status.getUntracked().size());
 
 		// Truncate mod 4G and re-establish equality
-		rf = new RandomAccessFile(file, "rw");
-		rf.setLength(134217728L);
-		rf.write(0);
-		rf.close();
+		try (RandomAccessFile rf = new RandomAccessFile(file, "rw")) {
+			rf.setLength(134217728L);
+			rf.write(0);
+		}
 
 		status = git.status().call();
 		measure("Status after truncating update");
@@ -143,9 +125,9 @@ public class HugeFileTest extends RepositoryTestCase {
 		assertEquals(0, status.getUntracked().size());
 
 		// Change something
-		rf = new RandomAccessFile(file, "rw");
-		rf.write('a');
-		rf.close();
+		try (RandomAccessFile rf = new RandomAccessFile(file, "rw")) {
+			rf.write('a');
+		}
 
 		status = git.status().call();
 		measure("Status after modifying and truncating update");
@@ -159,10 +141,10 @@ public class HugeFileTest extends RepositoryTestCase {
 		assertEquals(0, status.getUntracked().size());
 
 		// Truncate to entry length becomes negative int
-		rf = new RandomAccessFile(file, "rw");
-		rf.setLength(3429185024L);
-		rf.write(0);
-		rf.close();
+		try (RandomAccessFile rf = new RandomAccessFile(file, "rw")) {
+			rf.setLength(3429185024L);
+			rf.write(0);
+		}
 
 		git.add().addFilepattern("a.txt").call();
 		measure("Added truncated file");
@@ -182,9 +164,9 @@ public class HugeFileTest extends RepositoryTestCase {
 		assertEquals(0, status.getUntracked().size());
 
 		// Change something
-		rf = new RandomAccessFile(file, "rw");
-		rf.write('a');
-		rf.close();
+		try (RandomAccessFile rf = new RandomAccessFile(file, "rw")) {
+			rf.write('a');
+		}
 
 		status = git.status().call();
 		measure("Status after modifying and truncating update");

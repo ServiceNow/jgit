@@ -1,45 +1,12 @@
 /*
  * Copyright (C) 2010, Mathias Kinzler <mathias.kinzler@sap.com>
- * Copyright (C) 2010, Chris Aniszczyk <caniszczyk@gmail.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, Chris Aniszczyk <caniszczyk@gmail.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 package org.eclipse.jgit.api;
 
@@ -77,48 +44,55 @@ public class RenameBranchCommand extends GitCommand<Ref> {
 	private String newName;
 
 	/**
+	 * <p>
+	 * Constructor for RenameBranchCommand.
+	 * </p>
+	 *
 	 * @param repo
+	 *            the {@link org.eclipse.jgit.lib.Repository}
 	 */
 	protected RenameBranchCommand(Repository repo) {
 		super(repo);
 	}
 
-	/**
-	 * @throws RefNotFoundException
-	 *             if the old branch can not be found (branch with provided old
-	 *             name does not exist or old name resolves to a tag)
-	 * @throws InvalidRefNameException
-	 *             if the provided new name is <code>null</code> or otherwise
-	 *             invalid
-	 * @throws RefAlreadyExistsException
-	 *             if a branch with the new name already exists
-	 * @throws DetachedHeadException
-	 *             if rename is tried without specifying the old name and HEAD
-	 *             is detached
-	 */
+	/** {@inheritDoc} */
+	@Override
 	public Ref call() throws GitAPIException, RefNotFoundException, InvalidRefNameException,
 			RefAlreadyExistsException, DetachedHeadException {
 		checkCallable();
 
-		if (newName == null)
+		if (newName == null) {
 			throw new InvalidRefNameException(MessageFormat.format(JGitText
 					.get().branchNameInvalid, "<null>")); //$NON-NLS-1$
-
+		}
 		try {
 			String fullOldName;
 			String fullNewName;
-			if (repo.getRef(newName) != null)
-				throw new RefAlreadyExistsException(MessageFormat.format(
-						JGitText.get().refAlreadyExists1, newName));
 			if (oldName != null) {
-				Ref ref = repo.getRef(oldName);
-				if (ref == null)
-					throw new RefNotFoundException(MessageFormat.format(
-							JGitText.get().refNotResolved, oldName));
-				if (ref.getName().startsWith(Constants.R_TAGS))
-					throw new RefNotFoundException(MessageFormat.format(
-							JGitText.get().renameBranchFailedBecauseTag,
-							oldName));
+				// Don't just rely on findRef -- if there are local and remote
+				// branches with the same name, and oldName is a short name, it
+				// does not uniquely identify the ref and we might end up
+				// renaming the wrong branch or finding a tag instead even
+				// if a unique branch for the name exists!
+				//
+				// OldName may be a either a short or a full name.
+				Ref ref = repo.exactRef(oldName);
+				if (ref == null) {
+					ref = repo.exactRef(Constants.R_HEADS + oldName);
+					Ref ref2 = repo.exactRef(Constants.R_REMOTES + oldName);
+					if (ref != null && ref2 != null) {
+						throw new RefNotFoundException(MessageFormat.format(
+								JGitText.get().renameBranchFailedAmbiguous,
+								oldName, ref.getName(), ref2.getName()));
+					} else if (ref == null) {
+						if (ref2 != null) {
+							ref = ref2;
+						} else {
+							throw new RefNotFoundException(MessageFormat.format(
+									JGitText.get().refNotResolved, oldName));
+						}
+					}
+				}
 				fullOldName = ref.getName();
 			} else {
 				fullOldName = repo.getFullBranch();
@@ -130,26 +104,34 @@ public class RenameBranchCommand extends GitCommand<Ref> {
 					throw new DetachedHeadException();
 			}
 
-			if (fullOldName.startsWith(Constants.R_REMOTES))
+			if (fullOldName.startsWith(Constants.R_REMOTES)) {
 				fullNewName = Constants.R_REMOTES + newName;
-			else {
+			} else if (fullOldName.startsWith(Constants.R_HEADS)) {
 				fullNewName = Constants.R_HEADS + newName;
+			} else {
+				throw new RefNotFoundException(MessageFormat.format(
+						JGitText.get().renameBranchFailedNotABranch,
+						fullOldName));
 			}
 
-			if (!Repository.isValidRefName(fullNewName))
+			if (!Repository.isValidRefName(fullNewName)) {
 				throw new InvalidRefNameException(MessageFormat.format(JGitText
 						.get().branchNameInvalid, fullNewName));
-
+			}
+			if (repo.exactRef(fullNewName) != null) {
+				throw new RefAlreadyExistsException(MessageFormat
+						.format(JGitText.get().refAlreadyExists1, fullNewName));
+			}
 			RefRename rename = repo.renameRef(fullOldName, fullNewName);
 			Result renameResult = rename.rename();
 
 			setCallable(false);
 
-			if (Result.RENAMED != renameResult)
+			if (Result.RENAMED != renameResult) {
 				throw new JGitInternalException(MessageFormat.format(JGitText
 						.get().renameBranchUnexpectedResult, renameResult
 						.name()));
-
+			}
 			if (fullNewName.startsWith(Constants.R_HEADS)) {
 				String shortOldName = fullOldName.substring(Constants.R_HEADS
 						.length());
@@ -160,8 +142,9 @@ public class RenameBranchCommand extends GitCommand<Ref> {
 					String[] values = repoConfig.getStringList(
 							ConfigConstants.CONFIG_BRANCH_SECTION,
 							shortOldName, name);
-					if (values.length == 0)
+					if (values.length == 0) {
 						continue;
+					}
 					// Keep any existing values already configured for the
 					// new branch name
 					String[] existing = repoConfig.getStringList(
@@ -186,10 +169,11 @@ public class RenameBranchCommand extends GitCommand<Ref> {
 				repoConfig.save();
 			}
 
-			Ref resultRef = repo.getRef(newName);
-			if (resultRef == null)
+			Ref resultRef = repo.exactRef(fullNewName);
+			if (resultRef == null) {
 				throw new JGitInternalException(
 						JGitText.get().renameBranchFailedUnknownReason);
+			}
 			return resultRef;
 		} catch (IOException ioe) {
 			throw new JGitInternalException(ioe.getMessage(), ioe);
@@ -197,6 +181,14 @@ public class RenameBranchCommand extends GitCommand<Ref> {
 	}
 
 	/**
+	 * Sets the new short name of the branch.
+	 * <p>
+	 * The full name is constructed using the prefix of the branch to be renamed
+	 * defined by either {@link #setOldName(String)} or HEAD. If that old branch
+	 * is a local branch, the renamed branch also will be, and if the old branch
+	 * is a remote branch, so will be the renamed branch.
+	 * </p>
+	 *
 	 * @param newName
 	 *            the new name
 	 * @return this instance
@@ -208,6 +200,12 @@ public class RenameBranchCommand extends GitCommand<Ref> {
 	}
 
 	/**
+	 * Sets the old name of the branch.
+	 * <p>
+	 * {@code oldName} may be a short or a full name. Using a full name is
+	 * recommended to unambiguously identify the branch to be renamed.
+	 * </p>
+	 *
 	 * @param oldName
 	 *            the name of the branch to rename; if not set, the currently
 	 *            checked out branch (if any) will be renamed

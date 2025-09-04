@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.internal.storage.file;
@@ -164,17 +131,19 @@ class PackIndexV2 extends PackIndex {
 		IO.readFully(fd, packChecksum, 0, packChecksum.length);
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public long getObjectCount() {
 		return objectCnt;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public long getOffset64Count() {
 		return offset64.length / 8;
 	}
 
-	private int findLevelOne(final long nthPosition) {
+	private int findLevelOne(long nthPosition) {
 		int levelOne = Arrays.binarySearch(fanoutTable, nthPosition + 1);
 		if (levelOne >= 0) {
 			// If we hit the bucket exactly the item is in the bucket, or
@@ -191,28 +160,31 @@ class PackIndexV2 extends PackIndex {
 		return levelOne;
 	}
 
-	private int getLevelTwo(final long nthPosition, final int levelOne) {
+	private int getLevelTwo(long nthPosition, int levelOne) {
 		final long base = levelOne > 0 ? fanoutTable[levelOne - 1] : 0;
 		return (int) (nthPosition - base);
 	}
 
+	/** {@inheritDoc} */
 	@Override
-	public ObjectId getObjectId(final long nthPosition) {
+	public ObjectId getObjectId(long nthPosition) {
 		final int levelOne = findLevelOne(nthPosition);
 		final int p = getLevelTwo(nthPosition, levelOne);
 		final int p4 = p << 2;
 		return ObjectId.fromRaw(names[levelOne], p4 + p); // p * 5
 	}
 
+	/** {@inheritDoc} */
 	@Override
-	public long getOffset(final long nthPosition) {
+	public long getOffset(long nthPosition) {
 		final int levelOne = findLevelOne(nthPosition);
 		final int levelTwo = getLevelTwo(nthPosition, levelOne);
 		return getOffset(levelOne, levelTwo);
 	}
 
+	/** {@inheritDoc} */
 	@Override
-	public long findOffset(final AnyObjectId objId) {
+	public long findOffset(AnyObjectId objId) {
 		final int levelOne = objId.getFirstByte();
 		final int levelTwo = binarySearchLevelTwo(objId, levelOne);
 		if (levelTwo == -1)
@@ -220,13 +192,26 @@ class PackIndexV2 extends PackIndex {
 		return getOffset(levelOne, levelTwo);
 	}
 
-	private long getOffset(final int levelOne, final int levelTwo) {
+	/** {@inheritDoc} */
+	@Override
+	public int findPosition(AnyObjectId objId) {
+		int levelOne = objId.getFirstByte();
+		int levelTwo = binarySearchLevelTwo(objId, levelOne);
+		if (levelTwo < 0) {
+			return -1;
+		}
+		long objsBefore = levelOne == 0 ? 0 : fanoutTable[levelOne - 1];
+		return (int) objsBefore + levelTwo;
+	}
+
+	private long getOffset(int levelOne, int levelTwo) {
 		final long p = NB.decodeUInt32(offset32[levelOne], levelTwo << 2);
 		if ((p & IS_O64) != 0)
 			return NB.decodeUInt64(offset64, (8 * (int) (p & ~IS_O64)));
 		return p;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public long findCRC32(AnyObjectId objId) throws MissingObjectException {
 		final int levelOne = objId.getFirstByte();
@@ -236,16 +221,19 @@ class PackIndexV2 extends PackIndex {
 		return NB.decodeUInt32(crc32[levelOne], levelTwo << 2);
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public boolean hasCRC32Support() {
 		return true;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public Iterator<MutableEntry> iterator() {
 		return new EntriesIteratorV2();
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public void resolve(Set<ObjectId> matches, AbbreviatedObjectId id,
 			int matchLimit) throws IOException {
@@ -281,7 +269,7 @@ class PackIndexV2 extends PackIndex {
 		return (p << 2) + p; // p * 5
 	}
 
-	private int binarySearchLevelTwo(final AnyObjectId objId, final int levelOne) {
+	private int binarySearchLevelTwo(AnyObjectId objId, int levelOne) {
 		final int[] data = names[levelOne];
 		int high = offset32[levelOne].length >>> 2;
 		if (high == 0)
@@ -311,6 +299,7 @@ class PackIndexV2 extends PackIndex {
 		@Override
 		protected MutableEntry initEntry() {
 			return new MutableEntry() {
+				@Override
 				protected void ensureId() {
 					idBuffer.fromRaw(names[levelOne], levelTwo
 							- Constants.OBJECT_ID_LENGTH / 4);
@@ -318,6 +307,7 @@ class PackIndexV2 extends PackIndex {
 			};
 		}
 
+		@Override
 		public MutableEntry next() {
 			for (; levelOne < names.length; levelOne++) {
 				if (levelTwo < names[levelOne].length) {

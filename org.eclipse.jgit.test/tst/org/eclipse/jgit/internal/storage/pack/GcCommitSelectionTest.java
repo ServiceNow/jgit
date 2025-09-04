@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2015, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2015, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.internal.storage.pack;
@@ -50,14 +17,12 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
 import org.eclipse.jgit.internal.storage.file.GcTestCase;
 import org.eclipse.jgit.internal.storage.file.PackBitmapIndexBuilder;
-import org.eclipse.jgit.internal.storage.pack.ObjectToPack;
-import org.eclipse.jgit.internal.storage.pack.PackWriterBitmapPreparer;
-import org.eclipse.jgit.internal.storage.pack.PackWriterBitmapPreparer.BitmapCommit;
 import org.eclipse.jgit.junit.TestRepository.BranchBuilder;
 import org.eclipse.jgit.junit.TestRepository.CommitBuilder;
 import org.eclipse.jgit.lib.Constants;
@@ -71,6 +36,15 @@ public class GcCommitSelectionTest extends GcTestCase {
 
 	@Test
 	public void testBitmapSpansNoMerges() throws Exception {
+		testBitmapSpansNoMerges(false);
+	}
+
+	@Test
+	public void testBitmapSpansNoMergesWithTags() throws Exception {
+		testBitmapSpansNoMerges(true);
+	}
+
+	private void testBitmapSpansNoMerges(boolean withTags) throws Exception {
 		/*
 		 * Commit counts -> expected bitmap counts for history without merges.
 		 * The top 100 contiguous commits should always have bitmaps, and the
@@ -91,17 +65,55 @@ public class GcCommitSelectionTest extends GcTestCase {
 			assertTrue(nextCommitCount > currentCommits); // programming error
 			for (int i = currentCommits; i < nextCommitCount; i++) {
 				String str = "A" + i;
-				bb.commit().message(str).add(str, str).create();
+				RevCommit rc = bb.commit().message(str).add(str, str).create();
+				if (withTags) {
+					tr.lightweightTag(str, rc);
+				}
 			}
 			currentCommits = nextCommitCount;
 
-			gc.setExpireAgeMillis(0); // immediately delete old packs
-			gc.gc();
+			gc.setPackExpireAgeMillis(0); // immediately delete old packs
+			gc.setExpireAgeMillis(0);
+			gc.gc().get();
 			assertEquals(currentCommits * 3, // commit/tree/object
 					gc.getStatistics().numberOfPackedObjects);
 			assertEquals(currentCommits + " commits: ", expectedBitmapCount,
 					gc.getStatistics().numberOfBitmaps);
 		}
+	}
+
+	@Test
+	public void testBitmapDoesNotIncludeAnnotatedTags() throws Exception {
+		/*
+		 * Make sure that the bitmap generated for the following commit
+		 * graph does not include commit2 because it is not reachable by any
+		 * heads, despite being reachable from tag1 through the annotated-tag1.
+		 *
+		 * refs/heads/main
+		 *   ^
+		 *   |
+		 *  commit1 <-- commit2 <- annotated-tag1 <- tag1
+		 *   ^
+		 *   |
+		 *  commit0
+		 */
+		String mainBranch = "refs/heads/main";
+		BranchBuilder bb = tr.branch(mainBranch);
+
+		String commitMsg = "commit msg";
+		String fileBody = "file body";
+		String tagName = "tag1";
+		bb.commit().message(commitMsg + " 1").add("file1", fileBody).create();
+		RevCommit commit1 = bb.commit().message(commitMsg + " 2").add("file2", fileBody).create();
+		RevCommit commit2 = bb.commit().message(commitMsg + " 3").add("file3", fileBody).create();
+		tr.lightweightTag(tagName, tr.tag(tagName, commit2));
+		tr.branch(mainBranch).update(commit1);
+
+		gc.setExpireAgeMillis(0);
+		gc.gc();
+
+		// Create only 2 bitmaps, for commit0 and commit1, excluding commit2
+		assertEquals(2, gc.getStatistics().numberOfBitmaps);
 	}
 
 	@Test
@@ -158,8 +170,9 @@ public class GcCommitSelectionTest extends GcTestCase {
 			}
 			currentCommits = nextCommitCount;
 
-			gc.setExpireAgeMillis(0); // immediately delete old packs
-			gc.gc();
+			gc.setPackExpireAgeMillis(0); // immediately delete old packs
+			gc.setExpireAgeMillis(0);
+			gc.gc().get();
 			assertEquals(currentCommits + " commits: ", expectedBitmapCount,
 					gc.getStatistics().numberOfBitmaps);
 		}
@@ -198,12 +211,31 @@ public class GcCommitSelectionTest extends GcTestCase {
 		final int commitsForShallowBranches = 100;
 
 		// Excessive branch history pruning, one old branch.
-		gc.setExpireAgeMillis(0); // immediately delete old packs
-		gc.gc();
+		gc.setPackExpireAgeMillis(0); // immediately delete old packs
+		gc.setExpireAgeMillis(0);
+		gc.gc().get();
 		assertEquals(
 				commitsForSparseBranch + commitsForFullBranch
 						+ commitsForShallowBranches,
 				gc.getStatistics().numberOfBitmaps);
+	}
+
+	@Test
+	public void testBitmapsForExcludedBranches() throws Exception {
+		createNewCommitOnNewBranch("main");
+		createNewCommitOnNewBranch("other");
+		PackConfig packConfig = new PackConfig();
+		packConfig.setBitmapExcludedRefsPrefixes(new String[] { "refs/heads/other" });
+		gc.setPackConfig(packConfig);
+		gc.gc();
+		assertEquals(1,
+			gc.getStatistics().numberOfBitmaps);
+	}
+
+	private void createNewCommitOnNewBranch(String branchName) throws Exception {
+		BranchBuilder bb = tr.branch("refs/heads/" + branchName);
+		String msg = "New branch " + branchName;
+		bb.commit().message(msg).add("some-filename.txt", msg).create();
 	}
 
 	@Test
@@ -230,9 +262,10 @@ public class GcCommitSelectionTest extends GcTestCase {
 
 		List<RevCommit> commits = Arrays.asList(m0, m1, m2, b3, m4, b5, m6, b7,
 				m8, m9);
-		PackWriterBitmapPreparer preparer = newPeparer(m9, commits);
+		PackWriterBitmapPreparer preparer = newPreparer(
+				Collections.singleton(m9), commits, new PackConfig());
 		List<BitmapCommit> selection = new ArrayList<>(
-				preparer.selectCommits(commits.size()));
+				preparer.selectCommits(commits.size(), PackWriter.NONE));
 
 		// Verify that the output is ordered by the separate "chains"
 		String[] expected = { m0.name(), m1.name(), m2.name(), m4.name(),
@@ -254,15 +287,107 @@ public class GcCommitSelectionTest extends GcTestCase {
 		return commit.create();
 	}
 
-	private PackWriterBitmapPreparer newPeparer(RevCommit want,
-			List<RevCommit> commits)
-			throws IOException {
+	@Test
+	public void testDistributionOnMultipleBranches() throws Exception {
+		BranchBuilder[] branches = { tr.branch("refs/heads/main"),
+				tr.branch("refs/heads/a"), tr.branch("refs/heads/b"),
+				tr.branch("refs/heads/c") };
+		RevCommit[] tips = new RevCommit[branches.length];
+		List<RevCommit> commits = createHistory(branches, tips);
+		PackConfig config = new PackConfig();
+		config.setBitmapContiguousCommitCount(1);
+		config.setBitmapRecentCommitSpan(5);
+		config.setBitmapDistantCommitSpan(20);
+		config.setBitmapRecentCommitCount(100);
+		Set<RevCommit> wants = new HashSet<>(Arrays.asList(tips));
+		PackWriterBitmapPreparer preparer = newPreparer(wants, commits, config);
+		List<BitmapCommit> selection = new ArrayList<>(
+				preparer.selectCommits(commits.size(), PackWriter.NONE));
+		Set<ObjectId> selected = new HashSet<>();
+		for (BitmapCommit c : selection) {
+			selected.add(c.toObjectId());
+		}
+
+		// Verify that each branch has uniform bitmap selection coverage
+		for (RevCommit c : wants) {
+			assertTrue(selected.contains(c.toObjectId()));
+			int count = 1;
+			int selectedCount = 1;
+			RevCommit parent = c;
+			while (parent.getParentCount() != 0) {
+				parent = parent.getParent(0);
+				count++;
+				if (selected.contains(parent.toObjectId())) {
+					selectedCount++;
+				}
+			}
+			// The selection algorithm prefers merges and will look in the
+			// current range plus the recent commit span before selecting a
+			// commit. Since this history has no merges, we expect the recent
+			// span should have 100/10=10 and distant commit spans should have
+			// 100/25=4 per 100 commit range.
+			int expectedCount = 10 + (count - 100 - 24) / 25;
+			assertTrue(expectedCount <= selectedCount);
+		}
+	}
+
+	private List<RevCommit> createHistory(BranchBuilder[] branches,
+			RevCommit[] tips) throws Exception {
+		/*-
+		 * Create a history like this, where branches a, b and c branch off of the main branch
+		 * at commits 100, 200 and 300, and where commit times move forward alternating between
+		 * branches.
+		 *
+		 * o...o...o...o...o      commits root,m0,m1,...,m399
+		 *      \   \   \
+		 *       \   \   o...     commits branch_c,c300,c301,...,c399
+		 *        \   \
+		 *         \   o...o...   commits branch_b,b200,b201,...,b399
+		 *          \
+		 *           o...o...o... commits branch_a,b100,b101,...,a399
+		 */
+		List<RevCommit> commits = new ArrayList<>();
+		String[] prefixes = { "m", "a", "b", "c" };
+		int branchCount = branches.length;
+		tips[0] = addCommit(commits, branches[0], "root");
+		int counter = 0;
+
+		for (int b = 0; b < branchCount; b++) {
+			for (int i = 0; i < 100; i++, counter++) {
+				for (int j = 0; j <= b; j++) {
+					tips[j] = addCommit(commits, branches[j],
+							prefixes[j] + counter);
+				}
+			}
+			// Create a new branch from current value of the master branch
+			if (b < branchCount - 1) {
+				tips[b + 1] = addCommit(branches[b + 1],
+						"branch_" + prefixes[b + 1], tips[0]);
+			}
+		}
+		return commits;
+	}
+
+	private RevCommit addCommit(List<RevCommit> commits, BranchBuilder bb,
+			String msg, RevCommit... parents) throws Exception {
+		CommitBuilder commit = bb.commit().message(msg).add(msg, msg).tick(1);
+		if (parents.length > 0) {
+			commit.noParents();
+			for (RevCommit parent : parents) {
+				commit.parent(parent);
+			}
+		}
+		RevCommit c = commit.create();
+		commits.add(c);
+		return c;
+	}
+
+	private PackWriterBitmapPreparer newPreparer(Set<RevCommit> wants,
+			List<RevCommit> commits, PackConfig config) throws IOException {
 		List<ObjectToPack> objects = new ArrayList<>(commits.size());
 		for (RevCommit commit : commits) {
 			objects.add(new ObjectToPack(commit, Constants.OBJ_COMMIT));
 		}
-		Set<ObjectId> wants = Collections.singleton((ObjectId) want);
-		PackConfig config = new PackConfig();
 		PackBitmapIndexBuilder builder = new PackBitmapIndexBuilder(objects);
 		return new PackWriterBitmapPreparer(
 				tr.getRepository().newObjectReader(), builder,

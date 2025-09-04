@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2010, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.internal.storage.pack;
@@ -51,26 +18,27 @@ import org.eclipse.jgit.errors.MissingObjectException;
 import org.eclipse.jgit.errors.StoredObjectRepresentationNotAvailableException;
 import org.eclipse.jgit.lib.AnyObjectId;
 import org.eclipse.jgit.lib.BitmapIndex.BitmapBuilder;
-import org.eclipse.jgit.lib.ObjectReader;
 import org.eclipse.jgit.lib.ProgressMonitor;
 
 /**
- * Extension of {@link ObjectReader} that supports reusing objects in packs.
+ * Extension of {@link org.eclipse.jgit.lib.ObjectReader} that supports reusing
+ * objects in packs.
  * <p>
  * {@code ObjectReader} implementations may also optionally implement this
- * interface to support {@link PackWriter} with a means of copying an object
- * that is already in pack encoding format directly into the output stream,
- * without incurring decompression and recompression overheads.
+ * interface to support
+ * {@link org.eclipse.jgit.internal.storage.pack.PackWriter} with a means of
+ * copying an object that is already in pack encoding format directly into the
+ * output stream, without incurring decompression and recompression overheads.
  */
 public interface ObjectReuseAsIs {
 	/**
 	 * Allocate a new {@code PackWriter} state structure for an object.
 	 * <p>
-	 * {@link PackWriter} allocates these objects to keep track of the
-	 * per-object state, and how to load the objects efficiently into the
-	 * generated stream. Implementers may subclass this type with additional
-	 * object state, such as to remember what file and offset contains the
-	 * object's pack encoded data.
+	 * {@link org.eclipse.jgit.internal.storage.pack.PackWriter} allocates these
+	 * objects to keep track of the per-object state, and how to load the
+	 * objects efficiently into the generated stream. Implementers may subclass
+	 * this type with additional object state, such as to remember what file and
+	 * offset contains the object's pack encoded data.
 	 *
 	 * @param objectId
 	 *            the id of the object that will be packed.
@@ -78,22 +46,23 @@ public interface ObjectReuseAsIs {
 	 *            the Git type of the object that will be packed.
 	 * @return a new instance for this object.
 	 */
-	public ObjectToPack newObjectToPack(AnyObjectId objectId, int type);
+	ObjectToPack newObjectToPack(AnyObjectId objectId, int type);
 
 	/**
 	 * Select the best object representation for a packer.
 	 * <p>
 	 * Implementations should iterate through all available representations of
 	 * an object, and pass them in turn to the PackWriter though
-	 * {@link PackWriter#select(ObjectToPack, StoredObjectRepresentation)} so
-	 * the writer can select the most suitable representation to reuse into the
-	 * output stream.
+	 * {@link org.eclipse.jgit.internal.storage.pack.PackWriter#select(ObjectToPack, StoredObjectRepresentation)}
+	 * so the writer can select the most suitable representation to reuse into
+	 * the output stream.
 	 * <p>
-	 * If the implementation returns CachedPack from {@link #getCachedPacksAndUpdate(BitmapBuilder)}
-	 * it must consider the representation of any object that is stored in any
-	 * of the offered CachedPacks. PackWriter relies on this behavior to prune
-	 * duplicate objects out of the pack stream when it selects a CachedPack and
-	 * the object was also reached through the thin-pack enumeration.
+	 * If the implementation returns CachedPack from
+	 * {@link #getCachedPacksAndUpdate(BitmapBuilder)} it must consider the
+	 * representation of any object that is stored in any of the offered
+	 * CachedPacks. PackWriter relies on this behavior to prune duplicate
+	 * objects out of the pack stream when it selects a CachedPack and the
+	 * object was also reached through the thin-pack enumeration.
 	 * <p>
 	 * The implementation may choose to consider multiple objects at once on
 	 * concurrent threads, but must evaluate all representations of an object
@@ -106,13 +75,13 @@ public interface ObjectReuseAsIs {
 	 *            once for each item in the iteration when selection is done.
 	 * @param objects
 	 *            the objects that are being packed.
-	 * @throws MissingObjectException
+	 * @throws org.eclipse.jgit.errors.MissingObjectException
 	 *             there is no representation available for the object, as it is
 	 *             no longer in the repository. Packing will abort.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the repository cannot be accessed. Packing will abort.
 	 */
-	public void selectObjectRepresentation(PackWriter packer,
+	void selectObjectRepresentation(PackWriter packer,
 			ProgressMonitor monitor, Iterable<ObjectToPack> objects)
 			throws IOException, MissingObjectException;
 
@@ -136,7 +105,9 @@ public interface ObjectReuseAsIs {
 	 * format to reach a delta base that is later in the stream. It may also
 	 * reduce data locality for the reader, slowing down data access.
 	 *
-	 * Invoking {@link PackOutputStream#writeObject(ObjectToPack)} will cause
+	 * Invoking
+	 * {@link org.eclipse.jgit.internal.storage.pack.PackOutputStream#writeObject(ObjectToPack)}
+	 * will cause
 	 * {@link #copyObjectAsIs(PackOutputStream, ObjectToPack, boolean)} to be
 	 * invoked recursively on {@code this} if the current object is scheduled
 	 * for reuse.
@@ -147,11 +118,11 @@ public interface ObjectReuseAsIs {
 	 *            the list of objects to write. Objects should be written in
 	 *            approximately this order. Implementors may resort the list
 	 *            elements in-place during writing if desired.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the stream cannot be written to, or one or more required
 	 *             objects cannot be accessed from the object database.
 	 */
-	public void writeObjects(PackOutputStream out, List<ObjectToPack> list)
+	void writeObjects(PackOutputStream out, List<ObjectToPack> list)
 			throws IOException;
 
 	/**
@@ -186,17 +157,17 @@ public interface ObjectReuseAsIs {
 	 *            corrupt before being reused. If false, validation may be
 	 *            skipped as it will be performed elsewhere in the processing
 	 *            pipeline.
-	 * @throws StoredObjectRepresentationNotAvailableException
+	 * @throws org.eclipse.jgit.errors.StoredObjectRepresentationNotAvailableException
 	 *             the previously selected representation is no longer
 	 *             available. If thrown before {@code out.writeHeader} the pack
 	 *             writer will try to find another representation, and write
 	 *             that one instead. If throw after {@code out.writeHeader},
 	 *             packing will abort.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the stream's write method threw an exception. Packing will
 	 *             abort.
 	 */
-	public void copyObjectAsIs(PackOutputStream out, ObjectToPack otp,
+	void copyObjectAsIs(PackOutputStream out, ObjectToPack otp,
 			boolean validate) throws IOException,
 			StoredObjectRepresentationNotAvailableException;
 
@@ -209,10 +180,10 @@ public interface ObjectReuseAsIs {
 	 *            stream to append the pack onto.
 	 * @param pack
 	 *            the cached pack to send.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the pack cannot be read, or stream did not accept a write.
 	 */
-	public abstract void copyPackAsIs(PackOutputStream out, CachedPack pack)
+	void copyPackAsIs(PackOutputStream out, CachedPack pack)
 			throws IOException;
 
 	/**
@@ -225,11 +196,11 @@ public interface ObjectReuseAsIs {
 	 * @param needBitmap
 	 *            the bitmap that contains all of the objects the client wants.
 	 * @return the available cached packs.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the cached packs cannot be listed from the repository.
 	 *             Callers may choose to ignore this and continue as-if there
 	 *             were no cached packs.
 	 */
-	public Collection<CachedPack> getCachedPacksAndUpdate(
+	Collection<CachedPack> getCachedPacksAndUpdate(
 			BitmapBuilder needBitmap) throws IOException;
 }

@@ -1,53 +1,19 @@
 /*
  * Copyright (C) 2008-2009, Google Inc.
  * Copyright (C) 2009, Robin Rosenberg <robin.rosenberg@dewire.com>
- * Copyright (C) 2006-2008, Shawn O. Pearce <spearce@spearce.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2006-2008, Shawn O. Pearce <spearce@spearce.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.util;
 
 import java.io.EOFException;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
@@ -59,6 +25,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.jgit.internal.JGitText;
+import org.eclipse.jgit.util.io.SilentFileInputStream;
 
 /**
  * Input/Output utilities
@@ -71,12 +38,12 @@ public class IO {
 	 * @param path
 	 *            location of the file to read.
 	 * @return complete contents of the requested local file.
-	 * @throws FileNotFoundException
+	 * @throws java.io.FileNotFoundException
 	 *             the file does not exist.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the file exists, but its contents cannot be read.
 	 */
-	public static final byte[] readFully(final File path)
+	public static final byte[] readFully(File path)
 			throws FileNotFoundException, IOException {
 		return IO.readFully(path, Integer.MAX_VALUE);
 	}
@@ -91,15 +58,14 @@ public class IO {
 	 *            only the first limit number of bytes are returned
 	 * @return complete contents of the requested local file. If the contents
 	 *         exceeds the limit, then only the limit is returned.
-	 * @throws FileNotFoundException
+	 * @throws java.io.FileNotFoundException
 	 *             the file does not exist.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the file exists, but its contents cannot be read.
 	 */
-	public static final byte[] readSome(final File path, final int limit)
+	public static final byte[] readSome(File path, int limit)
 			throws FileNotFoundException, IOException {
-		FileInputStream in = new FileInputStream(path);
-		try {
+		try (SilentFileInputStream in = new SilentFileInputStream(path)) {
 			byte[] buf = new byte[limit];
 			int cnt = 0;
 			for (;;) {
@@ -113,12 +79,6 @@ public class IO {
 			byte[] res = new byte[cnt];
 			System.arraycopy(buf, 0, res, 0, cnt);
 			return res;
-		} finally {
-			try {
-				in.close();
-			} catch (IOException ignored) {
-				// do nothing
-			}
 		}
 	}
 
@@ -131,15 +91,14 @@ public class IO {
 	 *            maximum number of bytes to read, if the file is larger than
 	 *            this limit an IOException is thrown.
 	 * @return complete contents of the requested local file.
-	 * @throws FileNotFoundException
+	 * @throws java.io.FileNotFoundException
 	 *             the file does not exist.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the file exists, but its contents cannot be read.
 	 */
-	public static final byte[] readFully(final File path, final int max)
+	public static final byte[] readFully(File path, int max)
 			throws FileNotFoundException, IOException {
-		final FileInputStream in = new FileInputStream(path);
-		try {
+		try (SilentFileInputStream in = new SilentFileInputStream(path)) {
 			long sz = Math.max(path.length(), 1);
 			if (sz > max)
 				throw new IOException(MessageFormat.format(
@@ -173,12 +132,6 @@ public class IO {
 				buf = nb;
 			}
 			return buf;
-		} finally {
-			try {
-				in.close();
-			} catch (IOException ignored) {
-				// ignore any close errors, this was a read only stream
-			}
 		}
 	}
 
@@ -199,7 +152,7 @@ public class IO {
 	 *         on obtaining the underlying array for efficient data access. If
 	 *         {@code sizeHint} was too large, the array may be over-allocated,
 	 *         resulting in {@code limit() < array().length}.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             there was an error reading from the stream.
 	 */
 	public static ByteBuffer readWholeStream(InputStream in, int sizeHint)
@@ -217,12 +170,13 @@ public class IO {
 		if (last < 0)
 			return ByteBuffer.wrap(out, 0, pos);
 
-		@SuppressWarnings("resource" /* java 7 */)
-		TemporaryBuffer.Heap tmp = new TemporaryBuffer.Heap(Integer.MAX_VALUE);
-		tmp.write(out);
-		tmp.write(last);
-		tmp.copy(in);
-		return ByteBuffer.wrap(tmp.toByteArray());
+		try (TemporaryBuffer.Heap tmp = new TemporaryBuffer.Heap(
+				Integer.MAX_VALUE)) {
+			tmp.write(out);
+			tmp.write(last);
+			tmp.copy(in);
+			return ByteBuffer.wrap(tmp.toByteArray());
+		}
 	}
 
 	/**
@@ -238,7 +192,7 @@ public class IO {
 	 *            number of bytes that must be read.
 	 * @throws EOFException
 	 *             the stream ended before dst was fully populated.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             there was an error reading from the stream.
 	 */
 	public static void readFully(final InputStream fd, final byte[] dst,
@@ -253,6 +207,25 @@ public class IO {
 	}
 
 	/**
+	 * Read from input until the entire byte array filled, or throw an exception
+	 * if stream ends first.
+	 *
+	 * @param fd
+	 *            input stream to read the data from.
+	 * @param dst
+	 *            buffer that must be fully populated
+	 * @throws EOFException
+	 *             the stream ended before dst was fully populated.
+	 * @throws java.io.IOException
+	 *             there was an error reading from the stream.
+	 * @since 6.5
+	 */
+	public static void readFully(InputStream fd, byte[] dst)
+			throws IOException {
+		readFully(fd, dst, 0, dst.length);
+	}
+
+	/**
 	 * Read as much of the array as possible from a channel.
 	 *
 	 * @param channel
@@ -264,7 +237,7 @@ public class IO {
 	 * @param len
 	 *            number of bytes that should be read.
 	 * @return number of bytes actually read.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             there was an error reading from the channel.
 	 */
 	public static int read(ReadableByteChannel channel, byte[] dst, int off,
@@ -292,16 +265,16 @@ public class IO {
 	 *            buffer that must be fully populated, [off, off+len).
 	 * @param off
 	 *            position within the buffer to start writing to.
-	 * @return number of bytes in buffer or stream, whichever is shortest
-	 * @throws IOException
+	 * @return number of bytes read
+	 * @throws java.io.IOException
 	 *             there was an error reading from the stream.
 	 */
 	public static int readFully(InputStream fd, byte[] dst, int off)
 			throws IOException {
 		int r;
 		int len = 0;
-		while ((r = fd.read(dst, off, dst.length - off)) >= 0
-				&& len < dst.length) {
+		while (off < dst.length
+				&& (r = fd.read(dst, off, dst.length - off)) >= 0) {
 			off += r;
 			len += r;
 		}
@@ -322,10 +295,10 @@ public class IO {
 	 * @throws EOFException
 	 *             the stream ended before the requested number of bytes were
 	 *             skipped.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             there was an error reading from the stream.
 	 */
-	public static void skipFully(final InputStream fd, long toSkip)
+	public static void skipFully(InputStream fd, long toSkip)
 			throws IOException {
 		while (toSkip > 0) {
 			final long r = fd.skip(toSkip);
@@ -343,8 +316,8 @@ public class IO {
 	 * @return the string divided into lines
 	 * @since 2.0
 	 */
-	public static List<String> readLines(final String s) {
-		List<String> l = new ArrayList<String>();
+	public static List<String> readLines(String s) {
+		List<String> l = new ArrayList<>();
 		StringBuilder sb = new StringBuilder();
 		for (int i = 0; i < s.length(); i++) {
 			char c = s.charAt(i);
@@ -358,13 +331,14 @@ public class IO {
 					c = s.charAt(++i);
 					l.add(sb.toString());
 					sb.setLength(0);
-					if (c != '\n')
+					if (c != '\n') {
 						sb.append(c);
+					}
 					continue;
-				} else { // EOF
-					l.add(sb.toString());
-					break;
 				}
+				// EOF
+				l.add(sb.toString());
+				break;
 			}
 			sb.append(c);
 		}
@@ -384,7 +358,7 @@ public class IO {
 	 *            hint for buffer sizing; 0 or negative for default.
 	 * @return the next line from the input, always ending in {@code \n} unless
 	 *         EOF was reached.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             there was an error reading from the stream.
 	 * @since 4.1
 	 */
@@ -414,20 +388,18 @@ public class IO {
 				}
 				resetAndSkipFully(in, n);
 			}
-		} else {
-			StringBuilder buf = sizeHint > 0
-					? new StringBuilder(sizeHint)
-					: new StringBuilder();
-			int i;
-			while ((i = in.read()) != -1) {
-				char c = (char) i;
-				buf.append(c);
-				if (c == '\n') {
-					break;
-				}
-			}
-			return buf.toString();
 		}
+		StringBuilder buf = sizeHint > 0 ? new StringBuilder(sizeHint)
+				: new StringBuilder();
+		int i;
+		while ((i = in.read()) != -1) {
+			char c = (char) i;
+			buf.append(c);
+			if (c == '\n') {
+				break;
+			}
+		}
+		return buf.toString();
 	}
 
 	private static void resetAndSkipFully(Reader fd, long toSkip) throws IOException {

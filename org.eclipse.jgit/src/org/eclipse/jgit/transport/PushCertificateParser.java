@@ -1,49 +1,16 @@
 /*
- * Copyright (C) 2015, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2015, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.transport;
 
-import static org.eclipse.jgit.transport.BaseReceivePack.parseCommand;
+import static org.eclipse.jgit.transport.ReceivePack.parseCommand;
 import static org.eclipse.jgit.transport.GitProtocolConstants.CAPABILITY_PUSH_CERT;
 
 import java.io.EOFException;
@@ -133,11 +100,12 @@ public class PushCertificateParser {
 	/**
 	 * Parse a push certificate from a reader.
 	 * <p>
-	 * Differences from the {@link PacketLineIn} receiver methods:
+	 * Differences from the {@link org.eclipse.jgit.transport.PacketLineIn}
+	 * receiver methods:
 	 * <ul>
 	 * <li>Does not use pkt-line framing.</li>
 	 * <li>Reads an entire cert in one call rather than depending on a loop in
-	 *   the caller.</li>
+	 * the caller.</li>
 	 * <li>Does not assume a {@code "push-cert-end"} line.</li>
 	 * </ul>
 	 *
@@ -145,9 +113,9 @@ public class PushCertificateParser {
 	 *            input reader; consumed only up until the end of the next
 	 *            signature in the input.
 	 * @return the parsed certificate, or null if the reader was at EOF.
-	 * @throws PackProtocolException
+	 * @throws org.eclipse.jgit.errors.PackProtocolException
 	 *             if the certificate is malformed.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             if there was an error reading from the input.
 	 * @since 4.1
 	 */
@@ -163,9 +131,9 @@ public class PushCertificateParser {
 	 * @param str
 	 *            input string.
 	 * @return the parsed certificate.
-	 * @throws PackProtocolException
+	 * @throws org.eclipse.jgit.errors.PackProtocolException
 	 *             if the certificate is malformed.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             if there was an error reading from the input.
 	 * @since 4.1
 	 */
@@ -207,6 +175,8 @@ public class PushCertificateParser {
 	private final List<ReceiveCommand> commands = new ArrayList<>();
 
 	/**
+	 * <p>Constructor for PushCertificateParser.</p>
+	 *
 	 * @param into
 	 *            destination repository for the push.
 	 * @param cfg
@@ -240,9 +210,9 @@ public class PushCertificateParser {
 	 *            input reader; consumed only up until the end of the next
 	 *            signature in the input.
 	 * @return the parsed certificate, or null if the reader was at EOF.
-	 * @throws PackProtocolException
+	 * @throws org.eclipse.jgit.errors.PackProtocolException
 	 *             if the certificate is malformed.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             if there was an error reading from the input.
 	 * @since 4.1
 	 */
@@ -267,8 +237,11 @@ public class PushCertificateParser {
 	}
 
 	/**
-	 * @return the parsed certificate, or null if push certificates are disabled.
-	 * @throws IOException
+	 * Build the parsed certificate
+	 *
+	 * @return the parsed certificate, or null if push certificates are
+	 *         disabled.
+	 * @throws java.io.IOException
 	 *             if the push certificate has missing or invalid fields.
 	 * @since 4.1
 	 */
@@ -285,6 +258,9 @@ public class PushCertificateParser {
 	}
 
 	/**
+	 * Whether the repository is configured to use signed pushes in this
+	 * context.
+	 *
 	 * @return if the repository is configured to use signed pushes in this
 	 *         context.
 	 * @since 4.0
@@ -294,6 +270,9 @@ public class PushCertificateParser {
 	}
 
 	/**
+	 * Get the whole string for the nonce to be included into the capability
+	 * advertisement
+	 *
 	 * @return the whole string for the nonce to be included into the capability
 	 *         advertisement, or null if push certificates are disabled.
 	 * @since 4.0
@@ -348,7 +327,7 @@ public class PushCertificateParser {
 	 *            {@code NonceGenerator} will allow for some time skew caused by
 	 *            clients disconnected and reconnecting in the stateless smart
 	 *            HTTP protocol.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             if the certificate from the client is badly malformed or the
 	 *             client disconnects before sending the entire certificate.
 	 * @since 4.0
@@ -410,7 +389,7 @@ public class PushCertificateParser {
 	 *
 	 * @param pckIn
 	 *            where we read the signature from.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             if the signature is invalid.
 	 * @since 4.0
 	 */
@@ -455,7 +434,7 @@ public class PushCertificateParser {
 	 * @param line
 	 *            the line read from the wire that produced this
 	 *            command, with optional trailing newline already trimmed.
-	 * @throws PackProtocolException
+	 * @throws org.eclipse.jgit.errors.PackProtocolException
 	 *             if the raw line cannot be parsed to a command.
 	 * @since 4.0
 	 */

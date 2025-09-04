@@ -1,51 +1,20 @@
 /*
- * Copyright (C) 2010, 2012 Chris Aniszczyk <caniszczyk@gmail.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, 2012 Chris Aniszczyk <caniszczyk@gmail.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 package org.eclipse.jgit.api;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedList;
+import java.util.List;
 
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.api.errors.JGitInternalException;
@@ -53,6 +22,7 @@ import org.eclipse.jgit.api.errors.NoFilepatternException;
 import org.eclipse.jgit.dircache.DirCache;
 import org.eclipse.jgit.dircache.DirCacheBuildIterator;
 import org.eclipse.jgit.dircache.DirCacheBuilder;
+import org.eclipse.jgit.events.WorkingTreeModifiedEvent;
 import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.FileMode;
@@ -69,7 +39,7 @@ import org.eclipse.jgit.treewalk.filter.PathFilterGroup;
  * class should only be used for one invocation of the command (means: one call
  * to {@link #call()}).
  * <p>
- * Examples (<code>git</code> is a {@link Git} instance):
+ * Examples (<code>git</code> is a {@link org.eclipse.jgit.api.Git} instance):
  * <p>
  * Remove file "test.txt" from both index and working directory:
  *
@@ -94,15 +64,19 @@ public class RmCommand extends GitCommand<DirCache> {
 	private boolean cached = false;
 
 	/**
+	 * Constructor for RmCommand.
 	 *
 	 * @param repo
+	 *            the {@link org.eclipse.jgit.lib.Repository}
 	 */
 	public RmCommand(Repository repo) {
 		super(repo);
-		filepatterns = new LinkedList<String>();
+		filepatterns = new LinkedList<>();
 	}
 
 	/**
+	 * Add file name pattern of files to be removed
+	 *
 	 * @param filepattern
 	 *            repository-relative path of file to remove (with
 	 *            <code>/</code> as separator)
@@ -118,8 +92,9 @@ public class RmCommand extends GitCommand<DirCache> {
 	 * Only remove the specified files from the index.
 	 *
 	 * @param cached
-	 *            true if files should only be removed from index, false if
-	 *            files should also be deleted from the working directory
+	 *            {@code true} if files should only be removed from index,
+	 *            {@code false} if files should also be deleted from the working
+	 *            directory
 	 * @return {@code this}
 	 * @since 2.2
 	 */
@@ -130,12 +105,13 @@ public class RmCommand extends GitCommand<DirCache> {
 	}
 
 	/**
+	 * {@inheritDoc}
+	 * <p>
 	 * Executes the {@code Rm} command. Each instance of this class should only
 	 * be used for one invocation of the command. Don't call this method twice
 	 * on an instance.
-	 *
-	 * @return the DirCache after Rm
 	 */
+	@Override
 	public DirCache call() throws GitAPIException,
 			NoFilepatternException {
 
@@ -144,7 +120,8 @@ public class RmCommand extends GitCommand<DirCache> {
 		checkCallable();
 		DirCache dc = null;
 
-		try (final TreeWalk tw = new TreeWalk(repo)) {
+		List<String> actuallyDeletedFiles = new ArrayList<>();
+		try (TreeWalk tw = new TreeWalk(repo)) {
 			dc = repo.lockDirCache();
 			DirCacheBuilder builder = dc.builder();
 			tw.reset(); // drop the first empty tree, which we do not need here
@@ -156,11 +133,14 @@ public class RmCommand extends GitCommand<DirCache> {
 				if (!cached) {
 					final FileMode mode = tw.getFileMode(0);
 					if (mode.getObjectType() == Constants.OBJ_BLOB) {
+						String relativePath = tw.getPathString();
 						final File path = new File(repo.getWorkTree(),
-								tw.getPathString());
+								relativePath);
 						// Deleting a blob is simply a matter of removing
 						// the file or symlink named by the tree entry.
-						delete(path);
+						if (delete(path)) {
+							actuallyDeletedFiles.add(relativePath);
+						}
 					}
 				}
 			}
@@ -170,16 +150,28 @@ public class RmCommand extends GitCommand<DirCache> {
 			throw new JGitInternalException(
 					JGitText.get().exceptionCaughtDuringExecutionOfRmCommand, e);
 		} finally {
-			if (dc != null)
-				dc.unlock();
+			try {
+				if (dc != null) {
+					dc.unlock();
+				}
+			} finally {
+				if (!actuallyDeletedFiles.isEmpty()) {
+					repo.fireEvent(new WorkingTreeModifiedEvent(null,
+							actuallyDeletedFiles));
+				}
+			}
 		}
 
 		return dc;
 	}
 
-	private void delete(File p) {
-		while (p != null && !p.equals(repo.getWorkTree()) && p.delete())
+	private boolean delete(File p) {
+		boolean deleted = false;
+		while (p != null && !p.equals(repo.getWorkTree()) && p.delete()) {
+			deleted = true;
 			p = p.getParentFile();
+		}
+		return deleted;
 	}
 
 }

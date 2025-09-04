@@ -1,48 +1,17 @@
 /*
  * Copyright (C) 2008-2009, Google Inc.
- * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.dircache;
+
+import static java.nio.charset.StandardCharsets.UTF_8;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -61,7 +30,8 @@ import org.eclipse.jgit.treewalk.EmptyTreeIterator;
 import org.eclipse.jgit.util.RawParseUtils;
 
 /**
- * Iterate a {@link DirCache} as part of a <code>TreeWalk</code>.
+ * Iterate a {@link org.eclipse.jgit.dircache.DirCache} as part of a
+ * <code>TreeWalk</code>.
  * <p>
  * This is an iterator to adapt a loaded <code>DirCache</code> instance (such as
  * read from an existing <code>.git/index</code> file) to the tree structure
@@ -74,7 +44,7 @@ import org.eclipse.jgit.util.RawParseUtils;
 public class DirCacheIterator extends AbstractTreeIterator {
 	/** Byte array holding ".gitattributes" string */
 	private static final byte[] DOT_GIT_ATTRIBUTES_BYTES = Constants.DOT_GIT_ATTRIBUTES
-			.getBytes();
+			.getBytes(UTF_8);
 
 	/** The cache this iterator was created to walk. */
 	protected final DirCache cache;
@@ -113,7 +83,7 @@ public class DirCacheIterator extends AbstractTreeIterator {
 	 * @param dc
 	 *            the cache to walk. It must be already loaded into memory.
 	 */
-	public DirCacheIterator(final DirCache dc) {
+	public DirCacheIterator(DirCache dc) {
 		cache = dc;
 		tree = dc.getCacheTree(true);
 		treeStart = 0;
@@ -123,7 +93,7 @@ public class DirCacheIterator extends AbstractTreeIterator {
 			parseEntry();
 	}
 
-	DirCacheIterator(final DirCacheIterator p, final DirCacheTree dct) {
+	DirCacheIterator(DirCacheIterator p, DirCacheTree dct) {
 		super(p, p.path, p.pathLen + 1);
 		cache = p.cache;
 		tree = dct;
@@ -134,8 +104,9 @@ public class DirCacheIterator extends AbstractTreeIterator {
 		parseEntry();
 	}
 
+	/** {@inheritDoc} */
 	@Override
-	public AbstractTreeIterator createSubtreeIterator(final ObjectReader reader)
+	public AbstractTreeIterator createSubtreeIterator(ObjectReader reader)
 			throws IncorrectObjectTypeException, IOException {
 		if (currentSubtree == null)
 			throw new IncorrectObjectTypeException(getEntryObjectId(),
@@ -143,6 +114,7 @@ public class DirCacheIterator extends AbstractTreeIterator {
 		return new DirCacheIterator(this, currentSubtree);
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public EmptyTreeIterator createEmptyTreeIterator() {
 		final byte[] n = new byte[Math.max(pathLen + 1, DEFAULT_PATH_SIZE)];
@@ -151,6 +123,7 @@ public class DirCacheIterator extends AbstractTreeIterator {
 		return new EmptyTreeIterator(this, n, pathLen + 1);
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public boolean hasId() {
 		if (currentSubtree != null)
@@ -158,6 +131,7 @@ public class DirCacheIterator extends AbstractTreeIterator {
 		return currentEntry != null;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public byte[] idBuffer() {
 		if (currentSubtree != null)
@@ -167,6 +141,7 @@ public class DirCacheIterator extends AbstractTreeIterator {
 		return zeroid;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public int idOffset() {
 		if (currentSubtree != null)
@@ -176,6 +151,7 @@ public class DirCacheIterator extends AbstractTreeIterator {
 		return 0;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public void reset() {
 		if (!first()) {
@@ -188,16 +164,19 @@ public class DirCacheIterator extends AbstractTreeIterator {
 		}
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public boolean first() {
 		return ptr == treeStart;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public boolean eof() {
 		return ptr == treeEnd;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public void next(int delta) {
 		while (--delta >= 0) {
@@ -211,6 +190,7 @@ public class DirCacheIterator extends AbstractTreeIterator {
 		}
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public void back(int delta) {
 		while (--delta >= 0) {
@@ -282,12 +262,15 @@ public class DirCacheIterator extends AbstractTreeIterator {
 	}
 
 	/**
-	 * Retrieves the {@link AttributesNode} for the current entry.
+	 * Retrieves the {@link org.eclipse.jgit.attributes.AttributesNode} for the
+	 * current entry.
 	 *
 	 * @param reader
-	 *            {@link ObjectReader} used to parse the .gitattributes entry.
-	 * @return {@link AttributesNode} for the current entry.
-	 * @throws IOException
+	 *            {@link org.eclipse.jgit.lib.ObjectReader} used to parse the
+	 *            .gitattributes entry.
+	 * @return {@link org.eclipse.jgit.attributes.AttributesNode} for the
+	 *         current entry.
+	 * @throws java.io.IOException
 	 * @since 3.7
 	 */
 	public AttributesNode getEntryAttributesNode(ObjectReader reader)
@@ -315,11 +298,8 @@ public class DirCacheIterator extends AbstractTreeIterator {
 			AttributesNode r = new AttributesNode();
 			ObjectLoader loader = reader.open(objectId);
 			if (loader != null) {
-				InputStream in = loader.openStream();
-				try {
+				try (InputStream in = loader.openStream()) {
 					r.parse(in);
-				} finally {
-					in.close();
 				}
 			}
 			return r.getRules().isEmpty() ? null : r;

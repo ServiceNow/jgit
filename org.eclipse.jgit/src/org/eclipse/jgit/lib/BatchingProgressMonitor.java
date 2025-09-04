@@ -1,102 +1,37 @@
 /*
- * Copyright (C) 2008-2011, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008-2011, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.lib;
 
-import java.util.concurrent.Executors;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.concurrent.Future;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
-import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 
-/** ProgressMonitor that batches update events. */
+import org.eclipse.jgit.lib.internal.WorkQueue;
+import org.eclipse.jgit.util.SystemReader;
+
+/**
+ * ProgressMonitor that batches update events.
+ */
 public abstract class BatchingProgressMonitor implements ProgressMonitor {
-	private static final ScheduledThreadPoolExecutor alarmQueue;
-
-	static final Object alarmQueueKiller;
-
-	static {
-		// To support garbage collection, start our thread but
-		// swap out the thread factory. When our class is GC'd
-		// the alarmQueueKiller will finalize and ask the executor
-		// to shutdown, ending the worker.
-		//
-		int threads = 1;
-		alarmQueue = new ScheduledThreadPoolExecutor(threads,
-				new ThreadFactory() {
-					private final ThreadFactory baseFactory = Executors
-							.defaultThreadFactory();
-
-					public Thread newThread(Runnable taskBody) {
-						Thread thr = baseFactory.newThread(taskBody);
-						thr.setName("JGit-AlarmQueue"); //$NON-NLS-1$
-						thr.setDaemon(true);
-						return thr;
-					}
-				});
-		alarmQueue.setContinueExistingPeriodicTasksAfterShutdownPolicy(false);
-		alarmQueue.setExecuteExistingDelayedTasksAfterShutdownPolicy(false);
-		alarmQueue.prestartAllCoreThreads();
-
-		// Now that the threads are running, its critical to swap out
-		// our own thread factory for one that isn't in the ClassLoader.
-		// This allows the class to GC.
-		//
-		alarmQueue.setThreadFactory(Executors.defaultThreadFactory());
-
-		alarmQueueKiller = new Object() {
-			@Override
-			protected void finalize() {
-				alarmQueue.shutdownNow();
-			}
-		};
-	}
+	private static boolean performanceTrace = SystemReader.getInstance()
+			.isPerformanceTraceEnabled();
 
 	private long delayStartTime;
 
 	private TimeUnit delayStartUnit = TimeUnit.MILLISECONDS;
 
 	private Task task;
+
+	private Boolean showDuration;
 
 	/**
 	 * Set an optional delay before the first output.
@@ -112,10 +47,14 @@ public abstract class BatchingProgressMonitor implements ProgressMonitor {
 		delayStartUnit = unit;
 	}
 
+	/** {@inheritDoc} */
+	@Override
 	public void start(int totalTasks) {
 		// Ignore the number of tasks.
 	}
 
+	/** {@inheritDoc} */
+	@Override
 	public void beginTask(String title, int work) {
 		endTask();
 		task = new Task(title, work);
@@ -123,11 +62,15 @@ public abstract class BatchingProgressMonitor implements ProgressMonitor {
 			task.delay(delayStartTime, delayStartUnit);
 	}
 
+	/** {@inheritDoc} */
+	@Override
 	public void update(int completed) {
 		if (task != null)
 			task.update(this, completed);
 	}
 
+	/** {@inheritDoc} */
+	@Override
 	public void endTask() {
 		if (task != null) {
 			task.end(this);
@@ -135,8 +78,15 @@ public abstract class BatchingProgressMonitor implements ProgressMonitor {
 		}
 	}
 
+	/** {@inheritDoc} */
+	@Override
 	public boolean isCancelled() {
 		return false;
+	}
+
+	@Override
+	public void showDuration(boolean enabled) {
+		showDuration = Boolean.valueOf(enabled);
 	}
 
 	/**
@@ -146,8 +96,12 @@ public abstract class BatchingProgressMonitor implements ProgressMonitor {
 	 *            name of the task.
 	 * @param workCurr
 	 *            number of units already completed.
+	 * @param duration
+	 *            how long this task runs
+	 * @since 6.5
 	 */
-	protected abstract void onUpdate(String taskName, int workCurr);
+	protected abstract void onUpdate(String taskName, int workCurr,
+			Duration duration);
 
 	/**
 	 * Finish the progress monitor when the total wasn't known in advance.
@@ -156,8 +110,12 @@ public abstract class BatchingProgressMonitor implements ProgressMonitor {
 	 *            name of the task.
 	 * @param workCurr
 	 *            total number of units processed.
+	 * @param duration
+	 *            how long this task runs
+	 * @since 6.5
 	 */
-	protected abstract void onEndTask(String taskName, int workCurr);
+	protected abstract void onEndTask(String taskName, int workCurr,
+			Duration duration);
 
 	/**
 	 * Update the progress monitor when the total is known in advance.
@@ -170,9 +128,12 @@ public abstract class BatchingProgressMonitor implements ProgressMonitor {
 	 *            estimated number of units to process.
 	 * @param percentDone
 	 *            {@code workCurr * 100 / workTotal}.
+	 * @param duration
+	 *            how long this task runs
+	 * @since 6.5
 	 */
 	protected abstract void onUpdate(String taskName, int workCurr,
-			int workTotal, int percentDone);
+			int workTotal, int percentDone, Duration duration);
 
 	/**
 	 * Finish the progress monitor when the total is known in advance.
@@ -185,9 +146,58 @@ public abstract class BatchingProgressMonitor implements ProgressMonitor {
 	 *            estimated number of units to process.
 	 * @param percentDone
 	 *            {@code workCurr * 100 / workTotal}.
+	 * @param duration
+	 *            duration of the task
+	 * @since 6.5
 	 */
 	protected abstract void onEndTask(String taskName, int workCurr,
-			int workTotal, int percentDone);
+			int workTotal, int percentDone, Duration duration);
+
+	private boolean showDuration() {
+		return showDuration != null ? showDuration.booleanValue()
+				: performanceTrace;
+	}
+
+	/**
+	 * Append formatted duration if system property or environment variable
+	 * GIT_TRACE_PERFORMANCE is set to "true". If both are defined the system
+	 * property takes precedence.
+	 *
+	 * @param s
+	 *            StringBuilder to append the formatted duration to
+	 * @param duration
+	 *            duration to format
+	 * @since 6.5
+	 */
+	@SuppressWarnings({ "boxing", "nls" })
+	protected void appendDuration(StringBuilder s, Duration duration) {
+		if (!showDuration()) {
+			return;
+		}
+		long hours = duration.toHours();
+		int minutes = duration.toMinutesPart();
+		int seconds = duration.toSecondsPart();
+		s.append(" [");
+		if (hours > 0) {
+			s.append(hours).append(':');
+			s.append(String.format("%02d", minutes)).append(':');
+			s.append(String.format("%02d", seconds));
+		} else if (minutes > 0) {
+			s.append(minutes).append(':');
+			s.append(String.format("%02d", seconds));
+		} else {
+			s.append(seconds);
+		}
+		s.append('.').append(String.format("%03d", duration.toMillisPart()));
+		if (hours > 0) {
+			s.append('h');
+		} else if (minutes > 0) {
+			s.append('m');
+		} else {
+			s.append('s');
+		}
+		s.append(']');
+	}
 
 	private static class Task implements Runnable {
 		/** Title of the current task. */
@@ -211,17 +221,21 @@ public abstract class BatchingProgressMonitor implements ProgressMonitor {
 		/** Percentage of {@link #totalWork} that is done. */
 		private int lastPercent;
 
+		private final Instant startTime;
+
 		Task(String taskName, int totalWork) {
 			this.taskName = taskName;
 			this.totalWork = totalWork;
 			this.display = true;
+			this.startTime = Instant.now();
 		}
 
 		void delay(long time, TimeUnit unit) {
 			display = false;
-			timerFuture = alarmQueue.schedule(this, time, unit);
+			timerFuture = WorkQueue.getExecutor().schedule(this, time, unit);
 		}
 
+		@Override
 		public void run() {
 			display = true;
 		}
@@ -232,20 +246,22 @@ public abstract class BatchingProgressMonitor implements ProgressMonitor {
 			if (totalWork == UNKNOWN) {
 				// Only display once per second, as the alarm fires.
 				if (display) {
-					pm.onUpdate(taskName, lastWork);
+					pm.onUpdate(taskName, lastWork, elapsedTime());
 					output = true;
 					restartTimer();
 				}
 			} else {
 				// Display once per second or when 1% is done.
-				int currPercent = lastWork * 100 / totalWork;
+				int currPercent = Math.round(lastWork * 100F / totalWork);
 				if (display) {
-					pm.onUpdate(taskName, lastWork, totalWork, currPercent);
+					pm.onUpdate(taskName, lastWork, totalWork, currPercent,
+							elapsedTime());
 					output = true;
 					restartTimer();
 					lastPercent = currPercent;
 				} else if (currPercent != lastPercent) {
-					pm.onUpdate(taskName, lastWork, totalWork, currPercent);
+					pm.onUpdate(taskName, lastWork, totalWork, currPercent,
+							elapsedTime());
 					output = true;
 					lastPercent = currPercent;
 				}
@@ -254,20 +270,25 @@ public abstract class BatchingProgressMonitor implements ProgressMonitor {
 
 		private void restartTimer() {
 			display = false;
-			timerFuture = alarmQueue.schedule(this, 1, TimeUnit.SECONDS);
+			timerFuture = WorkQueue.getExecutor().schedule(this, 1,
+					TimeUnit.SECONDS);
 		}
 
 		void end(BatchingProgressMonitor pm) {
 			if (output) {
 				if (totalWork == UNKNOWN) {
-					pm.onEndTask(taskName, lastWork);
+					pm.onEndTask(taskName, lastWork, elapsedTime());
 				} else {
-					int pDone = lastWork * 100 / totalWork;
-					pm.onEndTask(taskName, lastWork, totalWork, pDone);
+					int currPercent = Math.round(lastWork * 100F / totalWork);
+					pm.onEndTask(taskName, lastWork, totalWork, currPercent, elapsedTime());
 				}
 			}
 			if (timerFuture != null)
 				timerFuture.cancel(false /* no interrupt */);
+		}
+
+		private Duration elapsedTime() {
+			return Duration.between(startTime, Instant.now());
 		}
 	}
 }

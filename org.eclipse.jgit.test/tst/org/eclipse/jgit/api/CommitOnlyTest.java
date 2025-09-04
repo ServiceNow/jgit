@@ -1,48 +1,16 @@
 /*
  * Copyright (C) 2011, Christian Halstrick <christian.halstrick@sap.com>
- * Copyright (C) 2011, Philipp Thun <philipp.thun@sap.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2011, Philipp Thun <philipp.thun@sap.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 package org.eclipse.jgit.api;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
@@ -70,19 +38,19 @@ import org.junit.Test;
  * ---------------------------------------------------------------------
  *        | HEAD  DirCache  Worktree | HEAD  DirCache
  * ---------------------------------------------------------------------
- *  f1_1  |  -       -       c       |                => e: path unknown
- *  f1_2  |  -       c       -       |                => no changes
+ *  f1_1  |  -       -       c       |                =&gt; e: path unknown
+ *  f1_2  |  -       c       -       |                =&gt; no changes
  *  f1_3  |  c       -       -       |  -       -
  *  f1_4  |  -       c       c       |  c       c
  *  f1_5  |  c       c       -       |  -       -
- *  f1_6  |  c       -       c       |                => no changes
- *  f1_7  |  c       c       c       |                => no changes
+ *  f1_6  |  c       -       c       |                =&gt; no changes
+ *  f1_7  |  c       c       c       |                =&gt; no changes
  * ---------------------------------------------------------------------
  *  f1_8  |  -       c       c'      |  c'      c'
  *  f1_9  |  c       -       c'      |  c'      c'
  * f1_10  |  c       c'      -       |  -       -
  * f1_11  |  c       c       c'      |  c'      c'
- * f1_12  |  c       c'      c       |                => no changes
+ * f1_12  |  c       c'      c       |                =&gt; no changes
  * f1_13  |  c       c'      c'      |  c'      c'
  * ---------------------------------------------------------------------
  * f1_14  |  c       c'      c''     |  c''     c''
@@ -97,7 +65,7 @@ import org.junit.Test;
  * ---------------------------------------------------------------------------
  *              | HEAD  DirCache  Worktree | HEAD  DirCache
  * ---------------------------------------------------------------------------
- *  f1_1_f2_14  |  -       -       c       |                => e: path unknown
+ *  f1_1_f2_14  |  -       -       c       |                =&gt; e: path unknown
  *  f1_2_f2_14  |  -       c       -       |  -       -
  *  f1_6_f2_14  |  c       -       c       |  c       c
  *  f1_7_f2_14  |  c       c       c       |  c       c
@@ -1289,15 +1257,23 @@ public class CommitOnlyTest extends RepositoryTestCase {
 		return null;
 	}
 
-	static private String getHead(final Git git, final String path)
+	static private String getHead(Git git, String path)
 			throws Exception {
 		try {
 			final Repository repo = git.getRepository();
 			final ObjectId headId = repo.resolve(Constants.HEAD + "^{commit}");
-			final TreeWalk tw = TreeWalk.forPath(repo, path,
-					new RevWalk(repo).parseTree(headId));
-			return new String(tw.getObjectReader().open(tw.getObjectId(0))
-					.getBytes());
+			if (headId == null) {
+				return "";
+			}
+			try (RevWalk rw = new RevWalk(repo)) {
+				final TreeWalk tw = TreeWalk.forPath(repo, path,
+						rw.parseTree(headId));
+				if (tw == null) {
+					return "";
+				}
+				return new String(tw.getObjectReader().open(tw.getObjectId(0))
+						.getBytes(), UTF_8);
+			}
 		} catch (Exception e) {
 			return "";
 		}

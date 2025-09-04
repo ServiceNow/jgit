@@ -1,60 +1,33 @@
 /*
- * Copyright (C) 2011, 2012, IBM Corporation and others.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2011, 2021 IBM Corporation and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 package org.eclipse.jgit.api;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 
 import org.eclipse.jgit.api.errors.PatchApplyException;
 import org.eclipse.jgit.api.errors.PatchFormatException;
 import org.eclipse.jgit.diff.RawText;
 import org.eclipse.jgit.junit.RepositoryTestCase;
+import org.eclipse.jgit.util.FS;
+import org.eclipse.jgit.util.IO;
 import org.junit.Test;
 
 public class ApplyCommandTest extends RepositoryTestCase {
@@ -63,29 +36,86 @@ public class ApplyCommandTest extends RepositoryTestCase {
 
 	private RawText b;
 
-	private ApplyResult init(final String name) throws Exception {
+	private ApplyResult init(String name) throws Exception {
 		return init(name, true, true);
 	}
 
 	private ApplyResult init(final String name, final boolean preExists,
 			final boolean postExists) throws Exception {
-		Git git = new Git(db);
+		try (Git git = new Git(db)) {
+			if (preExists) {
+				a = new RawText(readFile(name + "_PreImage"));
+				write(new File(db.getDirectory().getParent(), name),
+						a.getString(0, a.size(), false));
 
-		if (preExists) {
-			a = new RawText(readFile(name + "_PreImage"));
-			write(new File(db.getDirectory().getParent(), name),
-					a.getString(0, a.size(), false));
+				git.add().addFilepattern(name).call();
+				git.commit().setMessage("PreImage").call();
+			}
 
-			git.add().addFilepattern(name).call();
-			git.commit().setMessage("PreImage").call();
+			if (postExists) {
+				b = new RawText(readFile(name + "_PostImage"));
+			}
+
+			return git
+					.apply()
+					.setPatch(getTestResource(name + ".patch")).call();
 		}
+	}
 
-		if (postExists)
-			b = new RawText(readFile(name + "_PostImage"));
+	private void checkBinary(String name, boolean hasPreImage)
+			throws Exception {
+		checkBinary(name, hasPreImage, 1);
+	}
 
-		return git
-				.apply()
-				.setPatch(getTestResource(name + ".patch")).call();
+	private void checkBinary(String name, boolean hasPreImage,
+			int numberOfFiles) throws Exception {
+		try (Git git = new Git(db)) {
+			byte[] post = IO
+					.readWholeStream(getTestResource(name + "_PostImage"), 0)
+					.array();
+			File f = new File(db.getWorkTree(), name);
+			if (hasPreImage) {
+				byte[] pre = IO
+						.readWholeStream(getTestResource(name + "_PreImage"), 0)
+						.array();
+				Files.write(f.toPath(), pre);
+				git.add().addFilepattern(name).call();
+				git.commit().setMessage("PreImage").call();
+			}
+			ApplyResult result = git.apply()
+					.setPatch(getTestResource(name + ".patch")).call();
+			assertEquals(numberOfFiles, result.getUpdatedFiles().size());
+			assertEquals(f, result.getUpdatedFiles().get(0));
+			assertArrayEquals(post, Files.readAllBytes(f.toPath()));
+		}
+	}
+
+	@Test
+	public void testEncodingChange() throws Exception {
+		// This is a text patch that changes a file containing ÄÖÜ in UTF-8 to
+		// the same characters in ISO-8859-1. The patch file itself uses mixed
+		// encoding. Since checkFile() works with strings use the binary check.
+		checkBinary("umlaut", true);
+	}
+
+	@Test
+	public void testEmptyLine() throws Exception {
+		// C git accepts completely empty lines as empty context lines.
+		// According to comments in the C git sources (apply.c), newer GNU diff
+		// may produce such diffs.
+		checkBinary("emptyLine", true);
+	}
+
+	@Test
+	public void testMultiFileNoNewline() throws Exception {
+		// This test needs two files. One is in the test resources.
+		try (Git git = new Git(db)) {
+			Files.write(db.getWorkTree().toPath().resolve("yello"),
+					"yello".getBytes(StandardCharsets.US_ASCII));
+			git.add().addFilepattern("yello").call();
+			git.commit().setMessage("yello").call();
+		}
+		checkBinary("hello", true, 2);
 	}
 
 	@Test
@@ -105,6 +135,16 @@ public class ApplyCommandTest extends RepositoryTestCase {
 		assertEquals(new File(db.getWorkTree(), "A2"), result.getUpdatedFiles()
 				.get(0));
 		checkFile(new File(db.getWorkTree(), "A2"),
+				b.getString(0, b.size(), false));
+	}
+
+	@Test
+	public void testAddA3() throws Exception {
+		ApplyResult result = init("A3", false, true);
+		assertEquals(1, result.getUpdatedFiles().size());
+		assertEquals(new File(db.getWorkTree(), "A3"),
+				result.getUpdatedFiles().get(0));
+		checkFile(new File(db.getWorkTree(), "A3"),
 				b.getString(0, b.size(), false));
 	}
 
@@ -146,46 +186,27 @@ public class ApplyCommandTest extends RepositoryTestCase {
 	}
 
 	@Test
-	public void testModifyX() throws Exception {
-		ApplyResult result = init("X");
+	public void testModifyW() throws Exception {
+		ApplyResult result = init("W");
 		assertEquals(1, result.getUpdatedFiles().size());
-		assertEquals(new File(db.getWorkTree(), "X"), result.getUpdatedFiles()
-				.get(0));
-		checkFile(new File(db.getWorkTree(), "X"),
+		assertEquals(new File(db.getWorkTree(), "W"),
+				result.getUpdatedFiles().get(0));
+		checkFile(new File(db.getWorkTree(), "W"),
 				b.getString(0, b.size(), false));
 	}
 
 	@Test
-	public void testModifyY() throws Exception {
-		ApplyResult result = init("Y");
+	public void testAddM1() throws Exception {
+		ApplyResult result = init("M1", false, true);
 		assertEquals(1, result.getUpdatedFiles().size());
-		assertEquals(new File(db.getWorkTree(), "Y"), result.getUpdatedFiles()
-				.get(0));
-		checkFile(new File(db.getWorkTree(), "Y"),
+		if (FS.DETECTED.supportsExecute()) {
+			assertTrue(FS.DETECTED.canExecute(result.getUpdatedFiles().get(0)));
+		}
+		checkFile(new File(db.getWorkTree(), "M1"),
 				b.getString(0, b.size(), false));
 	}
 
-	@Test
-	public void testModifyZ() throws Exception {
-		ApplyResult result = init("Z");
-		assertEquals(1, result.getUpdatedFiles().size());
-		assertEquals(new File(db.getWorkTree(), "Z"), result.getUpdatedFiles()
-				.get(0));
-		checkFile(new File(db.getWorkTree(), "Z"),
-				b.getString(0, b.size(), false));
-	}
-
-	@Test
-	public void testModifyNL1() throws Exception {
-		ApplyResult result = init("NL1");
-		assertEquals(1, result.getUpdatedFiles().size());
-		assertEquals(new File(db.getWorkTree(), "NL1"), result
-				.getUpdatedFiles().get(0));
-		checkFile(new File(db.getWorkTree(), "NL1"),
-				b.getString(0, b.size(), false));
-	}
-
-	private static byte[] readFile(final String patchFile) throws IOException {
+	private static byte[] readFile(String patchFile) throws IOException {
 		final InputStream in = getTestResource(patchFile);
 		if (in == null) {
 			fail("No " + patchFile + " test vector");
@@ -203,7 +224,7 @@ public class ApplyCommandTest extends RepositoryTestCase {
 		}
 	}
 
-	private static InputStream getTestResource(final String patchFile) {
+	private static InputStream getTestResource(String patchFile) {
 		return ApplyCommandTest.class.getClassLoader()
 				.getResourceAsStream("org/eclipse/jgit/diff/" + patchFile);
 	}

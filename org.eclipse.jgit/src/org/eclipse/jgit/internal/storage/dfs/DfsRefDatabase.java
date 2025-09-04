@@ -1,48 +1,16 @@
 /*
- * Copyright (C) 2011, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2011, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.internal.storage.dfs;
 
+import static org.eclipse.jgit.lib.Ref.UNDEFINED_UPDATE_INDEX;
 import static org.eclipse.jgit.lib.Ref.Storage.NEW;
 
 import java.io.IOException;
@@ -64,7 +32,10 @@ import org.eclipse.jgit.revwalk.RevWalk;
 import org.eclipse.jgit.util.RefList;
 import org.eclipse.jgit.util.RefMap;
 
-/** */
+/**
+ * Abstract DfsRefDatabase class.
+ *
+ */
 public abstract class DfsRefDatabase extends RefDatabase {
 	private final DfsRepository repository;
 
@@ -78,10 +49,14 @@ public abstract class DfsRefDatabase extends RefDatabase {
 	 */
 	protected DfsRefDatabase(DfsRepository repository) {
 		this.repository = repository;
-		this.cache = new AtomicReference<RefCache>();
+		this.cache = new AtomicReference<>();
 	}
 
-	/** @return the repository the database holds the references of. */
+	/**
+	 * Get the repository the database holds the references of.
+	 *
+	 * @return the repository the database holds the references of.
+	 */
 	protected DfsRepository getRepository() {
 		return repository;
 	}
@@ -90,6 +65,7 @@ public abstract class DfsRefDatabase extends RefDatabase {
 		return 0 < read().size();
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public Ref exactRef(String name) throws IOException {
 		RefCache curr = read();
@@ -97,30 +73,19 @@ public abstract class DfsRefDatabase extends RefDatabase {
 		return ref != null ? resolve(ref, 0, curr.ids) : null;
 	}
 
-	@Override
-	public Ref getRef(String needle) throws IOException {
-		RefCache curr = read();
-		for (String prefix : SEARCH_PATH) {
-			Ref ref = curr.ids.get(prefix + needle);
-			if (ref != null) {
-				ref = resolve(ref, 0, curr.ids);
-				return ref;
-			}
-		}
-		return null;
-	}
-
+	/** {@inheritDoc} */
 	@Override
 	public List<Ref> getAdditionalRefs() {
 		return Collections.emptyList();
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public Map<String, Ref> getRefs(String prefix) throws IOException {
 		RefCache curr = read();
 		RefList<Ref> packed = RefList.emptyList();
 		RefList<Ref> loose = curr.ids;
-		RefList.Builder<Ref> sym = new RefList.Builder<Ref>(curr.sym.size());
+		RefList.Builder<Ref> sym = new RefList.Builder<>(curr.sym.size());
 
 		for (int idx = 0; idx < curr.sym.size(); idx++) {
 			Ref ref = curr.sym.get(idx);
@@ -161,6 +126,7 @@ public abstract class DfsRefDatabase extends RefDatabase {
 		return new SymbolicRef(ref.getName(), dst);
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public Ref peel(Ref ref) throws IOException {
 		final Ref oldLeaf = ref.getLeaf();
@@ -177,10 +143,10 @@ public abstract class DfsRefDatabase extends RefDatabase {
 			cachePeeledState(oldLeaf, newLeaf);
 		}
 
-		return recreate(ref, newLeaf);
+		return recreate(ref, newLeaf, hasVersioning());
 	}
 
-	private Ref doPeel(final Ref leaf) throws MissingObjectException,
+	Ref doPeel(Ref leaf) throws MissingObjectException,
 			IOException {
 		try (RevWalk rw = new RevWalk(repository)) {
 			RevObject obj = rw.parseAny(leaf.getObjectId());
@@ -189,24 +155,28 @@ public abstract class DfsRefDatabase extends RefDatabase {
 						leaf.getStorage(),
 						leaf.getName(),
 						leaf.getObjectId(),
-						rw.peel(obj).copy());
-			} else {
-				return new ObjectIdRef.PeeledNonTag(
-						leaf.getStorage(),
-						leaf.getName(),
-						leaf.getObjectId());
+						rw.peel(obj).copy(),
+						hasVersioning() ? leaf.getUpdateIndex()
+								: UNDEFINED_UPDATE_INDEX);
 			}
+			return new ObjectIdRef.PeeledNonTag(leaf.getStorage(),
+					leaf.getName(), leaf.getObjectId(),
+					hasVersioning() ? leaf.getUpdateIndex()
+							: UNDEFINED_UPDATE_INDEX);
 		}
 	}
 
-	private static Ref recreate(Ref old, Ref leaf) {
+	static Ref recreate(Ref old, Ref leaf, boolean hasVersioning) {
 		if (old.isSymbolic()) {
-			Ref dst = recreate(old.getTarget(), leaf);
-			return new SymbolicRef(old.getName(), dst);
+			Ref dst = recreate(old.getTarget(), leaf, hasVersioning);
+			return new SymbolicRef(old.getName(), dst,
+					hasVersioning ? old.getUpdateIndex()
+							: UNDEFINED_UPDATE_INDEX);
 		}
 		return leaf;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public RefUpdate newUpdate(String refName, boolean detach)
 			throws IOException {
@@ -217,16 +187,13 @@ public abstract class DfsRefDatabase extends RefDatabase {
 		else
 			detachingSymbolicRef = detach && ref.isSymbolic();
 
-		if (detachingSymbolicRef) {
-			ref = new ObjectIdRef.Unpeeled(NEW, refName, ref.getObjectId());
-		}
-
 		DfsRefUpdate update = new DfsRefUpdate(this, ref);
 		if (detachingSymbolicRef)
 			update.setDetachingSymbolicRef();
 		return update;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public RefRename newRename(String fromName, String toName)
 			throws IOException {
@@ -235,6 +202,7 @@ public abstract class DfsRefDatabase extends RefDatabase {
 		return new DfsRefRename(src, dst);
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public boolean isNameConflicting(String refName) throws IOException {
 		RefList<Ref> all = read().ids;
@@ -256,11 +224,19 @@ public abstract class DfsRefDatabase extends RefDatabase {
 		return false;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public void create() {
 		// Nothing to do.
 	}
 
+	/** {@inheritDoc} */
+	@Override
+	public void refresh() {
+		clearCache();
+	}
+
+	/** {@inheritDoc} */
 	@Override
 	public void close() {
 		clearCache();
@@ -303,13 +279,22 @@ public abstract class DfsRefDatabase extends RefDatabase {
 	 * Read all known references in the repository.
 	 *
 	 * @return all current references of the repository.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             references cannot be accessed.
 	 */
 	protected abstract RefCache scanAllRefs() throws IOException;
 
 	/**
 	 * Compare a reference, and put if it matches.
+	 * <p>
+	 * Two reference match if and only if they satisfy the following:
+	 *
+	 * <ul>
+	 * <li>If one reference is a symbolic ref, the other one should be a symbolic
+	 * ref.
+	 * <li>If both are symbolic refs, the target names should be same.
+	 * <li>If both are object ID refs, the object IDs should be same.
+	 * </ul>
 	 *
 	 * @param oldRef
 	 *            old value to compare to. If the reference is expected to not
@@ -319,7 +304,7 @@ public abstract class DfsRefDatabase extends RefDatabase {
 	 * @param newRef
 	 *            new reference to store.
 	 * @return true if the put was successful; false otherwise.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the reference cannot be put due to a system error.
 	 */
 	protected abstract boolean compareAndPut(Ref oldRef, Ref newRef)
@@ -331,7 +316,7 @@ public abstract class DfsRefDatabase extends RefDatabase {
 	 * @param oldRef
 	 *            the old reference information that was previously read.
 	 * @return true if the remove was successful; false otherwise.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the reference could not be removed due to a system error.
 	 */
 	protected abstract boolean compareAndRemove(Ref oldRef) throws IOException;

@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2012, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2012, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.internal.storage.file;
@@ -47,10 +14,17 @@ import java.io.DataInput;
 import java.io.IOException;
 import java.io.InputStream;
 import java.text.MessageFormat;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.atomic.AtomicInteger;
 
-import com.googlecode.javaewah.EWAHCompressedBitmap;
-
+import org.eclipse.jgit.annotations.Nullable;
 import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.lib.AnyObjectId;
 import org.eclipse.jgit.lib.Constants;
@@ -58,6 +32,8 @@ import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectIdOwnerMap;
 import org.eclipse.jgit.util.IO;
 import org.eclipse.jgit.util.NB;
+
+import com.googlecode.javaewah.EWAHCompressedBitmap;
 
 /**
  * Support for the pack bitmap index v1 format.
@@ -70,6 +46,23 @@ class PackBitmapIndexV1 extends BasePackBitmapIndex {
 
 	private static final int MAX_XOR_OFFSET = 126;
 
+	private static final ExecutorService executor = Executors
+			.newCachedThreadPool(new ThreadFactory() {
+				private final ThreadFactory baseFactory = Executors
+						.defaultThreadFactory();
+
+				private final AtomicInteger threadNumber = new AtomicInteger(0);
+
+				@Override
+				public Thread newThread(Runnable runnable) {
+					Thread thread = baseFactory.newThread(runnable);
+					thread.setName("JGit-PackBitmapIndexV1-" //$NON-NLS-1$
+							+ threadNumber.getAndIncrement());
+					thread.setDaemon(true);
+					return thread;
+				}
+			});
+
 	private final PackIndex packIndex;
 	private final PackReverseIndex reverseIndex;
 	private final EWAHCompressedBitmap commits;
@@ -81,10 +74,25 @@ class PackBitmapIndexV1 extends BasePackBitmapIndex {
 
 	PackBitmapIndexV1(final InputStream fd, PackIndex packIndex,
 			PackReverseIndex reverseIndex) throws IOException {
+		this(fd, () -> packIndex, () -> reverseIndex, false);
+	}
+
+	PackBitmapIndexV1(final InputStream fd,
+			SupplierWithIOException<PackIndex> packIndexSupplier,
+			SupplierWithIOException<PackReverseIndex> reverseIndexSupplier,
+			boolean loadParallelRevIndex)
+			throws IOException {
+		// An entry is object id, xor offset, flag byte, and a length encoded
+		// bitmap. The object id is an int32 of the nth position sorted by name.
 		super(new ObjectIdOwnerMap<StoredBitmap>());
-		this.packIndex = packIndex;
-		this.reverseIndex = reverseIndex;
 		this.bitmaps = getBitmaps();
+
+		// Optionally start loading reverse index in parallel to loading bitmap
+		// from storage.
+		Future<PackReverseIndex> reverseIndexFuture = null;
+		if (loadParallelRevIndex) {
+			reverseIndexFuture = executor.submit(reverseIndexSupplier::get);
+		}
 
 		final byte[] scratch = new byte[32];
 		IO.readFully(fd, scratch, 0, scratch.length);
@@ -130,10 +138,10 @@ class PackBitmapIndexV1 extends BasePackBitmapIndex {
 		this.blobs = readBitmap(dataInput);
 		this.tags = readBitmap(dataInput);
 
-		// An entry is object id, xor offset, flag byte, and a length encoded
-		// bitmap. The object id is an int32 of the nth position sorted by name.
+		// Read full bitmap from storage first.
+		List<IdxPositionBitmap> idxPositionBitmapList = new ArrayList<>();
 		// The xor offset is a single byte offset back in the list of entries.
-		StoredBitmap[] recentBitmaps = new StoredBitmap[MAX_XOR_OFFSET];
+		IdxPositionBitmap[] recentBitmaps = new IdxPositionBitmap[MAX_XOR_OFFSET];
 		for (int i = 0; i < (int) numEntries; i++) {
 			IO.readFully(fd, scratch, 0, 6);
 			int nthObjectId = NB.decodeInt32(scratch, 0);
@@ -141,48 +149,81 @@ class PackBitmapIndexV1 extends BasePackBitmapIndex {
 			int flags = scratch[5];
 			EWAHCompressedBitmap bitmap = readBitmap(dataInput);
 
-			if (nthObjectId < 0)
+			if (nthObjectId < 0) {
 				throw new IOException(MessageFormat.format(
 						JGitText.get().invalidId, String.valueOf(nthObjectId)));
-			if (xorOffset < 0)
+			}
+			if (xorOffset < 0) {
 				throw new IOException(MessageFormat.format(
 						JGitText.get().invalidId, String.valueOf(xorOffset)));
-			if (xorOffset > MAX_XOR_OFFSET)
+			}
+			if (xorOffset > MAX_XOR_OFFSET) {
 				throw new IOException(MessageFormat.format(
 						JGitText.get().expectedLessThanGot,
 						String.valueOf(MAX_XOR_OFFSET),
 						String.valueOf(xorOffset)));
-			if (xorOffset > i)
+			}
+			if (xorOffset > i) {
 				throw new IOException(MessageFormat.format(
 						JGitText.get().expectedLessThanGot, String.valueOf(i),
 						String.valueOf(xorOffset)));
-
-			ObjectId objectId = packIndex.getObjectId(nthObjectId);
-			StoredBitmap xorBitmap = null;
+			}
+			IdxPositionBitmap xorIdxPositionBitmap = null;
 			if (xorOffset > 0) {
 				int index = (i - xorOffset);
-				xorBitmap = recentBitmaps[index % recentBitmaps.length];
-				if (xorBitmap == null)
+				xorIdxPositionBitmap = recentBitmaps[index
+						% recentBitmaps.length];
+				if (xorIdxPositionBitmap == null) {
 					throw new IOException(MessageFormat.format(
 							JGitText.get().invalidId,
 							String.valueOf(xorOffset)));
+				}
 			}
-
-			StoredBitmap sb = new StoredBitmap(
-					objectId, bitmap, xorBitmap, flags);
-			bitmaps.add(sb);
-			recentBitmaps[i % recentBitmaps.length] = sb;
+			IdxPositionBitmap idxPositionBitmap = new IdxPositionBitmap(
+					nthObjectId, xorIdxPositionBitmap, bitmap, flags);
+			idxPositionBitmapList.add(idxPositionBitmap);
+			recentBitmaps[i % recentBitmaps.length] = idxPositionBitmap;
 		}
+
+		this.packIndex = packIndexSupplier.get();
+		for (int i = 0; i < idxPositionBitmapList.size(); ++i) {
+			IdxPositionBitmap idxPositionBitmap = idxPositionBitmapList.get(i);
+			ObjectId objectId = packIndex
+					.getObjectId(idxPositionBitmap.nthObjectId);
+			StoredBitmap sb = new StoredBitmap(objectId,
+					idxPositionBitmap.bitmap,
+					idxPositionBitmap.getXorStoredBitmap(),
+					idxPositionBitmap.flags);
+			// Save the StoredBitmap for a possible future XorStoredBitmap
+			// reference.
+			idxPositionBitmap.sb = sb;
+			bitmaps.add(sb);
+		}
+
+		PackReverseIndex computedReverseIndex;
+		if (loadParallelRevIndex && reverseIndexFuture != null) {
+			try {
+				computedReverseIndex = reverseIndexFuture.get();
+			} catch (InterruptedException | ExecutionException e) {
+				// Fallback to loading reverse index through a supplier.
+				computedReverseIndex = reverseIndexSupplier.get();
+			}
+		} else {
+			computedReverseIndex = reverseIndexSupplier.get();
+		}
+		this.reverseIndex = computedReverseIndex;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public int findPosition(AnyObjectId objectId) {
 		long offset = packIndex.findOffset(objectId);
 		if (offset == -1)
 			return -1;
-		return reverseIndex.findPostion(offset);
+		return reverseIndex.findPosition(offset);
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public ObjectId getObject(int position) throws IllegalArgumentException {
 		ObjectId objectId = reverseIndex.findObjectByPosition(position);
@@ -191,11 +232,13 @@ class PackBitmapIndexV1 extends BasePackBitmapIndex {
 		return objectId;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public int getObjectCount() {
 		return (int) packIndex.getObjectCount();
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public EWAHCompressedBitmap ofObjectType(
 			EWAHCompressedBitmap bitmap, int type) {
@@ -212,11 +255,13 @@ class PackBitmapIndexV1 extends BasePackBitmapIndex {
 		throw new IllegalArgumentException();
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public int getBitmapCount() {
 		return bitmaps.size();
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public boolean equals(Object o) {
 		// TODO(cranger): compare the pack checksum?
@@ -225,6 +270,7 @@ class PackBitmapIndexV1 extends BasePackBitmapIndex {
 		return false;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public int hashCode() {
 		return getPackIndex().hashCode();
@@ -239,5 +285,35 @@ class PackBitmapIndexV1 extends BasePackBitmapIndex {
 		EWAHCompressedBitmap bitmap = new EWAHCompressedBitmap();
 		bitmap.deserialize(dataInput);
 		return bitmap;
+	}
+
+	/**
+	 * Temporary holder of object position in pack index and other metadata for
+	 * {@code StoredBitmap}.
+	 */
+	private static final class IdxPositionBitmap {
+		int nthObjectId;
+
+		IdxPositionBitmap xorIdxPositionBitmap;
+
+		EWAHCompressedBitmap bitmap;
+
+		int flags;
+
+		StoredBitmap sb;
+
+		IdxPositionBitmap(int nthObjectId,
+				@Nullable IdxPositionBitmap xorIdxPositionBitmap,
+				EWAHCompressedBitmap bitmap, int flags) {
+			this.nthObjectId = nthObjectId;
+			this.xorIdxPositionBitmap = xorIdxPositionBitmap;
+			this.bitmap = bitmap;
+			this.flags = flags;
+		}
+
+		StoredBitmap getXorStoredBitmap() {
+			return xorIdxPositionBitmap == null ? null
+					: xorIdxPositionBitmap.sb;
+		}
 	}
 }

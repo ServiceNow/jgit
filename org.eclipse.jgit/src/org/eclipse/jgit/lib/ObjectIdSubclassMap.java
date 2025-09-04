@@ -1,46 +1,13 @@
 /*
  * Copyright (C) 2009, Google Inc.
  * Copyright (C) 2008, Marek Zawirski <marek.zawirski@gmail.com>
- * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.lib;
@@ -49,18 +16,21 @@ import java.util.Iterator;
 import java.util.NoSuchElementException;
 
 /**
- * Fast, efficient map specifically for {@link ObjectId} subclasses.
+ * Fast, efficient map specifically for {@link org.eclipse.jgit.lib.ObjectId}
+ * subclasses.
  * <p>
  * This map provides an efficient translation from any ObjectId instance to a
  * cached subclass of ObjectId that has the same value.
  * <p>
- * If object instances are stored in only one map, {@link ObjectIdOwnerMap} is a
- * more efficient implementation.
+ * If object instances are stored in only one map,
+ * {@link org.eclipse.jgit.lib.ObjectIdOwnerMap} is a more efficient
+ * implementation.
  *
  * @param <V>
  *            type of subclass of ObjectId that will be stored in the map.
  */
-public class ObjectIdSubclassMap<V extends ObjectId> implements Iterable<V> {
+public class ObjectIdSubclassMap<V extends ObjectId>
+		implements Iterable<V>, ObjectIdSet {
 	private static final int INITIAL_TABLE_SIZE = 2048;
 
 	int size;
@@ -71,12 +41,16 @@ public class ObjectIdSubclassMap<V extends ObjectId> implements Iterable<V> {
 
 	V[] table;
 
-	/** Create an empty map. */
+	/**
+	 * Create an empty map.
+	 */
 	public ObjectIdSubclassMap() {
 		initTable(INITIAL_TABLE_SIZE);
 	}
 
-	/** Remove all entries from this map. */
+	/**
+	 * Remove all entries from this map.
+	 */
 	public void clear() {
 		size = 0;
 		initTable(INITIAL_TABLE_SIZE);
@@ -89,28 +63,28 @@ public class ObjectIdSubclassMap<V extends ObjectId> implements Iterable<V> {
 	 *            the object identifier to find.
 	 * @return the instance mapped to toFind, or null if no mapping exists.
 	 */
-	public V get(final AnyObjectId toFind) {
+	public V get(AnyObjectId toFind) {
 		final int msk = mask;
 		int i = toFind.w1 & msk;
 		final V[] tbl = table;
 		V obj;
 
 		while ((obj = tbl[i]) != null) {
-			if (AnyObjectId.equals(obj, toFind))
+			if (AnyObjectId.isEqual(obj, toFind)) {
 				return obj;
+			}
 			i = (i + 1) & msk;
 		}
 		return null;
 	}
 
 	/**
+	 * {@inheritDoc}
+	 * <p>
 	 * Returns true if this map contains the specified object.
-	 *
-	 * @param toFind
-	 *            object to find.
-	 * @return true if the mapping exists for this object; false otherwise.
 	 */
-	public boolean contains(final AnyObjectId toFind) {
+	@Override
+	public boolean contains(AnyObjectId toFind) {
 		return get(toFind) != null;
 	}
 
@@ -124,10 +98,8 @@ public class ObjectIdSubclassMap<V extends ObjectId> implements Iterable<V> {
 	 *
 	 * @param newValue
 	 *            the object to store.
-	 * @param <Q>
-	 *            type of instance to store.
 	 */
-	public <Q extends V> void add(final Q newValue) {
+	public <Q extends V> void add(Q newValue) {
 		if (++size == grow)
 			grow();
 		insert(newValue);
@@ -150,17 +122,15 @@ public class ObjectIdSubclassMap<V extends ObjectId> implements Iterable<V> {
 	 * @return {@code newValue} if stored, or the prior value already stored and
 	 *         that would have been returned had the caller used
 	 *         {@code get(newValue)} first.
-	 * @param <Q>
-	 *            type of instance to store.
 	 */
-	public <Q extends V> V addIfAbsent(final Q newValue) {
+	public <Q extends V> V addIfAbsent(Q newValue) {
 		final int msk = mask;
 		int i = newValue.w1 & msk;
 		final V[] tbl = table;
 		V obj;
 
 		while ((obj = tbl[i]) != null) {
-			if (AnyObjectId.equals(obj, newValue))
+			if (AnyObjectId.isEqual(obj, newValue))
 				return obj;
 			i = (i + 1) & msk;
 		}
@@ -175,27 +145,37 @@ public class ObjectIdSubclassMap<V extends ObjectId> implements Iterable<V> {
 	}
 
 	/**
+	 * Get number of objects in map
+	 *
 	 * @return number of objects in map
 	 */
 	public int size() {
 		return size;
 	}
 
-	/** @return true if {@link #size()} is 0. */
+	/**
+	 * Whether {@link #size()} is 0.
+	 *
+	 * @return true if {@link #size()} is 0.
+	 */
 	public boolean isEmpty() {
 		return size == 0;
 	}
 
+	/** {@inheritDoc} */
+	@Override
 	public Iterator<V> iterator() {
-		return new Iterator<V>() {
+		return new Iterator<>() {
 			private int found;
 
 			private int i;
 
+			@Override
 			public boolean hasNext() {
 				return found < size;
 			}
 
+			@Override
 			public V next() {
 				while (i < table.length) {
 					final V v = table[i++];
@@ -207,13 +187,14 @@ public class ObjectIdSubclassMap<V extends ObjectId> implements Iterable<V> {
 				throw new NoSuchElementException();
 			}
 
+			@Override
 			public void remove() {
 				throw new UnsupportedOperationException();
 			}
 		};
 	}
 
-	private void insert(final V newValue) {
+	private void insert(V newValue) {
 		final int msk = mask;
 		int j = newValue.w1 & msk;
 		final V[] tbl = table;
@@ -241,7 +222,7 @@ public class ObjectIdSubclassMap<V extends ObjectId> implements Iterable<V> {
 	}
 
 	@SuppressWarnings("unchecked")
-	private final V[] createArray(final int sz) {
+	private final V[] createArray(int sz) {
 		return (V[]) new ObjectId[sz];
 	}
 }

@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2010, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.diff;
@@ -51,31 +18,20 @@ import static org.junit.Assert.fail;
 import java.util.Arrays;
 import java.util.List;
 
-import org.eclipse.jgit.diff.DiffEntry.ChangeType;
-import org.eclipse.jgit.junit.RepositoryTestCase;
-import org.eclipse.jgit.junit.TestRepository;
 import org.eclipse.jgit.lib.AbbreviatedObjectId;
 import org.eclipse.jgit.lib.FileMode;
 import org.eclipse.jgit.lib.ObjectId;
-import org.eclipse.jgit.lib.Repository;
 import org.junit.Before;
 import org.junit.Test;
 
-public class RenameDetectorTest extends RepositoryTestCase {
-	private static final String PATH_A = "src/A";
-	private static final String PATH_B = "src/B";
-	private static final String PATH_H = "src/H";
-	private static final String PATH_Q = "src/Q";
+public class RenameDetectorTest extends AbstractRenameDetectionTestCase {
 
 	private RenameDetector rd;
-
-	private TestRepository<Repository> testDb;
 
 	@Override
 	@Before
 	public void setUp() throws Exception {
 		super.setUp();
-		testDb = new TestRepository<Repository>(db);
 		rd = new RenameDetector(db);
 	}
 
@@ -576,6 +532,94 @@ public class RenameDetectorTest extends RepositoryTestCase {
 	}
 
 	@Test
+	public void testExactRename_LargeFile() throws Exception {
+		ObjectId aId = blob("blah\nblah\nfoo"); // size = 14
+
+		DiffEntry a = DiffEntry.add(PATH_A, aId);
+		DiffEntry b = DiffEntry.delete(PATH_Q, aId);
+
+		rd.add(a);
+		rd.add(b);
+
+		// Exact renames are identified for large files
+		rd.setBigFileThreshold(10);
+		List<DiffEntry> entries = rd.compute();
+		assertEquals(1, entries.size());
+		assertRename(b, a, 100, entries.get(0));
+	}
+
+	@Test
+	public void testInexactRename_LargeFile() throws Exception {
+		ObjectId aId = blob("blah\nblah\nfoo"); // size = 14
+		ObjectId bId = blob("bla\nblah\nfoo"); // size = 13
+
+		DiffEntry a = DiffEntry.add(PATH_A, aId);
+		DiffEntry b = DiffEntry.delete(PATH_Q, bId);
+
+		rd.add(a);
+		rd.add(b);
+
+		rd.setBigFileThreshold(10);
+
+		// Inexact renames are not detected for large files
+		List<DiffEntry> entries = rd.compute();
+		assertEquals(2, entries.size());
+		assertAdd(PATH_A, aId, FileMode.REGULAR_FILE, entries.get(0));
+		assertDelete(PATH_Q, bId, FileMode.REGULAR_FILE, entries.get(1));
+	}
+
+	@Test
+	public void testExactRenameForBinaryFile_isIdentified() throws Exception {
+		ObjectId aId = blob("a\nb\nc\n\0\0\0\0d\n");
+
+		DiffEntry a = DiffEntry.add(PATH_A, aId);
+		DiffEntry b = DiffEntry.delete(PATH_Q, aId);
+
+		rd.add(a);
+		rd.add(b);
+
+		List<DiffEntry> entries = rd.compute();
+		assertEquals(1, entries.size());
+		assertRename(b, a, 100, entries.get(0));
+	}
+
+	@Test
+	public void testInexactRenameForBinaryFile_identifiedByDefault() throws Exception {
+		ObjectId aId = blob("a\nb\nc\n\0\0\0\0d\n");
+		ObjectId bId = blob("a\nb\nc\n\0\0\0d\n");
+
+		DiffEntry a = DiffEntry.add(PATH_A, aId);
+		DiffEntry b = DiffEntry.delete(PATH_Q, bId);
+
+		rd.add(a);
+		rd.add(b);
+		rd.setRenameScore(40);
+
+		List<DiffEntry> entries = rd.compute();
+		assertEquals(1, entries.size());
+		assertRename(b, a, 50, entries.get(0));
+	}
+
+	@Test
+	public void testInexactRenameForBinaryFile_notIdentifiedIfSkipParameterSet() throws Exception {
+		ObjectId aId = blob("a\nb\nc\n\0\0\0\0d\n");
+		ObjectId bId = blob("a\nb\nc\n\0\0\0d\n");
+
+		DiffEntry a = DiffEntry.add(PATH_A, aId);
+		DiffEntry b = DiffEntry.delete(PATH_Q, bId);
+
+		rd.add(a);
+		rd.add(b);
+		rd.setRenameScore(40);
+		rd.setSkipContentRenamesForBinaryFiles(true);
+
+		List<DiffEntry> entries = rd.compute();
+		assertEquals(2, entries.size());
+		assertAdd(PATH_A, aId, FileMode.REGULAR_FILE, entries.get(0));
+		assertDelete(PATH_Q, bId, FileMode.REGULAR_FILE, entries.get(1));
+	}
+
+	@Test
 	public void testSetRenameScore_IllegalArgs() throws Exception {
 		try {
 			rd.setRenameScore(-1);
@@ -619,52 +663,5 @@ public class RenameDetectorTest extends RepositoryTestCase {
 		assertSame(b, entries.get(1));
 		assertSame(c, entries.get(2));
 		assertSame(d, entries.get(3));
-	}
-
-	private ObjectId blob(String content) throws Exception {
-		return testDb.blob(content).copy();
-	}
-
-	private static void assertRename(DiffEntry o, DiffEntry n, int score,
-			DiffEntry rename) {
-		assertEquals(ChangeType.RENAME, rename.getChangeType());
-
-		assertEquals(o.getOldPath(), rename.getOldPath());
-		assertEquals(n.getNewPath(), rename.getNewPath());
-
-		assertEquals(o.getOldMode(), rename.getOldMode());
-		assertEquals(n.getNewMode(), rename.getNewMode());
-
-		assertEquals(o.getOldId(), rename.getOldId());
-		assertEquals(n.getNewId(), rename.getNewId());
-
-		assertEquals(score, rename.getScore());
-	}
-
-	private static void assertCopy(DiffEntry o, DiffEntry n, int score,
-			DiffEntry copy) {
-		assertEquals(ChangeType.COPY, copy.getChangeType());
-
-		assertEquals(o.getOldPath(), copy.getOldPath());
-		assertEquals(n.getNewPath(), copy.getNewPath());
-
-		assertEquals(o.getOldMode(), copy.getOldMode());
-		assertEquals(n.getNewMode(), copy.getNewMode());
-
-		assertEquals(o.getOldId(), copy.getOldId());
-		assertEquals(n.getNewId(), copy.getNewId());
-
-		assertEquals(score, copy.getScore());
-	}
-
-	private static void assertAdd(String newName, ObjectId newId,
-			FileMode newMode, DiffEntry add) {
-		assertEquals(DiffEntry.DEV_NULL, add.oldPath);
-		assertEquals(DiffEntry.A_ZERO, add.oldId);
-		assertEquals(FileMode.MISSING, add.oldMode);
-		assertEquals(ChangeType.ADD, add.changeType);
-		assertEquals(newName, add.newPath);
-		assertEquals(AbbreviatedObjectId.fromObjectId(newId), add.newId);
-		assertEquals(newMode, add.newMode);
 	}
 }

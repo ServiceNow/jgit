@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2011, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2011, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.util;
@@ -47,6 +14,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.util.Iterator;
 
@@ -57,22 +25,22 @@ public class BlockListTest {
 	public void testEmptyList() {
 		BlockList<String> empty;
 
-		empty = new BlockList<String>();
+		empty = new BlockList<>();
 		assertEquals(0, empty.size());
 		assertTrue(empty.isEmpty());
 		assertFalse(empty.iterator().hasNext());
 
-		empty = new BlockList<String>(0);
+		empty = new BlockList<>(0);
 		assertEquals(0, empty.size());
 		assertTrue(empty.isEmpty());
 		assertFalse(empty.iterator().hasNext());
 
-		empty = new BlockList<String>(1);
+		empty = new BlockList<>(1);
 		assertEquals(0, empty.size());
 		assertTrue(empty.isEmpty());
 		assertFalse(empty.iterator().hasNext());
 
-		empty = new BlockList<String>(64);
+		empty = new BlockList<>(64);
 		assertEquals(0, empty.size());
 		assertTrue(empty.isEmpty());
 		assertFalse(empty.iterator().hasNext());
@@ -80,22 +48,25 @@ public class BlockListTest {
 
 	@Test
 	public void testGet() {
-		BlockList<String> list = new BlockList<String>(4);
+		BlockList<String> list = new BlockList<>(4);
 
 		try {
 			list.get(-1);
+			fail("accepted out-of-bounds index");
 		} catch (IndexOutOfBoundsException badIndex) {
 			assertEquals(String.valueOf(-1), badIndex.getMessage());
 		}
 
 		try {
 			list.get(0);
+			fail("accepted out-of-bounds index");
 		} catch (IndexOutOfBoundsException badIndex) {
 			assertEquals(String.valueOf(0), badIndex.getMessage());
 		}
 
 		try {
 			list.get(4);
+			fail("accepted out-of-bounds index");
 		} catch (IndexOutOfBoundsException badIndex) {
 			assertEquals(String.valueOf(4), badIndex.getMessage());
 		}
@@ -114,6 +85,7 @@ public class BlockListTest {
 
 		try {
 			list.get(3);
+			fail("accepted out-of-bounds index");
 		} catch (IndexOutOfBoundsException badIndex) {
 			assertEquals(String.valueOf(3), badIndex.getMessage());
 		}
@@ -121,22 +93,25 @@ public class BlockListTest {
 
 	@Test
 	public void testSet() {
-		BlockList<String> list = new BlockList<String>(4);
+		BlockList<String> list = new BlockList<>(4);
 
 		try {
 			list.set(-1, "foo");
+			fail("accepted out-of-bounds index");
 		} catch (IndexOutOfBoundsException badIndex) {
 			assertEquals(String.valueOf(-1), badIndex.getMessage());
 		}
 
 		try {
 			list.set(0, "foo");
+			fail("accepted out-of-bounds index");
 		} catch (IndexOutOfBoundsException badIndex) {
 			assertEquals(String.valueOf(0), badIndex.getMessage());
 		}
 
 		try {
 			list.set(4, "foo");
+			fail("accepted out-of-bounds index");
 		} catch (IndexOutOfBoundsException badIndex) {
 			assertEquals(String.valueOf(4), badIndex.getMessage());
 		}
@@ -161,6 +136,7 @@ public class BlockListTest {
 
 		try {
 			list.set(3, "bar");
+			fail("accepted out-of-bounds index");
 		} catch (IndexOutOfBoundsException badIndex) {
 			assertEquals(String.valueOf(3), badIndex.getMessage());
 		}
@@ -168,7 +144,7 @@ public class BlockListTest {
 
 	@Test
 	public void testAddToEnd() {
-		BlockList<Integer> list = new BlockList<Integer>(4);
+		BlockList<Integer> list = new BlockList<>(4);
 		int cnt = BlockList.BLOCK_SIZE * 3;
 
 		for (int i = 0; i < cnt; i++)
@@ -192,7 +168,7 @@ public class BlockListTest {
 
 	@Test
 	public void testAddSlowPath() {
-		BlockList<String> list = new BlockList<String>(4);
+		BlockList<String> list = new BlockList<>(4);
 
 		String fooStr = "foo";
 		String barStr = "bar";
@@ -223,7 +199,7 @@ public class BlockListTest {
 
 	@Test
 	public void testRemoveFromEnd() {
-		BlockList<String> list = new BlockList<String>(4);
+		BlockList<String> list = new BlockList<>(4);
 
 		String fooStr = "foo";
 		String barStr = "bar";
@@ -245,7 +221,7 @@ public class BlockListTest {
 
 	@Test
 	public void testRemoveSlowPath() {
-		BlockList<String> list = new BlockList<String>(4);
+		BlockList<String> list = new BlockList<>(4);
 
 		String fooStr = "foo";
 		String barStr = "bar";
@@ -270,7 +246,7 @@ public class BlockListTest {
 
 	@Test
 	public void testAddRemoveAdd() {
-		BlockList<Integer> list = new BlockList<Integer>();
+		BlockList<Integer> list = new BlockList<>();
 		for (int i = 0; i < BlockList.BLOCK_SIZE + 1; i++)
 			list.add(Integer.valueOf(i));
 		assertEquals(Integer.valueOf(BlockList.BLOCK_SIZE),
@@ -283,14 +259,14 @@ public class BlockListTest {
 
 	@Test
 	public void testAddAllFromOtherList() {
-		BlockList<Integer> src = new BlockList<Integer>(4);
+		BlockList<Integer> src = new BlockList<>(4);
 		int cnt = BlockList.BLOCK_SIZE * 2;
 
 		for (int i = 0; i < cnt; i++)
 			src.add(Integer.valueOf(42 + i));
 		src.add(Integer.valueOf(1));
 
-		BlockList<Integer> dst = new BlockList<Integer>(4);
+		BlockList<Integer> dst = new BlockList<>(4);
 		dst.add(Integer.valueOf(255));
 		dst.addAll(src);
 		assertEquals(cnt + 2, dst.size());
@@ -301,7 +277,7 @@ public class BlockListTest {
 
 	@Test
 	public void testFastIterator() {
-		BlockList<Integer> list = new BlockList<Integer>(4);
+		BlockList<Integer> list = new BlockList<>(4);
 		int cnt = BlockList.BLOCK_SIZE * 3;
 
 		for (int i = 0; i < cnt; i++)
@@ -318,17 +294,19 @@ public class BlockListTest {
 
 	@Test
 	public void testAddRejectsBadIndexes() {
-		BlockList<Integer> list = new BlockList<Integer>(4);
+		BlockList<Integer> list = new BlockList<>(4);
 		list.add(Integer.valueOf(41));
 
 		try {
 			list.add(-1, Integer.valueOf(42));
+			fail("accepted out-of-bounds index");
 		} catch (IndexOutOfBoundsException badIndex) {
 			assertEquals(String.valueOf(-1), badIndex.getMessage());
 		}
 
 		try {
 			list.add(4, Integer.valueOf(42));
+			fail("accepted out-of-bounds index");
 		} catch (IndexOutOfBoundsException badIndex) {
 			assertEquals(String.valueOf(4), badIndex.getMessage());
 		}
@@ -336,17 +314,19 @@ public class BlockListTest {
 
 	@Test
 	public void testRemoveRejectsBadIndexes() {
-		BlockList<Integer> list = new BlockList<Integer>(4);
+		BlockList<Integer> list = new BlockList<>(4);
 		list.add(Integer.valueOf(41));
 
 		try {
 			list.remove(-1);
+			fail("accepted out-of-bounds index");
 		} catch (IndexOutOfBoundsException badIndex) {
 			assertEquals(String.valueOf(-1), badIndex.getMessage());
 		}
 
 		try {
 			list.remove(4);
+			fail("accepted out-of-bounds index");
 		} catch (IndexOutOfBoundsException badIndex) {
 			assertEquals(String.valueOf(4), badIndex.getMessage());
 		}

@@ -1,49 +1,16 @@
 /*
- * Copyright (C) 2015, Andrei Pozolotin.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2015, Andrei Pozolotin. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.transport;
 
-import static org.eclipse.jgit.transport.WalkEncryptionTest.Util.UTF_8;
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.eclipse.jgit.transport.WalkEncryptionTest.Util.cryptoCipherListPBE;
 import static org.eclipse.jgit.transport.WalkEncryptionTest.Util.cryptoCipherListTrans;
 import static org.eclipse.jgit.transport.WalkEncryptionTest.Util.folderDelete;
@@ -77,7 +44,6 @@ import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.net.URLConnection;
 import java.net.UnknownHostException;
-import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.security.GeneralSecurityException;
 import java.security.Provider;
@@ -85,12 +51,12 @@ import java.security.Security;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Locale;
 import java.util.Properties;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
 
-import javax.crypto.Cipher;
 import javax.crypto.SecretKeyFactory;
 
 import org.eclipse.jgit.api.Git;
@@ -133,7 +99,7 @@ import org.slf4j.LoggerFactory;
 public class WalkEncryptionTest {
 
 	/**
-	 * Logger setup: ${project_loc}/tst-rsrc/log4j.properties
+	 * Logger setup: ${project_loc}/tst-rsrc/simplelogger.properties
 	 */
 	static final Logger logger = LoggerFactory.getLogger(WalkEncryptionTest.class);
 
@@ -240,9 +206,8 @@ public class WalkEncryptionTest {
 				loadEnvVar(ENV_SECRET_KEY, SECRET_KEY, props);
 				loadEnvVar(ENV_BUCKET_NAME, TEST_BUCKET, props);
 				return props;
-			} else {
-				return null;
 			}
+			return null;
 		}
 
 		static Properties fromEnvFile() throws Exception {
@@ -251,12 +216,10 @@ public class WalkEncryptionTest {
 				props.load(new FileInputStream(ENV_CONFIG_FILE));
 				if (checkTestProps(props)) {
 					return props;
-				} else {
-					throw new Error("Environment config file is incomplete.");
 				}
-			} else {
-				return null;
+				throw new Error("Environment config file is incomplete.");
 			}
+			return null;
 		}
 
 		static Properties fromSysProps() {
@@ -267,9 +230,8 @@ public class WalkEncryptionTest {
 				loadSysProp(SYS_SECRET_KEY, SECRET_KEY, props);
 				loadSysProp(SYS_BUCKET_NAME, TEST_BUCKET, props);
 				return props;
-			} else {
-				return null;
 			}
+			return null;
 		}
 
 		static Properties fromSysFile() throws Exception {
@@ -278,12 +240,10 @@ public class WalkEncryptionTest {
 				props.load(new FileInputStream(SYS_CONFIG_FILE));
 				if (checkTestProps(props)) {
 					return props;
-				} else {
-					throw new Error("System props config file is incomplete.");
 				}
-			} else {
-				return null;
+				throw new Error("System props config file is incomplete.");
 			}
+			return null;
 		}
 
 		static Properties fromConfigFile(String path) throws Exception {
@@ -293,12 +253,10 @@ public class WalkEncryptionTest {
 				props.load(new FileInputStream(file));
 				if (checkTestProps(props)) {
 					return props;
-				} else {
-					throw new Error("Props config file is incomplete: " + path);
 				}
-			} else {
-				return null;
+				throw new Error("Props config file is incomplete: " + path);
 			}
+			return null;
 		}
 
 		/**
@@ -352,8 +310,6 @@ public class WalkEncryptionTest {
 	 * Collection of test utility methods.
 	 */
 	static class Util {
-
-		static final Charset UTF_8 = Charset.forName("UTF-8");
 
 		/**
 		 * Read UTF-8 encoded text file into string.
@@ -422,12 +378,9 @@ public class WalkEncryptionTest {
 				URLConnection c = url.openConnection();
 				c.setConnectTimeout(500);
 				c.setReadTimeout(500);
-				BufferedReader reader = new BufferedReader(
-						new InputStreamReader(c.getInputStream()));
-				try {
+				try (BufferedReader reader = new BufferedReader(
+						new InputStreamReader(c.getInputStream(), UTF_8))) {
 					return reader.readLine();
-				} finally {
-					reader.close();
 				}
 			} catch (UnknownHostException | SocketTimeoutException e) {
 				return "Can't reach http://checkip.amazonaws.com to"
@@ -459,14 +412,14 @@ public class WalkEncryptionTest {
 
 		static List<String> cryptoCipherList(String regex) {
 			Set<String> source = Security.getAlgorithms("Cipher");
-			Set<String> target = new TreeSet<String>();
+			Set<String> target = new TreeSet<>();
 			for (String algo : source) {
-				algo = algo.toUpperCase();
+				algo = algo.toUpperCase(Locale.ROOT);
 				if (algo.matches(regex)) {
 					target.add(algo);
 				}
 			}
-			return new ArrayList<String>(target);
+			return new ArrayList<>(target);
 		}
 
 		/**
@@ -576,7 +529,7 @@ public class WalkEncryptionTest {
 						.forName("javax.crypto.JceSecurity")
 						.getDeclaredField("isRestricted");
 				isRestricted.setAccessible(true);
-				isRestricted.set(null, new Boolean(restrictedOn));
+				isRestricted.set(null, Boolean.valueOf(restrictedOn));
 			} catch (Throwable e) {
 				logger.info(
 						"Could not setup JCE security policy restrictions.");
@@ -598,7 +551,7 @@ public class WalkEncryptionTest {
 		}
 
 		static List<Object[]> product(List<String> one, List<String> two) {
-			List<Object[]> result = new ArrayList<Object[]>();
+			List<Object[]> result = new ArrayList<>();
 			for (String s1 : one) {
 				for (String s2 : two) {
 					result.add(new Object[] { s1, s2 });
@@ -657,9 +610,10 @@ public class WalkEncryptionTest {
 			Properties props = Props.discover();
 			props.put(AmazonS3.Keys.PASSWORD, JGIT_PASS);
 			props.put(AmazonS3.Keys.CRYPTO_ALG, algorithm);
-			PrintWriter writer = new PrintWriter(JGIT_CONF_FILE);
-			props.store(writer, "JGIT S3 connection configuration file.");
-			writer.close();
+			try (PrintWriter writer = new PrintWriter(JGIT_CONF_FILE,
+					UTF_8.name())) {
+				props.store(writer, "JGIT S3 connection configuration file.");
+			}
 		}
 
 		/**
@@ -671,9 +625,10 @@ public class WalkEncryptionTest {
 		static void configCreate(Properties source) throws Exception {
 			Properties target = Props.discover();
 			target.putAll(source);
-			PrintWriter writer = new PrintWriter(JGIT_CONF_FILE);
-			target.store(writer, "JGIT S3 connection configuration file.");
-			writer.close();
+			try (PrintWriter writer = new PrintWriter(JGIT_CONF_FILE,
+					UTF_8.name())) {
+				target.store(writer, "JGIT S3 connection configuration file.");
+			}
 		}
 
 		/**
@@ -759,7 +714,7 @@ public class WalkEncryptionTest {
 			for (String source : cipherSet) {
 				// Standard names are not case-sensitive.
 				// http://docs.oracle.com/javase/8/docs/technotes/guides/security/StandardNames.html
-				String target = algorithm.toUpperCase();
+				String target = algorithm.toUpperCase(Locale.ROOT);
 				if (source.equalsIgnoreCase(target)) {
 					return true;
 				}
@@ -771,16 +726,16 @@ public class WalkEncryptionTest {
 			String profile = props.getProperty(AmazonS3.Keys.CRYPTO_ALG);
 			String version = props.getProperty(AmazonS3.Keys.CRYPTO_VER,
 					WalkEncryption.Vals.DEFAULT_VERS);
-			String crytoAlgo;
+			String cryptoAlgo;
 			String keyAlgo;
 			switch (version) {
 			case WalkEncryption.Vals.DEFAULT_VERS:
 			case WalkEncryption.JGitV1.VERSION:
-				crytoAlgo = profile;
+				cryptoAlgo = profile;
 				keyAlgo = profile;
 				break;
 			case WalkEncryption.JGitV2.VERSION:
-				crytoAlgo = props
+				cryptoAlgo = props
 						.getProperty(profile + WalkEncryption.Keys.X_ALGO);
 				keyAlgo = props
 						.getProperty(profile + WalkEncryption.Keys.X_KEY_ALGO);
@@ -789,7 +744,7 @@ public class WalkEncryptionTest {
 				return false;
 			}
 			try {
-				Cipher.getInstance(crytoAlgo);
+				InsecureCipherFactory.create(cryptoAlgo);
 				SecretKeyFactory.getInstance(keyAlgo);
 				return true;
 			} catch (Throwable e) {
@@ -839,10 +794,10 @@ public class WalkEncryptionTest {
 			{
 				byte[] origin = sourceText.getBytes(charset);
 				ByteArrayOutputStream target = new ByteArrayOutputStream();
-				OutputStream source = crypto.encrypt(target);
-				source.write(origin);
-				source.flush();
-				source.close();
+				try (OutputStream source = crypto.encrypt(target)) {
+					source.write(origin);
+					source.flush();
+				}
 				cipherText = target.toByteArray();
 			}
 			{
@@ -1077,10 +1032,10 @@ public class WalkEncryptionTest {
 				remoteConfig.update(config);
 				config.save();
 
-				Git git = Git.open(dirOne);
-				git.checkout().setName("master").call();
-				git.push().setRemote(remote).setRefSpecs(specs).call();
-				git.close();
+				try (Git git = Git.open(dirOne)) {
+					git.checkout().setName("master").call();
+					git.push().setRemote(remote).setRefSpecs(specs).call();
+				}
 
 				File fileStatic = new File(dirOne, nameStatic);
 				assertTrue("Provided by setup", fileStatic.exists());
@@ -1092,11 +1047,11 @@ public class WalkEncryptionTest {
 				File fileStatic = new File(dirTwo, nameStatic);
 				assertFalse("Not Provided by setup", fileStatic.exists());
 
-				Git git = Git.cloneRepository().setURI(uri).setDirectory(dirTwo)
-						.call();
-				git.close();
+				try (Git git = Git.cloneRepository().setURI(uri)
+						.setDirectory(dirTwo).call()) {
+					assertTrue("Provided by clone", fileStatic.exists());
+				}
 
-				assertTrue("Provided by clone", fileStatic.exists());
 			}
 
 			{ // Verify static file content.
@@ -1114,11 +1069,11 @@ public class WalkEncryptionTest {
 				assertTrue("Provided by create", fileDynamic.exists());
 				assertTrue("Need content to encrypt", fileDynamic.length() > 0);
 
-				Git git = Git.open(dirOne);
-				git.add().addFilepattern(nameDynamic).call();
-				git.commit().setMessage(nameDynamic).call();
-				git.push().setRemote(remote).setRefSpecs(specs).call();
-				git.close();
+				try (Git git = Git.open(dirOne)) {
+					git.add().addFilepattern(nameDynamic).call();
+					git.commit().setMessage(nameDynamic).call();
+					git.push().setRemote(remote).setRefSpecs(specs).call();
+				}
 
 			}
 
@@ -1127,9 +1082,9 @@ public class WalkEncryptionTest {
 				File fileDynamic = new File(dirTwo, nameDynamic);
 				assertFalse("Not Provided by setup", fileDynamic.exists());
 
-				Git git = Git.open(dirTwo);
-				git.pull().call();
-				git.close();
+				try (Git git = Git.open(dirTwo)) {
+					git.pull().call();
+				}
 
 				assertTrue("Provided by pull", fileDynamic.exists());
 			}
@@ -1240,10 +1195,10 @@ public class WalkEncryptionTest {
 
 		@Parameters(name = "Profile: {0}   Version: {1}")
 		public static Collection<Object[]> argsList() {
-			List<String> algorithmList = new ArrayList<String>();
+			List<String> algorithmList = new ArrayList<>();
 			algorithmList.addAll(cryptoCipherListPBE());
 
-			List<String> versionList = new ArrayList<String>();
+			List<String> versionList = new ArrayList<>();
 			versionList.add("0");
 			versionList.add("1");
 
@@ -1283,10 +1238,10 @@ public class WalkEncryptionTest {
 
 		@Parameters(name = "Profile: {0}   Version: {1}")
 		public static Collection<Object[]> argsList() {
-			List<String> algorithmList = new ArrayList<String>();
+			List<String> algorithmList = new ArrayList<>();
 			algorithmList.addAll(cryptoCipherListTrans());
 
-			List<String> versionList = new ArrayList<String>();
+			List<String> versionList = new ArrayList<>();
 			versionList.add("1");
 
 			return product(algorithmList, versionList);

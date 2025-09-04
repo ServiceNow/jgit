@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2008, Marek Zawirski <marek.zawirski@gmail.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, 2022 Marek Zawirski <marek.zawirski@gmail.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.transport;
@@ -47,13 +14,19 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.text.MessageFormat;
 import java.util.Collection;
-import java.util.HashMap;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
+import org.eclipse.jgit.api.errors.AbortedByHookException;
 import org.eclipse.jgit.errors.MissingObjectException;
 import org.eclipse.jgit.errors.NotSupportedException;
 import org.eclipse.jgit.errors.TransportException;
+import org.eclipse.jgit.hooks.PrePushHook;
 import org.eclipse.jgit.internal.JGitText;
+import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ProgressMonitor;
 import org.eclipse.jgit.lib.Ref;
@@ -86,6 +59,11 @@ class PushProcess {
 	/** an outputstream to write messages to */
 	private final OutputStream out;
 
+	/** A list of option strings associated with this push */
+	private List<String> pushOptions;
+
+	private final PrePushHook prePush;
+
 	/**
 	 * Create process for specified transport and refs updates specification.
 	 *
@@ -94,12 +72,14 @@ class PushProcess {
 	 *            connection.
 	 * @param toPush
 	 *            specification of refs updates (and local tracking branches).
-	 *
+	 * @param prePush
+	 *            {@link PrePushHook} to run after the remote advertisement has
+	 *            been gotten
 	 * @throws TransportException
 	 */
-	PushProcess(final Transport transport,
-			final Collection<RemoteRefUpdate> toPush) throws TransportException {
-		this(transport, toPush, null);
+	PushProcess(Transport transport, Collection<RemoteRefUpdate> toPush,
+			PrePushHook prePush) throws TransportException {
+		this(transport, toPush, prePush, null);
 	}
 
 	/**
@@ -110,18 +90,22 @@ class PushProcess {
 	 *            connection.
 	 * @param toPush
 	 *            specification of refs updates (and local tracking branches).
+	 * @param prePush
+	 *            {@link PrePushHook} to run after the remote advertisement has
+	 *            been gotten
 	 * @param out
 	 *            OutputStream to write messages to
 	 * @throws TransportException
 	 */
-	PushProcess(final Transport transport,
-			final Collection<RemoteRefUpdate> toPush, OutputStream out)
-			throws TransportException {
+	PushProcess(Transport transport, Collection<RemoteRefUpdate> toPush,
+			PrePushHook prePush, OutputStream out) throws TransportException {
 		this.walker = new RevWalk(transport.local);
 		this.transport = transport;
-		this.toPush = new HashMap<String, RemoteRefUpdate>();
+		this.toPush = new LinkedHashMap<>();
+		this.prePush = prePush;
 		this.out = out;
-		for (final RemoteRefUpdate rru : toPush) {
+		this.pushOptions = transport.getPushOptions();
+		for (RemoteRefUpdate rru : toPush) {
 			if (this.toPush.put(rru.getRemoteName(), rru) != null)
 				throw new TransportException(MessageFormat.format(
 						JGitText.get().duplicateRemoteRefUpdateIsIllegal, rru.getRemoteName()));
@@ -144,7 +128,7 @@ class PushProcess {
 	 *             when some error occurred during operation, like I/O, protocol
 	 *             error, or local database consistency error.
 	 */
-	PushResult execute(final ProgressMonitor monitor)
+	PushResult execute(ProgressMonitor monitor)
 			throws NotSupportedException, TransportException {
 		try {
 			monitor.beginTask(PROGRESS_OPENING_CONNECTION,
@@ -156,10 +140,39 @@ class PushProcess {
 				res.setAdvertisedRefs(transport.getURI(), connection
 						.getRefsMap());
 				res.peerUserAgent = connection.getPeerUserAgent();
-				res.setRemoteUpdates(toPush);
 				monitor.endTask();
 
+				Map<String, RemoteRefUpdate> expanded = expandMatching();
+				toPush.clear();
+				toPush.putAll(expanded);
+
+				res.setRemoteUpdates(toPush);
 				final Map<String, RemoteRefUpdate> preprocessed = prepareRemoteUpdates();
+				List<RemoteRefUpdate> willBeAttempted = preprocessed.values()
+						.stream().filter(u -> {
+							switch (u.getStatus()) {
+							case NON_EXISTING:
+							case REJECTED_NODELETE:
+							case REJECTED_NONFASTFORWARD:
+							case REJECTED_OTHER_REASON:
+							case REJECTED_REMOTE_CHANGED:
+							case UP_TO_DATE:
+								return false;
+							default:
+								return true;
+							}
+						}).collect(Collectors.toList());
+				if (!willBeAttempted.isEmpty()) {
+					if (prePush != null) {
+						try {
+							prePush.setRefs(willBeAttempted);
+							prePush.setDryRun(transport.isDryRun());
+							prePush.call();
+						} catch (AbortedByHookException | IOException e) {
+							throw new TransportException(e.getMessage(), e);
+						}
+					}
+				}
 				if (transport.isDryRun())
 					modifyUpdatesForDryRun();
 				else if (!preprocessed.isEmpty())
@@ -170,7 +183,7 @@ class PushProcess {
 			}
 			if (!transport.isDryRun())
 				updateTrackingRefs();
-			for (final RemoteRefUpdate rru : toPush.values()) {
+			for (RemoteRefUpdate rru : toPush.values()) {
 				final TrackingRefUpdate tru = rru.getTrackingRefUpdate();
 				if (tru != null)
 					res.add(tru);
@@ -183,11 +196,17 @@ class PushProcess {
 
 	private Map<String, RemoteRefUpdate> prepareRemoteUpdates()
 			throws TransportException {
-		final Map<String, RemoteRefUpdate> result = new HashMap<String, RemoteRefUpdate>();
-		for (final RemoteRefUpdate rru : toPush.values()) {
+		boolean atomic = transport.isPushAtomic();
+		final Map<String, RemoteRefUpdate> result = new LinkedHashMap<>();
+		for (RemoteRefUpdate rru : toPush.values()) {
 			final Ref advertisedRef = connection.getRef(rru.getRemoteName());
-			final ObjectId advertisedOld = (advertisedRef == null ? ObjectId
-					.zeroId() : advertisedRef.getObjectId());
+			ObjectId advertisedOld = null;
+			if (advertisedRef != null) {
+				advertisedOld = advertisedRef.getObjectId();
+			}
+			if (advertisedOld == null) {
+				advertisedOld = ObjectId.zeroId();
+			}
 
 			if (rru.getNewObjectId().equals(advertisedOld)) {
 				if (rru.isDelete()) {
@@ -205,7 +224,13 @@ class PushProcess {
 			if (rru.isExpectingOldObjectId()
 					&& !rru.getExpectedOldObjectId().equals(advertisedOld)) {
 				rru.setStatus(Status.REJECTED_REMOTE_CHANGED);
+				if (atomic) {
+					return rejectAll();
+				}
 				continue;
+			}
+			if (!rru.isExpectingOldObjectId()) {
+				rru.setExpectedOldObjectId(advertisedOld);
 			}
 
 			// create ref (hasn't existed on remote side) and delete ref
@@ -216,42 +241,167 @@ class PushProcess {
 				continue;
 			}
 
-			// check for fast-forward:
-			// - both old and new ref must point to commits, AND
-			// - both of them must be known for us, exist in repository, AND
-			// - old commit must be ancestor of new commit
-			boolean fastForward = true;
-			try {
-				RevObject oldRev = walker.parseAny(advertisedOld);
-				final RevObject newRev = walker.parseAny(rru.getNewObjectId());
-				if (!(oldRev instanceof RevCommit)
-						|| !(newRev instanceof RevCommit)
-						|| !walker.isMergedInto((RevCommit) oldRev,
-								(RevCommit) newRev))
-					fastForward = false;
-			} catch (MissingObjectException x) {
-				fastForward = false;
-			} catch (Exception x) {
-				throw new TransportException(transport.getURI(), MessageFormat.format(
-						JGitText.get().readingObjectsFromLocalRepositoryFailed, x.getMessage()), x);
-			}
+			boolean fastForward = isFastForward(advertisedOld,
+					rru.getNewObjectId());
 			rru.setFastForward(fastForward);
-			if (!fastForward && !rru.isForceUpdate())
+			if (!fastForward && !rru.isForceUpdate()) {
 				rru.setStatus(Status.REJECTED_NONFASTFORWARD);
-			else
+				if (atomic) {
+					return rejectAll();
+				}
+			} else {
 				result.put(rru.getRemoteName(), rru);
+			}
 		}
 		return result;
 	}
 
+	/**
+	 * Determines whether an update from {@code oldOid} to {@code newOid} is a
+	 * fast-forward update:
+	 * <ul>
+	 * <li>both old and new must be commits, AND</li>
+	 * <li>both of them must be known to us and exist in the repository,
+	 * AND</li>
+	 * <li>the old commit must be an ancestor of the new commit.</li>
+	 * </ul>
+	 *
+	 * @param oldOid
+	 *            {@link ObjectId} of the old commit
+	 * @param newOid
+	 *            {@link ObjectId} of the new commit
+	 * @return {@code true} if the update fast-forwards, {@code false} otherwise
+	 * @throws TransportException
+	 */
+	private boolean isFastForward(ObjectId oldOid, ObjectId newOid)
+			throws TransportException {
+		try {
+			RevObject oldRev = walker.parseAny(oldOid);
+			RevObject newRev = walker.parseAny(newOid);
+			if (!(oldRev instanceof RevCommit) || !(newRev instanceof RevCommit)
+					|| !walker.isMergedInto((RevCommit) oldRev,
+							(RevCommit) newRev)) {
+				return false;
+			}
+		} catch (MissingObjectException x) {
+			return false;
+		} catch (Exception x) {
+			throw new TransportException(transport.getURI(),
+					MessageFormat.format(JGitText
+							.get().readingObjectsFromLocalRepositoryFailed,
+							x.getMessage()),
+					x);
+		}
+		return true;
+	}
+
+	/**
+	 * Expands all placeholder {@link RemoteRefUpdate}s for "matching"
+	 * {@link RefSpec}s ":" in {@link #toPush} and returns the resulting map in
+	 * which the placeholders have been replaced by their expansion.
+	 *
+	 * @return a new map of {@link RemoteRefUpdate}s keyed by remote name
+	 * @throws TransportException
+	 *             if the expansion results in duplicate updates
+	 */
+	private Map<String, RemoteRefUpdate> expandMatching()
+			throws TransportException {
+		Map<String, RemoteRefUpdate> result = new LinkedHashMap<>();
+		boolean hadMatch = false;
+		for (RemoteRefUpdate update : toPush.values()) {
+			if (update.isMatching()) {
+				if (hadMatch) {
+					throw new TransportException(MessageFormat.format(
+							JGitText.get().duplicateRemoteRefUpdateIsIllegal,
+							":")); //$NON-NLS-1$
+				}
+				expandMatching(result, update);
+				hadMatch = true;
+			} else if (result.put(update.getRemoteName(), update) != null) {
+				throw new TransportException(MessageFormat.format(
+						JGitText.get().duplicateRemoteRefUpdateIsIllegal,
+						update.getRemoteName()));
+			}
+		}
+		return result;
+	}
+
+	/**
+	 * Expands the placeholder {@link RemoteRefUpdate} {@code match} for a
+	 * "matching" {@link RefSpec} ":" or "+:" and puts the expansion into the
+	 * given map {@code updates}.
+	 *
+	 * @param updates
+	 *            map to put the expansion in
+	 * @param match
+	 *            the placeholder {@link RemoteRefUpdate} to expand
+	 *
+	 * @throws TransportException
+	 *             if the expansion results in duplicate updates, or the local
+	 *             branches cannot be determined
+	 */
+	private void expandMatching(Map<String, RemoteRefUpdate> updates,
+			RemoteRefUpdate match) throws TransportException {
+		try {
+			Map<String, Ref> advertisement = connection.getRefsMap();
+			Collection<RefSpec> fetchSpecs = match.getFetchSpecs();
+			boolean forceUpdate = match.isForceUpdate();
+			for (Ref local : transport.local.getRefDatabase()
+					.getRefsByPrefix(Constants.R_HEADS)) {
+				if (local.isSymbolic()) {
+					continue;
+				}
+				String name = local.getName();
+				Ref advertised = advertisement.get(name);
+				if (advertised == null || advertised.isSymbolic()) {
+					continue;
+				}
+				ObjectId oldOid = advertised.getObjectId();
+				if (oldOid == null || ObjectId.zeroId().equals(oldOid)) {
+					continue;
+				}
+				ObjectId newOid = local.getObjectId();
+				if (newOid == null || ObjectId.zeroId().equals(newOid)) {
+					continue;
+				}
+
+				RemoteRefUpdate rru = new RemoteRefUpdate(transport.local, name,
+						newOid, name, forceUpdate,
+						Transport.findTrackingRefName(name, fetchSpecs),
+						oldOid);
+				if (updates.put(rru.getRemoteName(), rru) != null) {
+					throw new TransportException(MessageFormat.format(
+							JGitText.get().duplicateRemoteRefUpdateIsIllegal,
+							rru.getRemoteName()));
+				}
+			}
+		} catch (IOException x) {
+			throw new TransportException(transport.getURI(),
+					MessageFormat.format(JGitText
+							.get().readingObjectsFromLocalRepositoryFailed,
+							x.getMessage()),
+					x);
+		}
+	}
+
+	private Map<String, RemoteRefUpdate> rejectAll() {
+		for (RemoteRefUpdate rru : toPush.values()) {
+			if (rru.getStatus() == Status.NOT_ATTEMPTED) {
+				rru.setStatus(RemoteRefUpdate.Status.REJECTED_OTHER_REASON);
+				rru.setMessage(JGitText.get().transactionAborted);
+			}
+		}
+		return Collections.emptyMap();
+	}
+
 	private void modifyUpdatesForDryRun() {
-		for (final RemoteRefUpdate rru : toPush.values())
+		for (RemoteRefUpdate rru : toPush.values())
 			if (rru.getStatus() == Status.NOT_ATTEMPTED)
 				rru.setStatus(Status.OK);
 	}
 
 	private void updateTrackingRefs() {
-		for (final RemoteRefUpdate rru : toPush.values()) {
+		for (RemoteRefUpdate rru : toPush.values()) {
 			final Status status = rru.getStatus();
 			if (rru.hasTrackingRefUpdate()
 					&& (status == Status.UP_TO_DATE || status == Status.OK)) {
@@ -266,5 +416,15 @@ class PushProcess {
 				}
 			}
 		}
+	}
+
+	/**
+	 * Gets the list of option strings associated with this push.
+	 *
+	 * @return pushOptions
+	 * @since 4.5
+	 */
+	public List<String> getPushOptions() {
+		return pushOptions;
 	}
 }

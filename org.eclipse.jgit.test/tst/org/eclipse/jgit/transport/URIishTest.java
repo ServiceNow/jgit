@@ -3,46 +3,13 @@
  * Copyright (C) 2008, Robin Rosenberg <robin.rosenberg@dewire.com>
  * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org>
  * Copyright (C) 2013, Robin Stocker <robin@nibor.org>
- * Copyright (C) 2015, Patrick Steinhardt <ps@pks.im>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2015, Patrick Steinhardt <ps@pks.im> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.transport;
@@ -51,7 +18,6 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 
 import java.io.File;
 import java.io.IOException;
@@ -64,24 +30,16 @@ public class URIishTest {
 
 	private static final String GIT_SCHEME = "git://";
 
-	@Test
+	@SuppressWarnings("unused")
+	@Test(expected = URISyntaxException.class)
 	public void shouldRaiseErrorOnEmptyURI() throws Exception {
-		try {
-			new URIish("");
-			fail("expecting an exception");
-		} catch (URISyntaxException e) {
-			// expected
-		}
+		new URIish("");
 	}
 
-	@Test
+	@SuppressWarnings("unused")
+	@Test(expected = URISyntaxException.class)
 	public void shouldRaiseErrorOnNullURI() throws Exception {
-		try {
-			new URIish((String) null);
-			fail("expecting an exception");
-		} catch (URISyntaxException e) {
-			// expected
-		}
+		new URIish((String) null);
 	}
 
 	@Test
@@ -207,10 +165,92 @@ public class URIishTest {
 		URIish u = new URIish(str);
 		assertEquals("file", u.getScheme());
 		assertFalse(u.isRemote());
+		assertEquals(null, u.getHost());
+		assertEquals(-1, u.getPort());
+		assertEquals(null, u.getUser());
+		assertEquals(null, u.getPass());
 		assertEquals("D:/m y", u.getRawPath());
 		assertEquals("D:/m y", u.getPath());
 		assertEquals("file:///D:/m y", u.toString());
 		assertEquals("file:///D:/m%20y", u.toASCIIString());
+		assertEquals(u, new URIish(str));
+	}
+
+	@Test
+	public void testFileProtoWindowsWithHost() throws Exception {
+		final String str = "file://localhost/D:/m y";
+		URIish u = new URIish(str);
+		assertEquals("file", u.getScheme());
+		assertTrue(u.isRemote());
+		assertEquals("localhost", u.getHost());
+		assertEquals(-1, u.getPort());
+		assertEquals(null, u.getUser());
+		assertEquals(null, u.getPass());
+		assertEquals("D:/m y", u.getRawPath());
+		assertEquals("D:/m y", u.getPath());
+		assertEquals("file://localhost/D:/m y", u.toString());
+		assertEquals("file://localhost/D:/m%20y", u.toASCIIString());
+		assertEquals(u, new URIish(str));
+	}
+
+	@Test
+	public void testFileProtoWindowsWithHostAndPort() throws Exception {
+		final String str = "file://localhost:80/D:/m y";
+		URIish u = new URIish(str);
+		assertEquals("file", u.getScheme());
+		assertTrue(u.isRemote());
+		assertEquals("localhost", u.getHost());
+		assertEquals(80, u.getPort());
+		assertEquals(null, u.getUser());
+		assertEquals(null, u.getPass());
+		assertEquals("D:/m y", u.getRawPath());
+		assertEquals("D:/m y", u.getPath());
+		assertEquals("file://localhost:80/D:/m y", u.toString());
+		assertEquals("file://localhost:80/D:/m%20y", u.toASCIIString());
+		assertEquals(u, new URIish(str));
+	}
+
+	@Test
+	public void testFileProtoWindowsWithHostAndEmptyPortIsAmbiguous()
+			throws Exception {
+		final String str = "file://localhost:/D:/m y";
+		URIish u = new URIish(str);
+		assertEquals("file", u.getScheme());
+		assertFalse(u.isRemote());
+		assertEquals(null, u.getHost());
+		assertEquals(-1, u.getPort());
+		assertEquals(null, u.getUser());
+		assertEquals(null, u.getPass());
+		assertEquals("localhost:/D:/m y", u.getRawPath());
+		assertEquals("localhost:/D:/m y", u.getPath());
+		assertEquals("file:///localhost:/D:/m y", u.toString());
+		assertEquals("file:///localhost:/D:/m%20y", u.toASCIIString());
+		assertEquals(u, new URIish(str));
+	}
+
+	@Test
+	public void testFileProtoWindowsMissingHostSlash() throws Exception {
+		final String str = "file://D:/m y";
+		URIish u = new URIish(str);
+		assertEquals("file", u.getScheme());
+		assertFalse(u.isRemote());
+		assertEquals("D:/m y", u.getRawPath());
+		assertEquals("D:/m y", u.getPath());
+		assertEquals("file:///D:/m y", u.toString());
+		assertEquals("file:///D:/m%20y", u.toASCIIString());
+		assertEquals(u, new URIish(str));
+	}
+
+	@Test
+	public void testFileProtoWindowsMissingHostSlash2() throws Exception {
+		final String str = "file://D: /m y";
+		URIish u = new URIish(str);
+		assertEquals("file", u.getScheme());
+		assertFalse(u.isRemote());
+		assertEquals("D: /m y", u.getRawPath());
+		assertEquals("D: /m y", u.getPath());
+		assertEquals("file:///D: /m y", u.toString());
+		assertEquals("file:///D:%20/m%20y", u.toASCIIString());
 		assertEquals(u, new URIish(str));
 	}
 
@@ -430,6 +470,22 @@ public class URIishTest {
 	}
 
 	@Test
+	public void testSshProtoHostWithEmptyPortAndPath() throws Exception {
+		final String str = "ssh://example.com:/path";
+		URIish u = new URIish(str);
+		assertEquals("ssh", u.getScheme());
+		assertTrue(u.isRemote());
+		assertEquals("/path", u.getRawPath());
+		assertEquals("/path", u.getPath());
+		assertEquals("example.com", u.getHost());
+		assertEquals(-1, u.getPort());
+		assertEquals("ssh://example.com/path", u.toString());
+		assertEquals("ssh://example.com/path", u.toASCIIString());
+		assertEquals(u, new URIish(str));
+		assertEquals(u, new URIish("ssh://example.com/path"));
+	}
+
+	@Test
 	public void testSshProtoWithUserAndPort() throws Exception {
 		final String str = "ssh://user@example.com:33/some/p ath";
 		URIish u = new URIish(str);
@@ -462,6 +518,48 @@ public class URIishTest {
 		assertEquals("ssh://user:pass@example.com:33/some/p ath",
 				u.toPrivateString());
 		assertEquals("ssh://user:pass@example.com:33/some/p%20ath",
+				u.toPrivateASCIIString());
+		assertEquals(u.setPass(null).toPrivateString(), u.toString());
+		assertEquals(u.setPass(null).toPrivateASCIIString(), u.toASCIIString());
+		assertEquals(u, new URIish(str));
+	}
+
+	@Test
+	public void testSshProtoWithEmailUserAndPort() throws Exception {
+		final String str = "ssh://user.name@email.com@example.com:33/some/p ath";
+		URIish u = new URIish(str);
+		assertEquals("ssh", u.getScheme());
+		assertTrue(u.isRemote());
+		assertEquals("/some/p ath", u.getRawPath());
+		assertEquals("/some/p ath", u.getPath());
+		assertEquals("example.com", u.getHost());
+		assertEquals("user.name@email.com", u.getUser());
+		assertNull(u.getPass());
+		assertEquals(33, u.getPort());
+		assertEquals("ssh://user.name%40email.com@example.com:33/some/p ath",
+				u.toPrivateString());
+		assertEquals("ssh://user.name%40email.com@example.com:33/some/p%20ath",
+				u.toPrivateASCIIString());
+		assertEquals(u.setPass(null).toPrivateString(), u.toString());
+		assertEquals(u.setPass(null).toPrivateASCIIString(), u.toASCIIString());
+		assertEquals(u, new URIish(str));
+	}
+
+	@Test
+	public void testSshProtoWithEmailUserPassAndPort() throws Exception {
+		final String str = "ssh://user.name@email.com:pass@wor:d@example.com:33/some/p ath";
+		URIish u = new URIish(str);
+		assertEquals("ssh", u.getScheme());
+		assertTrue(u.isRemote());
+		assertEquals("/some/p ath", u.getRawPath());
+		assertEquals("/some/p ath", u.getPath());
+		assertEquals("example.com", u.getHost());
+		assertEquals("user.name@email.com", u.getUser());
+		assertEquals("pass@wor:d", u.getPass());
+		assertEquals(33, u.getPort());
+		assertEquals("ssh://user.name%40email.com:pass%40wor%3ad@example.com:33/some/p ath",
+				u.toPrivateString());
+		assertEquals("ssh://user.name%40email.com:pass%40wor%3ad@example.com:33/some/p%20ath",
 				u.toPrivateASCIIString());
 		assertEquals(u.setPass(null).toPrivateString(), u.toString());
 		assertEquals(u.setPass(null).toPrivateASCIIString(), u.toASCIIString());
@@ -592,34 +690,19 @@ public class URIishTest {
 		assertEquals(u, new URIish(str));
 	}
 
-	@Test
+	@Test(expected = IllegalArgumentException.class)
 	public void testGetNullHumanishName() {
-		try {
-			new URIish().getHumanishName();
-			fail("path must be not null");
-		} catch (IllegalArgumentException e) {
-			// expected
-		}
+		new URIish().getHumanishName();
 	}
 
-	@Test
+	@Test(expected = IllegalArgumentException.class)
 	public void testGetEmptyHumanishName() throws URISyntaxException {
-		try {
-			new URIish(GIT_SCHEME).getHumanishName();
-			fail("empty path is useless");
-		} catch (IllegalArgumentException e) {
-			// expected
-		}
+		new URIish(GIT_SCHEME).getHumanishName();
 	}
 
-	@Test
+	@Test(expected = IllegalArgumentException.class)
 	public void testGetAbsEmptyHumanishName() {
-		try {
-			new URIish().getHumanishName();
-			fail("empty path is useless");
-		} catch (IllegalArgumentException e) {
-			// expected
-		}
+		new URIish().getHumanishName();
 	}
 
 	@Test
@@ -870,13 +953,17 @@ public class URIishTest {
 		assertEquals(-1, u.getPort());
 		assertNull(u.getUser());
 		assertEquals("b.txt", u.getHumanishName());
-	}
 
-	@Test
-	public void testMissingPort() throws URISyntaxException {
-		final String incorrectSshUrl = "ssh://some-host:/path/to/repository.git";
-		URIish u = new URIish(incorrectSshUrl);
-		assertFalse(TransportGitSsh.PROTO_SSH.canHandle(u));
+		u = new URIish("file:/a/test.bundle");
+		assertEquals("file", u.getScheme());
+		assertFalse(u.isRemote());
+		assertNull(u.getHost());
+		assertNull(u.getPass());
+		assertEquals("/a/test.bundle", u.getRawPath());
+		assertEquals("/a/test.bundle", u.getPath());
+		assertEquals(-1, u.getPort());
+		assertNull(u.getUser());
+		assertEquals("test", u.getHumanishName());
 	}
 
 	@Test
@@ -926,6 +1013,49 @@ public class URIishTest {
 					}
 				}
 			}
+		}
+	}
+
+	@Test
+	public void testStringConstructor() throws Exception {
+		String str = "http://example.com/";
+		URIish u = new URIish(str);
+		assertEquals("example.com", u.getHost());
+		assertEquals("/", u.getPath());
+		assertEquals(str, u.toString());
+
+		str = "http://example.com";
+		u = new URIish(str);
+		assertEquals("example.com", u.getHost());
+		assertEquals("", u.getPath());
+		assertEquals(str, u.toString());
+	}
+
+	@Test
+	public void testEqualsHashcode() throws Exception
+	{
+		String[] urls = { "http://user:pass@example.com:8081/path", "../x",
+				"ssh://x.y:23/z", "ssh://example.com:/path", "D:\\m y",
+				"\\\\some\\place", "http://localhost:1234",
+				"user@example.com:some/p ath", "a",
+				"http://user:pwd@example.com:8081/path",
+				"http://user:pass@another.com:8081/path",
+				"http://user:pass@example.com:8083/path" };
+		URIish w = new URIish("http://user:pass@example.com:8081/path/x");
+		for (String s : urls) {
+			URIish u = new URIish(s);
+			URIish v = new URIish(s);
+			assertTrue(u.equals(v));
+			assertTrue(v.equals(u));
+
+			assertFalse(u.equals(null));
+			assertFalse(u.equals(new Object()));
+			assertFalse(new Object().equals(u));
+			assertFalse(u.equals(w));
+			assertFalse(w.equals(u));
+
+			assertTrue(u.hashCode() == v.hashCode());
+			assertFalse(u.hashCode() == new Object().hashCode());
 		}
 	}
 }

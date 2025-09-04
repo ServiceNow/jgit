@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2010, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.util;
@@ -49,6 +16,9 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
+import java.util.function.BinaryOperator;
+import java.util.stream.Collector;
+import java.util.stream.Collectors;
 
 import org.eclipse.jgit.lib.AnyObjectId;
 import org.eclipse.jgit.lib.ObjectId;
@@ -59,17 +29,19 @@ import org.eclipse.jgit.lib.RefComparator;
  * Specialized Map to present a {@code RefDatabase} namespace.
  * <p>
  * Although not declared as a {@link java.util.SortedMap}, iterators from this
- * map's projections always return references in {@link RefComparator} ordering.
- * The map's internal representation is a sorted array of {@link Ref} objects,
+ * map's projections always return references in
+ * {@link org.eclipse.jgit.lib.RefComparator} ordering. The map's internal
+ * representation is a sorted array of {@link org.eclipse.jgit.lib.Ref} objects,
  * which means lookup and replacement is O(log N), while insertion and removal
  * can be as expensive as O(N + log N) while the list expands or contracts.
  * Since this is not a general map implementation, all entries must be keyed by
  * the reference name.
  * <p>
  * This class is really intended as a helper for {@code RefDatabase}, which
- * needs to perform a merge-join of three sorted {@link RefList}s in order to
- * present the unified namespace of the packed-refs file, the loose refs/
- * directory tree, and the resolved form of any symbolic references.
+ * needs to perform a merge-join of three sorted
+ * {@link org.eclipse.jgit.util.RefList}s in order to present the unified
+ * namespace of the packed-refs file, the loose refs/ directory tree, and the
+ * resolved form of any symbolic references.
  */
 public class RefMap extends AbstractMap<String, Ref> {
 	/**
@@ -109,7 +81,9 @@ public class RefMap extends AbstractMap<String, Ref> {
 
 	private Set<Entry<String, Ref>> entrySet;
 
-	/** Construct an empty map with a small initial capacity. */
+	/**
+	 * Construct an empty map with a small initial capacity.
+	 */
 	public RefMap() {
 		prefix = ""; //$NON-NLS-1$
 		packed = RefList.emptyList();
@@ -145,11 +119,13 @@ public class RefMap extends AbstractMap<String, Ref> {
 		this.resolved = (RefList<Ref>) resolved;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public boolean containsKey(Object name) {
 		return get(name) != null;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public Ref get(Object key) {
 		String name = toRefName((String) key);
@@ -161,8 +137,9 @@ public class RefMap extends AbstractMap<String, Ref> {
 		return ref;
 	}
 
+	/** {@inheritDoc} */
 	@Override
-	public Ref put(final String keyName, Ref value) {
+	public Ref put(String keyName, Ref value) {
 		String name = toRefName(keyName);
 
 		if (!name.equals(value.getName()))
@@ -181,14 +158,14 @@ public class RefMap extends AbstractMap<String, Ref> {
 			Ref prior = loose.get(name);
 			loose = loose.set(idx, value);
 			return prior;
-		} else {
-			Ref prior = get(keyName);
-			loose = loose.add(idx, value);
-			sizeIsValid = false;
-			return prior;
 		}
+		Ref prior = get(keyName);
+		loose = loose.add(idx, value);
+		sizeIsValid = false;
+		return prior;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public Ref remove(Object key) {
 		String name = toRefName((String) key);
@@ -212,15 +189,18 @@ public class RefMap extends AbstractMap<String, Ref> {
 		return res;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public boolean isEmpty() {
 		return entrySet().isEmpty();
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public Set<Entry<String, Ref>> entrySet() {
 		if (entrySet == null) {
-			entrySet = new AbstractSet<Entry<String, Ref>>() {
+			entrySet = new AbstractSet<>() {
+
 				@Override
 				public Iterator<Entry<String, Ref>> iterator() {
 					return new SetIterator();
@@ -258,6 +238,7 @@ public class RefMap extends AbstractMap<String, Ref> {
 		return entrySet;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public String toString() {
 		StringBuilder r = new StringBuilder();
@@ -272,6 +253,21 @@ public class RefMap extends AbstractMap<String, Ref> {
 		}
 		r.append(']');
 		return r.toString();
+	}
+
+	/**
+	 * Create a {@link Collector} for {@link Ref}.
+	 *
+	 * @param mergeFunction
+	 * @return {@link Collector} for {@link Ref}
+	 * @since 5.4
+	 */
+	public static Collector<Ref, ?, RefMap> toRefMap(
+			BinaryOperator<Ref> mergeFunction) {
+		return Collectors.collectingAndThen(RefList.toRefList(mergeFunction),
+				(refs) -> new RefMap("", //$NON-NLS-1$
+							refs, RefList.emptyList(),
+						RefList.emptyList()));
 	}
 
 	private String toRefName(String name) {
@@ -304,12 +300,14 @@ public class RefMap extends AbstractMap<String, Ref> {
 			}
 		}
 
+		@Override
 		public boolean hasNext() {
 			if (next == null)
 				next = peek();
 			return next != null;
 		}
 
+		@Override
 		public Entry<String, Ref> next() {
 			if (hasNext()) {
 				Entry<String, Ref> r = next;
@@ -342,7 +340,7 @@ public class RefMap extends AbstractMap<String, Ref> {
 			return null;
 		}
 
-		private Ref resolveLoose(final Ref l) {
+		private Ref resolveLoose(Ref l) {
 			if (resolvedIdx < resolved.size()) {
 				Ref r = resolved.get(resolvedIdx);
 				int cmp = RefComparator.compareTo(l, r);
@@ -367,6 +365,7 @@ public class RefMap extends AbstractMap<String, Ref> {
 			return null;
 		}
 
+		@Override
 		public void remove() {
 			throw new UnsupportedOperationException();
 		}
@@ -379,14 +378,17 @@ public class RefMap extends AbstractMap<String, Ref> {
 			this.ref = ref;
 		}
 
+		@Override
 		public String getKey() {
 			return toMapKey(ref);
 		}
 
+		@Override
 		public Ref getValue() {
 			return ref;
 		}
 
+		@Override
 		public Ref setValue(Ref value) {
 			Ref prior = put(getKey(), value);
 			ref = value;
@@ -408,8 +410,10 @@ public class RefMap extends AbstractMap<String, Ref> {
 					if (r.getName().equals(ref.getName())) {
 						final ObjectId a = r.getObjectId();
 						final ObjectId b = ref.getObjectId();
-						if (a != null && b != null && AnyObjectId.equals(a, b))
+						if (a != null && b != null
+								&& AnyObjectId.isEqual(a, b)) {
 							return true;
+						}
 					}
 				}
 			}

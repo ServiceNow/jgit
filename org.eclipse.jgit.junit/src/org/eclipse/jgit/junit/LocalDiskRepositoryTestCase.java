@@ -1,61 +1,43 @@
 /*
  * Copyright (C) 2009-2010, Google Inc.
  * Copyright (C) 2008, Robin Rosenberg <robin.rosenberg@dewire.com>
- * Copyright (C) 2007, Shawn O. Pearce <spearce@spearce.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2007, Shawn O. Pearce <spearce@spearce.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.junit;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.fail;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.*;
+import java.io.PrintStream;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 
 import org.eclipse.jgit.dircache.DirCache;
 import org.eclipse.jgit.dircache.DirCacheEntry;
 import org.eclipse.jgit.internal.storage.file.FileRepository;
-import org.eclipse.jgit.lib.*;
+import org.eclipse.jgit.lib.ConfigConstants;
+import org.eclipse.jgit.lib.Constants;
+import org.eclipse.jgit.lib.ObjectId;
+import org.eclipse.jgit.lib.PersonIdent;
+import org.eclipse.jgit.lib.Repository;
+import org.eclipse.jgit.lib.RepositoryCache;
 import org.eclipse.jgit.storage.file.FileBasedConfig;
 import org.eclipse.jgit.storage.file.WindowCacheConfig;
 import org.eclipse.jgit.util.FS;
@@ -63,6 +45,8 @@ import org.eclipse.jgit.util.FileUtils;
 import org.eclipse.jgit.util.SystemReader;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
+import org.junit.rules.TestName;
 
 /**
  * JUnit TestCase with specialized support for temporary local repository.
@@ -70,8 +54,9 @@ import org.junit.Before;
  * A temporary directory is created for each test, allowing each test to use a
  * fresh environment. The temporary directory is cleaned up after the test ends.
  * <p>
- * Callers should not use {@link RepositoryCache} from within these tests as it
- * may wedge file descriptors open past the end of the test.
+ * Callers should not use {@link org.eclipse.jgit.lib.RepositoryCache} from
+ * within these tests as it may wedge file descriptors open past the end of the
+ * test.
  * <p>
  * A system property {@code jgit.junit.usemmap} defines whether memory mapping
  * is used. Memory mapping has an effect on the file system, in that memory
@@ -97,29 +82,68 @@ public abstract class LocalDiskRepositoryTestCase {
 	 */
 	protected MockSystemReader mockSystemReader;
 
-	private final List<Repository> toClose = new ArrayList<Repository>();
+	private final Set<Repository> toClose = new HashSet<>();
 	private File tmp;
 
+	/**
+	 * The current test name.
+	 *
+	 * @since 6.0.1
+	 */
+	@Rule
+	public TestName currentTest = new TestName();
+
+	private String getTestName() {
+		String name = currentTest.getMethodName();
+		name = name.replaceAll("[^a-zA-Z0-9]", "_");
+		name = name.replaceAll("__+", "_");
+		if (name.startsWith("_")) {
+			name = name.substring(1);
+		}
+		return name;
+	}
+
+	/**
+	 * Setup test
+	 *
+	 * @throws Exception
+	 */
 	@Before
 	public void setUp() throws Exception {
-		tmp = File.createTempFile("jgit_test_", "_tmp");
+		tmp = File.createTempFile("jgit_" + getTestName() + '_', "_tmp");
 		CleanupThread.deleteOnShutdown(tmp);
-		if (!tmp.delete() || !tmp.mkdir())
+		if (!tmp.delete() || !tmp.mkdir()) {
 			throw new IOException("Cannot create " + tmp);
-
+		}
 		mockSystemReader = new MockSystemReader();
-		mockSystemReader.userGitConfig = new FileBasedConfig(new File(tmp,
-				"usergitconfig"), FS.DETECTED);
-		ceilTestDirectories(getCeilings());
 		SystemReader.setInstance(mockSystemReader);
 
-		final long now = mockSystemReader.getCurrentTime();
-		final int tz = mockSystemReader.getTimezone(now);
-		author = new PersonIdent("J. Author", "jauthor@example.com");
-		author = new PersonIdent(author, now, tz);
+		// Measure timer resolution before the test to avoid time critical tests
+		// are affected by time needed for measurement.
+		// The MockSystemReader must be configured first since we need to use
+		// the same one here
+		FS.getFileStoreAttributes(tmp.toPath().getParent());
 
+		FileBasedConfig jgitConfig = new FileBasedConfig(
+				new File(tmp, "jgitconfig"), FS.DETECTED);
+		FileBasedConfig systemConfig = new FileBasedConfig(jgitConfig,
+				new File(tmp, "systemgitconfig"), FS.DETECTED);
+		FileBasedConfig userConfig = new FileBasedConfig(systemConfig,
+				new File(tmp, "usergitconfig"), FS.DETECTED);
+		// We have to set autoDetach to false for tests, because tests expect to be able
+		// to clean up by recursively removing the repository, and background GC might be
+		// in the middle of writing or deleting files, which would disrupt this.
+		userConfig.setBoolean(ConfigConstants.CONFIG_GC_SECTION,
+				null, ConfigConstants.CONFIG_KEY_AUTODETACH, false);
+		userConfig.save();
+		mockSystemReader.setJGitConfig(jgitConfig);
+		mockSystemReader.setSystemGitConfig(systemConfig);
+		mockSystemReader.setUserGitConfig(userConfig);
+
+		ceilTestDirectories(getCeilings());
+
+		author = new PersonIdent("J. Author", "jauthor@example.com");
 		committer = new PersonIdent("J. Committer", "jcommitter@example.com");
-		committer = new PersonIdent(committer, now, tz);
 
 		final WindowCacheConfig c = new WindowCacheConfig();
 		c.setPackedGitLimit(128 * WindowCacheConfig.KB);
@@ -129,10 +153,20 @@ public abstract class LocalDiskRepositoryTestCase {
 		c.install();
 	}
 
+	/**
+	 * Get temporary directory.
+	 *
+	 * @return the temporary directory
+	 */
 	protected File getTemporaryDirectory() {
 		return tmp.getAbsoluteFile();
 	}
 
+	/**
+	 * Get list of ceiling directories
+	 *
+	 * @return list of ceiling directories
+	 */
 	protected List<File> getCeilings() {
 		return Collections.singletonList(getTemporaryDirectory());
 	}
@@ -151,6 +185,11 @@ public abstract class LocalDiskRepositoryTestCase {
 		return stringBuilder.toString();
 	}
 
+	/**
+	 * Tear down the test
+	 *
+	 * @throws Exception
+	 */
 	@After
 	public void tearDown() throws Exception {
 		RepositoryCache.clear();
@@ -172,7 +211,9 @@ public abstract class LocalDiskRepositoryTestCase {
 		SystemReader.setInstance(null);
 	}
 
-	/** Increment the {@link #author} and {@link #committer} times. */
+	/**
+	 * Increment the {@link #author} and {@link #committer} times.
+	 */
 	protected void tick() {
 		mockSystemReader.tick(5 * 60);
 		final long now = mockSystemReader.getCurrentTime();
@@ -188,54 +229,55 @@ public abstract class LocalDiskRepositoryTestCase {
 	 * @param dir
 	 *            the recursively directory to delete, if present.
 	 */
-	protected void recursiveDelete(final File dir) {
+	protected void recursiveDelete(File dir) {
 		recursiveDelete(dir, false, true);
 	}
 
 	private static boolean recursiveDelete(final File dir,
 			boolean silent, boolean failOnError) {
 		assert !(silent && failOnError);
-		if (!dir.exists())
-			return silent;
-		final File[] ls = dir.listFiles();
-		if (ls != null)
-			for (int k = 0; k < ls.length; k++) {
-				final File e = ls[k];
-				if (e.isDirectory())
-					silent = recursiveDelete(e, silent, failOnError);
-				else if (!e.delete()) {
-					if (!silent)
-						reportDeleteFailure(failOnError, e);
-					silent = !failOnError;
-				}
-			}
-		if (!dir.delete()) {
-			if (!silent)
-				reportDeleteFailure(failOnError, dir);
-			silent = !failOnError;
+		int options = FileUtils.RECURSIVE | FileUtils.RETRY
+				| FileUtils.SKIP_MISSING;
+		if (silent) {
+			options |= FileUtils.IGNORE_ERRORS;
 		}
-		return silent;
+		try {
+			FileUtils.delete(dir, options);
+		} catch (IOException e) {
+			reportDeleteFailure(failOnError, dir, e);
+			return !failOnError;
+		}
+		return true;
 	}
 
-	private static void reportDeleteFailure(boolean failOnError, File e) {
+	private static void reportDeleteFailure(boolean failOnError, File f,
+			Exception cause) {
 		String severity = failOnError ? "ERROR" : "WARNING";
-		String msg = severity + ": Failed to delete " + e;
-		if (failOnError)
+		String msg = severity + ": Failed to delete " + f;
+		if (failOnError) {
 			fail(msg);
-		else
+		} else {
 			System.err.println(msg);
+		}
+		cause.printStackTrace(new PrintStream(System.err));
 	}
 
+	/** Constant <code>MOD_TIME=1</code> */
 	public static final int MOD_TIME = 1;
 
+	/** Constant <code>SMUDGE=2</code> */
 	public static final int SMUDGE = 2;
 
+	/** Constant <code>LENGTH=4</code> */
 	public static final int LENGTH = 4;
 
+	/** Constant <code>CONTENT_ID=8</code> */
 	public static final int CONTENT_ID = 8;
 
+	/** Constant <code>CONTENT=16</code> */
 	public static final int CONTENT = 16;
 
+	/** Constant <code>ASSUME_UNCHANGED=32</code> */
 	public static final int ASSUME_UNCHANGED = 32;
 
 	/**
@@ -266,7 +308,6 @@ public abstract class LocalDiskRepositoryTestCase {
 	 *
 	 * @param repo
 	 *            the repository the index state should be determined for
-	 *
 	 * @param includedOptions
 	 *            a bitmask constructed out of the constants {@link #MOD_TIME},
 	 *            {@link #SMUDGE}, {@link #LENGTH}, {@link #CONTENT_ID} and
@@ -280,12 +321,13 @@ public abstract class LocalDiskRepositoryTestCase {
 			throws IllegalStateException, IOException {
 		DirCache dc = repo.readDirCache();
 		StringBuilder sb = new StringBuilder();
-		TreeSet<Long> timeStamps = new TreeSet<Long>();
+		TreeSet<Instant> timeStamps = new TreeSet<>();
 
 		// iterate once over the dircache just to collect all time stamps
 		if (0 != (includedOptions & MOD_TIME)) {
-			for (int i=0; i<dc.getEntryCount(); ++i)
-				timeStamps.add(Long.valueOf(dc.getEntry(i).getLastModified()));
+			for (int i = 0; i < dc.getEntryCount(); ++i) {
+				timeStamps.add(dc.getEntry(i).getLastModifiedInstant());
+			}
 		}
 
 		// iterate again, now produce the result string
@@ -297,7 +339,8 @@ public abstract class LocalDiskRepositoryTestCase {
 				sb.append(", stage:" + stage);
 			if (0 != (includedOptions & MOD_TIME)) {
 				sb.append(", time:t"+
-						timeStamps.headSet(Long.valueOf(entry.getLastModified())).size());
+						timeStamps.headSet(entry.getLastModifiedInstant())
+								.size());
 			}
 			if (0 != (includedOptions & SMUDGE))
 				if (entry.isSmudged())
@@ -310,7 +353,7 @@ public abstract class LocalDiskRepositoryTestCase {
 			if (0 != (includedOptions & CONTENT)) {
 				sb.append(", content:"
 						+ new String(repo.open(entry.getObjectId(),
-						Constants.OBJ_BLOB).getCachedBytes(), "UTF-8"));
+								Constants.OBJ_BLOB).getCachedBytes(), UTF_8));
 			}
 			if (0 != (includedOptions & ASSUME_UNCHANGED))
 				sb.append(", assume-unchanged:"
@@ -324,7 +367,9 @@ public abstract class LocalDiskRepositoryTestCase {
 	/**
 	 * Creates a new empty bare repository.
 	 *
-	 * @return the newly created repository, opened for access
+	 * @return the newly created bare repository, opened for access. The
+	 *         repository will not be closed in {@link #tearDown()}; the caller
+	 *         is responsible for closing it.
 	 * @throws IOException
 	 *             the repository could not be created in the temporary area
 	 */
@@ -335,7 +380,9 @@ public abstract class LocalDiskRepositoryTestCase {
 	/**
 	 * Creates a new empty repository within a new empty working directory.
 	 *
-	 * @return the newly created repository, opened for access
+	 * @return the newly created repository, opened for access. The repository
+	 *         will not be closed in {@link #tearDown()}; the caller is
+	 *         responsible for closing it.
 	 * @throws IOException
 	 *             the repository could not be created in the temporary area
 	 */
@@ -349,16 +396,41 @@ public abstract class LocalDiskRepositoryTestCase {
 	 * @param bare
 	 *            true to create a bare repository; false to make a repository
 	 *            within its working directory
+	 * @return the newly created repository, opened for access. The repository
+	 *         will not be closed in {@link #tearDown()}; the caller is
+	 *         responsible for closing it.
+	 * @throws IOException
+	 *             the repository could not be created in the temporary area
+	 * @since 5.3
+	 */
+	protected FileRepository createRepository(boolean bare)
+			throws IOException {
+		return createRepository(bare, false /* auto close */);
+	}
+
+	/**
+	 * Creates a new empty repository.
+	 *
+	 * @param bare
+	 *            true to create a bare repository; false to make a repository
+	 *            within its working directory
+	 * @param autoClose
+	 *            auto close the repository in {@link #tearDown()}
 	 * @return the newly created repository, opened for access
 	 * @throws IOException
 	 *             the repository could not be created in the temporary area
+	 * @deprecated use {@link #createRepository(boolean)} instead
 	 */
-	private FileRepository createRepository(boolean bare) throws IOException {
+	@Deprecated
+	public FileRepository createRepository(boolean bare, boolean autoClose)
+			throws IOException {
 		File gitdir = createUniqueTestGitDir(bare);
 		FileRepository db = new FileRepository(gitdir);
 		assertFalse(gitdir.exists());
 		db.create(bare);
-		toClose.add(db);
+		if (autoClose) {
+			addRepoToClose(db);
+		}
 		return db;
 	}
 
@@ -478,18 +550,12 @@ public abstract class LocalDiskRepositoryTestCase {
 	 * @throws IOException
 	 *             the file could not be written.
 	 */
-	protected File write(final String body) throws IOException {
+	protected File write(String body) throws IOException {
 		final File f = File.createTempFile("temp", "txt", tmp);
 		try {
 			write(f, body);
 			return f;
-		} catch (Error e) {
-			f.delete();
-			throw e;
-		} catch (RuntimeException e) {
-			f.delete();
-			throw e;
-		} catch (IOException e) {
+		} catch (Error | RuntimeException | IOException e) {
 			f.delete();
 			throw e;
 		}
@@ -509,15 +575,23 @@ public abstract class LocalDiskRepositoryTestCase {
 	 * @throws IOException
 	 *             the file could not be written.
 	 */
-	protected void write(final File f, final String body) throws IOException {
+	protected void write(File f, String body) throws IOException {
 		JGitTestUtil.write(f, body);
 	}
 
-	protected String read(final File f) throws IOException {
+	/**
+	 * Read a file's content
+	 *
+	 * @param f
+	 *            the file
+	 * @return the content of the file
+	 * @throws IOException
+	 */
+	protected String read(File f) throws IOException {
 		return JGitTestUtil.read(f);
 	}
 
-	private static String[] toEnvArray(final Map<String, String> env) {
+	private static String[] toEnvArray(Map<String, String> env) {
 		final String[] envp = new String[env.size()];
 		int i = 0;
 		for (Map.Entry<String, String> e : env.entrySet())
@@ -526,7 +600,7 @@ public abstract class LocalDiskRepositoryTestCase {
 	}
 
 	private static HashMap<String, String> cloneEnv() {
-		return new HashMap<String, String>(System.getenv());
+		return new HashMap<>(System.getenv());
 	}
 
 	private static final class CleanupThread extends Thread {
@@ -548,7 +622,7 @@ public abstract class LocalDiskRepositoryTestCase {
 			}
 		}
 
-		private final List<File> toDelete = new ArrayList<File>();
+		private final List<File> toDelete = new ArrayList<>();
 
 		@Override
 		public void run() {

@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2013, Christian Halstrick <christian.halstrick@sap.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2013, Christian Halstrick <christian.halstrick@sap.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.lib;
@@ -58,7 +25,7 @@ public class RebaseTodoLine {
 	 * Describes rebase actions
 	 */
 	@SuppressWarnings("nls")
-	public static enum Action {
+	public enum Action {
 		/** Use commit */
 		PICK("pick", "p"),
 
@@ -105,7 +72,7 @@ public class RebaseTodoLine {
 		 * @param token
 		 * @return the Action
 		 */
-		static public Action parse(String token) {
+		public static Action parse(String token) {
 			for (Action action : Action.values()) {
 				if (action.token.equals(token)
 						|| action.shortToken.equals(token))
@@ -142,8 +109,11 @@ public class RebaseTodoLine {
 	 * Create a new non-comment line
 	 *
 	 * @param action
+	 *            a {@link org.eclipse.jgit.lib.RebaseTodoLine.Action} object.
 	 * @param commit
+	 *            a {@link org.eclipse.jgit.lib.AbbreviatedObjectId} object.
 	 * @param shortMessage
+	 *            a {@link java.lang.String} object.
 	 */
 	public RebaseTodoLine(Action action, AbbreviatedObjectId commit,
 			String shortMessage) {
@@ -154,6 +124,8 @@ public class RebaseTodoLine {
 	}
 
 	/**
+	 * Get rebase action type
+	 *
 	 * @return rebase action type
 	 */
 	public Action getAction() {
@@ -167,7 +139,8 @@ public class RebaseTodoLine {
 	 * non-comment.
 	 *
 	 * @param newAction
-	 * @throws IllegalTodoFileModification
+	 *            a {@link org.eclipse.jgit.lib.RebaseTodoLine.Action} object.
+	 * @throws org.eclipse.jgit.errors.IllegalTodoFileModification
 	 *             on attempt to set a non-comment action on a line which was a
 	 *             comment line before.
 	 */
@@ -193,7 +166,7 @@ public class RebaseTodoLine {
 	/**
 	 * <p>
 	 * Set a comment for this line that is used if this line's
-	 * {@link RebaseTodoLine#action} is a {@link Action#COMMENT}
+	 * {@link org.eclipse.jgit.lib.RebaseTodoLine#action} is a {@link org.eclipse.jgit.lib.RebaseTodoLine.Action#COMMENT}
 	 * </p>
 	 * It's allowed to unset the comment by calling
 	 * <code>setComment(null)</code> <br>
@@ -230,6 +203,8 @@ public class RebaseTodoLine {
 	}
 
 	/**
+	 * Get abbreviated commit SHA-1 of commit that action will be performed on
+	 *
 	 * @return abbreviated commit SHA-1 of commit that action will be performed
 	 *         on
 	 */
@@ -238,6 +213,9 @@ public class RebaseTodoLine {
 	}
 
 	/**
+	 * Get the first line of the commit message of the commit the action will be
+	 * performed on.
+	 *
 	 * @return the first line of the commit message of the commit the action
 	 *         will be performed on.
 	 */
@@ -246,13 +224,18 @@ public class RebaseTodoLine {
 	}
 
 	/**
+	 * Set short message
+	 *
 	 * @param shortMessage
+	 *            a short message.
 	 */
 	public void setShortMessage(String shortMessage) {
 		this.shortMessage = shortMessage;
 	}
 
 	/**
+	 * Get a comment
+	 *
 	 * @return a comment. If the line is a comment line then the comment is
 	 *         returned. Lines starting with # or blank lines or lines
 	 *         containing only spaces and tabs are considered as comment lines.
@@ -262,6 +245,7 @@ public class RebaseTodoLine {
 		return comment;
 	}
 
+	/** {@inheritDoc} */
 	@SuppressWarnings("nls")
 	@Override
 	public String toString() {

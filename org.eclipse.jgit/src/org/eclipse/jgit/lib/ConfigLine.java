@@ -7,46 +7,13 @@
  * Copyright (C) 2009, JetBrains s.r.o.
  * Copyright (C) 2007-2008, Robin Rosenberg <robin.rosenberg@dewire.com>
  * Copyright (C) 2006-2008, Shawn O. Pearce <spearce@spearce.org>
- * Copyright (C) 2008, Thad Hughes <thadh@thad.corp.google.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, Thad Hughes <thadh@thad.corp.google.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.lib;
@@ -73,7 +40,10 @@ class ConfigLine {
 	/** The text content after entry. */
 	String suffix;
 
-	ConfigLine forValue(final String newValue) {
+	/** The source from which this line was included from. */
+	String includedFrom;
+
+	ConfigLine forValue(String newValue) {
 		final ConfigLine e = new ConfigLine();
 		e.prefix = prefix;
 		e.section = section;
@@ -81,6 +51,7 @@ class ConfigLine {
 		e.name = name;
 		e.value = newValue;
 		e.suffix = suffix;
+		e.includedFrom = includedFrom;
 		return e;
 	}
 
@@ -91,12 +62,12 @@ class ConfigLine {
 				&& eqIgnoreCase(name, aKey);
 	}
 
-	boolean match(final String aSection, final String aSubsection) {
+	boolean match(String aSection, String aSubsection) {
 		return eqIgnoreCase(section, aSection)
 				&& eqSameCase(subsection, aSubsection);
 	}
 
-	private static boolean eqIgnoreCase(final String a, final String b) {
+	private static boolean eqIgnoreCase(String a, String b) {
 		if (a == null && b == null)
 			return true;
 		if (a == null || b == null)
@@ -104,7 +75,7 @@ class ConfigLine {
 		return StringUtils.equalsIgnoreCase(a, b);
 	}
 
-	private static boolean eqSameCase(final String a, final String b) {
+	private static boolean eqSameCase(String a, String b) {
 		if (a == null && b == null)
 			return true;
 		if (a == null || b == null)
@@ -112,6 +83,7 @@ class ConfigLine {
 		return a.equals(b);
 	}
 
+	/** {@inheritDoc} */
 	@SuppressWarnings("nls")
 	@Override
 	public String toString() {

@@ -1,50 +1,23 @@
 /*
  * Copyright (C) 2010, Christian Halstrick <christian.halstrick@sap.com>
- * Copyright (C) 2010, Stefan Lay <stefan.lay@sap.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, Stefan Lay <stefan.lay@sap.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 package org.eclipse.jgit.api;
 
+import static org.eclipse.jgit.lib.Constants.OBJ_BLOB;
+import static org.eclipse.jgit.lib.FileMode.GITLINK;
+import static org.eclipse.jgit.lib.FileMode.TYPE_GITLINK;
+import static org.eclipse.jgit.lib.FileMode.TYPE_TREE;
+
 import java.io.IOException;
 import java.io.InputStream;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.LinkedList;
 
@@ -58,15 +31,18 @@ import org.eclipse.jgit.dircache.DirCacheBuilder;
 import org.eclipse.jgit.dircache.DirCacheEntry;
 import org.eclipse.jgit.dircache.DirCacheIterator;
 import org.eclipse.jgit.internal.JGitText;
-import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.FileMode;
+import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectInserter;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.treewalk.FileTreeIterator;
-import org.eclipse.jgit.treewalk.TreeWalk;
+import org.eclipse.jgit.treewalk.NameConflictTreeWalk;
 import org.eclipse.jgit.treewalk.TreeWalk.OperationType;
 import org.eclipse.jgit.treewalk.WorkingTreeIterator;
+import org.eclipse.jgit.treewalk.filter.AndTreeFilter;
+import org.eclipse.jgit.treewalk.filter.IndexDiffFilter;
 import org.eclipse.jgit.treewalk.filter.PathFilterGroup;
+import org.eclipse.jgit.treewalk.filter.TreeFilter;
 
 /**
  * A class used to execute a {@code Add} command. It has setters for all
@@ -85,13 +61,19 @@ public class AddCommand extends GitCommand<DirCache> {
 
 	private boolean update = false;
 
+	// This defaults to true because it's what JGit has been doing
+	// traditionally. The C git default would be false.
+	private boolean renormalize = true;
+
 	/**
+	 * Constructor for AddCommand
 	 *
 	 * @param repo
+	 *            the {@link org.eclipse.jgit.lib.Repository}
 	 */
 	public AddCommand(Repository repo) {
 		super(repo);
-		filepatterns = new LinkedList<String>();
+		filepatterns = new LinkedList<>();
 	}
 
 	/**
@@ -114,7 +96,10 @@ public class AddCommand extends GitCommand<DirCache> {
 
 	/**
 	 * Allow clients to provide their own implementation of a FileTreeIterator
+	 *
 	 * @param f
+	 *            a {@link org.eclipse.jgit.treewalk.WorkingTreeIterator}
+	 *            object.
 	 * @return {@code this}
 	 */
 	public AddCommand setWorkingTreeIterator(WorkingTreeIterator f) {
@@ -123,27 +108,25 @@ public class AddCommand extends GitCommand<DirCache> {
 	}
 
 	/**
+	 * {@inheritDoc}
+	 * <p>
 	 * Executes the {@code Add} command. Each instance of this class should only
 	 * be used for one invocation of the command. Don't call this method twice
 	 * on an instance.
-	 *
-	 * @return the DirCache after Add
 	 */
+	@Override
 	public DirCache call() throws GitAPIException, NoFilepatternException {
 
 		if (filepatterns.isEmpty())
 			throw new NoFilepatternException(JGitText.get().atLeastOnePatternIsRequired);
 		checkCallable();
 		DirCache dc = null;
-		boolean addAll = false;
-		if (filepatterns.contains(".")) //$NON-NLS-1$
-			addAll = true;
+		boolean addAll = filepatterns.contains("."); //$NON-NLS-1$
 
 		try (ObjectInserter inserter = repo.newObjectInserter();
-				final TreeWalk tw = new TreeWalk(repo)) {
+				NameConflictTreeWalk tw = new NameConflictTreeWalk(repo)) {
 			tw.setOperationType(OperationType.CHECKIN_OP);
 			dc = repo.lockDirCache();
-			DirCacheIterator c;
 
 			DirCacheBuilder builder = dc.builder();
 			tw.addTree(new DirCacheBuildIterator(builder));
@@ -151,62 +134,105 @@ public class AddCommand extends GitCommand<DirCache> {
 				workingTreeIterator = new FileTreeIterator(repo);
 			workingTreeIterator.setDirCacheIterator(tw, 0);
 			tw.addTree(workingTreeIterator);
-			tw.setRecursive(true);
-			if (!addAll)
-				tw.setFilter(PathFilterGroup.createFromStrings(filepatterns));
+			TreeFilter pathFilter = null;
+			if (!addAll) {
+				pathFilter = PathFilterGroup.createFromStrings(filepatterns);
+			}
+			if (!renormalize) {
+				if (pathFilter == null) {
+					tw.setFilter(new IndexDiffFilter(0, 1));
+				} else {
+					tw.setFilter(AndTreeFilter.create(new IndexDiffFilter(0, 1),
+							pathFilter));
+				}
+			} else if (pathFilter != null) {
+				tw.setFilter(pathFilter);
+			}
 
-			String lastAddedFile = null;
+			byte[] lastAdded = null;
 
 			while (tw.next()) {
-				String path = tw.getPathString();
-
+				DirCacheIterator c = tw.getTree(0, DirCacheIterator.class);
 				WorkingTreeIterator f = tw.getTree(1, WorkingTreeIterator.class);
-				if (tw.getTree(0, DirCacheIterator.class) == null &&
-						f != null && f.isEntryIgnored()) {
+				if (c == null && f != null && f.isEntryIgnored()) {
 					// file is not in index but is ignored, do nothing
+					continue;
+				} else if (c == null && update) {
+					// Only update of existing entries was requested.
+					continue;
 				}
-				// In case of an existing merge conflict the
-				// DirCacheBuildIterator iterates over all stages of
-				// this path, we however want to add only one
-				// new DirCacheEntry per path.
-				else if (!(path.equals(lastAddedFile))) {
-					if (!(update && tw.getTree(0, DirCacheIterator.class) == null)) {
-						c = tw.getTree(0, DirCacheIterator.class);
-						if (f != null) { // the file exists
-							long sz = f.getEntryLength();
-							DirCacheEntry entry = new DirCacheEntry(path);
-							if (c == null || c.getDirCacheEntry() == null
-									|| !c.getDirCacheEntry().isAssumeValid()) {
-								FileMode mode = f.getIndexFileMode(c);
-								entry.setFileMode(mode);
 
-								if (FileMode.GITLINK != mode) {
-									entry.setLength(sz);
-									entry.setLastModified(f
-											.getEntryLastModified());
-									long contentSize = f
-											.getEntryContentLength();
-									InputStream in = f.openEntryStream();
-									try {
-										entry.setObjectId(inserter.insert(
-												Constants.OBJ_BLOB, contentSize, in));
-									} finally {
-										in.close();
-									}
-								} else
-									entry.setObjectId(f.getEntryObjectId());
-								builder.add(entry);
-								lastAddedFile = path;
-							} else {
-								builder.add(c.getDirCacheEntry());
-							}
+				DirCacheEntry entry = c != null ? c.getDirCacheEntry() : null;
+				if (entry != null && entry.getStage() > 0
+						&& lastAdded != null
+						&& lastAdded.length == tw.getPathLength()
+						&& tw.isPathPrefix(lastAdded, lastAdded.length) == 0) {
+					// In case of an existing merge conflict the
+					// DirCacheBuildIterator iterates over all stages of
+					// this path, we however want to add only one
+					// new DirCacheEntry per path.
+					continue;
+				}
 
-						} else if (c != null
-								&& (!update || FileMode.GITLINK == c
-										.getEntryFileMode()))
-							builder.add(c.getDirCacheEntry());
+				if (tw.isSubtree() && !tw.isDirectoryFileConflict()) {
+					tw.enterSubtree();
+					continue;
+				}
+
+				if (f == null) { // working tree file does not exist
+					if (entry != null
+							&& (!update || GITLINK == entry.getFileMode())) {
+						builder.add(entry);
 					}
+					continue;
 				}
+
+				if (entry != null && entry.isAssumeValid()) {
+					// Index entry is marked assume valid. Even though
+					// the user specified the file to be added JGit does
+					// not consider the file for addition.
+					builder.add(entry);
+					continue;
+				}
+
+				if ((f.getEntryRawMode() == TYPE_TREE
+						&& f.getIndexFileMode(c) != FileMode.GITLINK) ||
+						(f.getEntryRawMode() == TYPE_GITLINK
+								&& f.getIndexFileMode(c) == FileMode.TREE)) {
+					// Index entry exists and is symlink, gitlink or file,
+					// otherwise the tree would have been entered above.
+					// Replace the index entry by diving into tree of files.
+					tw.enterSubtree();
+					continue;
+				}
+
+				byte[] path = tw.getRawPath();
+				if (entry == null || entry.getStage() > 0) {
+					entry = new DirCacheEntry(path);
+				}
+				FileMode mode = f.getIndexFileMode(c);
+				entry.setFileMode(mode);
+
+				if (GITLINK != mode) {
+					entry.setLength(f.getEntryLength());
+					entry.setLastModified(f.getEntryLastModifiedInstant());
+					long len = f.getEntryContentLength();
+					// We read and filter the content multiple times.
+					// f.getEntryContentLength() reads and filters the input and
+					// inserter.insert(...) does it again. That's because an
+					// ObjectInserter needs to know the length before it starts
+					// inserting. TODO: Fix this by using Buffers.
+					try (InputStream in = f.openEntryStream()) {
+						ObjectId id = inserter.insert(OBJ_BLOB, len, in);
+						entry.setObjectId(id);
+					}
+				} else {
+					entry.setLength(0);
+					entry.setLastModified(Instant.ofEpochSecond(0));
+					entry.setObjectId(f.getEntryObjectId());
+				}
+				builder.add(entry);
+				lastAdded = path;
 			}
 			inserter.flush();
 			builder.commit();
@@ -226,17 +252,18 @@ public class AddCommand extends GitCommand<DirCache> {
 	}
 
 	/**
+	 * Set whether to only match against already tracked files
+	 *
 	 * @param update
 	 *            If set to true, the command only matches {@code filepattern}
 	 *            against already tracked files in the index rather than the
 	 *            working tree. That means that it will never stage new files,
 	 *            but that it will stage modified new contents of tracked files
 	 *            and that it will remove files from the index if the
-	 *            corresponding files in the working tree have been removed.
-	 *            In contrast to the git command line a {@code filepattern} must
-	 *            exist also if update is set to true as there is no
-	 *            concept of a working directory here.
-	 *
+	 *            corresponding files in the working tree have been removed. In
+	 *            contrast to the git command line a {@code filepattern} must
+	 *            exist also if update is set to true as there is no concept of
+	 *            a working directory here.
 	 * @return {@code this}
 	 */
 	public AddCommand setUpdate(boolean update) {
@@ -245,9 +272,46 @@ public class AddCommand extends GitCommand<DirCache> {
 	}
 
 	/**
-	 * @return is the parameter update is set
+	 * Whether to only match against already tracked files
+	 *
+	 * @return whether to only match against already tracked files
 	 */
 	public boolean isUpdate() {
 		return update;
+	}
+
+	/**
+	 * Defines whether the command will renormalize by re-applying the "clean"
+	 * process to tracked files.
+	 * <p>
+	 * This does not automatically call {@link #setUpdate(boolean)}.
+	 * </p>
+	 *
+	 * @param renormalize
+	 *            whether to renormalize tracked files
+	 * @return {@code this}
+	 * @since 6.6
+	 */
+	public AddCommand setRenormalize(boolean renormalize) {
+		this.renormalize = renormalize;
+		return this;
+	}
+
+	/**
+	 * Tells whether the command will renormalize by re-applying the "clean"
+	 * process to tracked files.
+	 * <p>
+	 * For legacy reasons, this is {@code true} by default.
+	 * </p>
+	 * <p>
+	 * This setting is independent of {@link #isUpdate()}. In C git,
+	 * command-line option --renormalize implies --update.
+	 * </p>
+	 *
+	 * @return whether files will be renormalized
+	 * @since 6.6
+	 */
+	public boolean isRenormalize() {
+		return renormalize;
 	}
 }

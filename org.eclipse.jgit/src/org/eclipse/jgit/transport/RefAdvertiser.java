@@ -1,56 +1,33 @@
 /*
- * Copyright (C) 2008-2010, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, 2020 Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.transport;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.eclipse.jgit.lib.Constants.OBJECT_ID_STRING_LENGTH;
 import static org.eclipse.jgit.transport.GitProtocolConstants.OPTION_SYMREF;
+import static org.eclipse.jgit.transport.GitProtocolConstants.REF_ATTR_PEELED;
+import static org.eclipse.jgit.transport.GitProtocolConstants.REF_ATTR_SYMREF_TARGET;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CharsetEncoder;
+import java.nio.charset.CoderResult;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
-import java.util.SortedMap;
 
 import org.eclipse.jgit.lib.AnyObjectId;
 import org.eclipse.jgit.lib.Constants;
@@ -58,13 +35,22 @@ import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.lib.RefComparator;
 import org.eclipse.jgit.lib.Repository;
-import org.eclipse.jgit.util.RefMap;
 
-/** Support for the start of {@link UploadPack} and {@link ReceivePack}. */
+/**
+ * Support for the start of {@link org.eclipse.jgit.transport.UploadPack} and
+ * {@link org.eclipse.jgit.transport.ReceivePack}.
+ */
 public abstract class RefAdvertiser {
 	/** Advertiser which frames lines in a {@link PacketLineOut} format. */
 	public static class PacketLineOutRefAdvertiser extends RefAdvertiser {
+		private final CharsetEncoder utf8 = UTF_8.newEncoder();
 		private final PacketLineOut pckOut;
+
+		private byte[] binArr = new byte[256];
+		private ByteBuffer binBuf = ByteBuffer.wrap(binArr);
+
+		private char[] chArr = new char[256];
+		private CharBuffer chBuf = CharBuffer.wrap(chArr);
 
 		/**
 		 * Create a new advertiser for the supplied stream.
@@ -77,7 +63,65 @@ public abstract class RefAdvertiser {
 		}
 
 		@Override
-		protected void writeOne(final CharSequence line) throws IOException {
+		public void advertiseId(AnyObjectId id, String refName)
+				throws IOException {
+			id.copyTo(binArr, 0);
+			binArr[OBJECT_ID_STRING_LENGTH] = ' ';
+			binBuf.position(OBJECT_ID_STRING_LENGTH + 1);
+			append(refName);
+			if (first) {
+				first = false;
+				if (!capablities.isEmpty()) {
+					append('\0');
+					for (String cap : capablities) {
+						append(' ');
+						append(cap);
+					}
+				}
+			}
+			append('\n');
+			pckOut.writePacket(binArr, 0, binBuf.position());
+		}
+
+		private void append(String str) throws CharacterCodingException {
+			int n = str.length();
+			if (n > chArr.length) {
+				chArr = new char[n + 256];
+				chBuf = CharBuffer.wrap(chArr);
+			}
+			str.getChars(0, n, chArr, 0);
+			chBuf.position(0).limit(n);
+			utf8.reset();
+			for (;;) {
+				CoderResult cr = utf8.encode(chBuf, binBuf, true);
+				if (cr.isOverflow()) {
+					grow();
+				} else if (cr.isUnderflow()) {
+					break;
+				} else {
+					cr.throwException();
+				}
+			}
+		}
+
+		private void append(int b) {
+			if (!binBuf.hasRemaining()) {
+				grow();
+			}
+			binBuf.put((byte) b);
+		}
+
+		private void grow() {
+			int cnt = binBuf.position();
+			byte[] tmp = new byte[binArr.length << 1];
+			System.arraycopy(binArr, 0, tmp, 0, cnt);
+			binArr = tmp;
+			binBuf = ByteBuffer.wrap(binArr);
+			binBuf.position(cnt);
+		}
+
+		@Override
+		protected void writeOne(CharSequence line) throws IOException {
 			pckOut.writeString(line.toString());
 		}
 
@@ -91,15 +135,20 @@ public abstract class RefAdvertiser {
 
 	private final char[] tmpId = new char[Constants.OBJECT_ID_STRING_LENGTH];
 
-	private final Set<String> capablities = new LinkedHashSet<String>();
+	final Set<String> capablities = new LinkedHashSet<>();
 
-	private final Set<ObjectId> sent = new HashSet<ObjectId>();
+	private final Set<ObjectId> sent = new HashSet<>();
 
 	private Repository repository;
 
 	private boolean derefTags;
 
-	private boolean first = true;
+	boolean first = true;
+
+	private boolean useProtocolV2;
+
+	/* only used in protocol v2 */
+	private final Map<String, String> symrefs = new HashMap<>();
 
 	/**
 	 * Initialize this advertiser with a repository for peeling tags.
@@ -112,19 +161,30 @@ public abstract class RefAdvertiser {
 	}
 
 	/**
+	 * @param b
+	 *              true if this advertiser should advertise using the protocol
+	 *              v2 format, false otherwise
+	 * @since 5.0
+	 */
+	public void setUseProtocolV2(boolean b) {
+		useProtocolV2 = b;
+	}
+
+	/**
 	 * Toggle tag peeling.
 	 * <p>
 	 * <p>
 	 * This method must be invoked prior to any of the following:
 	 * <ul>
-	 * <li>{@link #send(Map)}
+	 * <li>{@link #send(Map)}</li>
+	 * <li>{@link #send(Collection)}</li>
 	 * </ul>
 	 *
 	 * @param deref
 	 *            true to show the dereferenced value of a tag as the special
 	 *            ref <code>$tag^{}</code> ; false to omit it from the output.
 	 */
-	public void setDerefTags(final boolean deref) {
+	public void setDerefTags(boolean deref) {
 		derefTags = deref;
 	}
 
@@ -133,8 +193,9 @@ public abstract class RefAdvertiser {
 	 * <p>
 	 * This method must be invoked prior to any of the following:
 	 * <ul>
-	 * <li>{@link #send(Map)}
-	 * <li>{@link #advertiseHave(AnyObjectId)}
+	 * <li>{@link #send(Map)}</li>
+	 * <li>{@link #send(Collection)}</li>
+	 * <li>{@link #advertiseHave(AnyObjectId)}</li>
 	 * </ul>
 	 *
 	 * @param name
@@ -167,19 +228,23 @@ public abstract class RefAdvertiser {
 	 * <p>
 	 * This method must be invoked prior to any of the following:
 	 * <ul>
-	 * <li>{@link #send(Map)}
-	 * <li>{@link #advertiseHave(AnyObjectId)}
+	 * <li>{@link #send(Map)}</li>
+	 * <li>{@link #send(Collection)}</li>
+	 * <li>{@link #advertiseHave(AnyObjectId)}</li>
 	 * </ul>
 	 *
 	 * @param from
 	 *            The symbolic ref, e.g. "HEAD"
 	 * @param to
 	 *            The real ref it points to, e.g. "refs/heads/master"
-	 *
 	 * @since 3.6
 	 */
 	public void addSymref(String from, String to) {
-		advertiseCapability(OPTION_SYMREF, from + ':' + to);
+		if (useProtocolV2) {
+			symrefs.put(from, to);
+		} else {
+			advertiseCapability(OPTION_SYMREF, from + ':' + to);
+		}
 	}
 
 	/**
@@ -190,16 +255,60 @@ public abstract class RefAdvertiser {
 	 *            sorted before display if necessary, and therefore may appear
 	 *            in any order.
 	 * @return set of ObjectIds that were advertised to the client.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the underlying output stream failed to write out an
 	 *             advertisement record.
+	 * @deprecated use {@link #send(Collection)} instead.
 	 */
+	@Deprecated
 	public Set<ObjectId> send(Map<String, Ref> refs) throws IOException {
-		for (Ref ref : getSortedRefs(refs)) {
-			if (ref.getObjectId() == null)
-				continue;
+		return send(refs.values());
+	}
 
-			advertiseAny(ref.getObjectId(), ref.getName());
+	/**
+	 * Format an advertisement for the supplied refs.
+	 *
+	 * @param refs
+	 *            zero or more refs to format for the client. The collection is
+	 *            sorted before display if necessary, and therefore may appear
+	 *            in any order.
+	 * @return set of ObjectIds that were advertised to the client.
+	 * @throws java.io.IOException
+	 *             the underlying output stream failed to write out an
+	 *             advertisement record.
+	 * @since 5.0
+	 */
+	public Set<ObjectId> send(Collection<Ref> refs) throws IOException {
+		for (Ref ref : RefComparator.sort(refs)) {
+			// TODO(jrn) revive the SortedMap optimization e.g. by introducing
+			// SortedList
+			ObjectId objectId = ref.getObjectId();
+			if (objectId == null) {
+				continue;
+			}
+
+			if (useProtocolV2) {
+				String symrefPart = symrefs.containsKey(ref.getName())
+						? (' ' + REF_ATTR_SYMREF_TARGET
+								+ symrefs.get(ref.getName()))
+						: ""; //$NON-NLS-1$
+				String peelPart = ""; //$NON-NLS-1$
+				if (derefTags) {
+					if (!ref.isPeeled() && repository != null) {
+						ref = repository.getRefDatabase().peel(ref);
+					}
+					ObjectId peeledObjectId = ref.getPeeledObjectId();
+					if (peeledObjectId != null) {
+						peelPart = ' ' + REF_ATTR_PEELED
+								+ peeledObjectId.getName();
+					}
+				}
+				writeOne(objectId.getName() + " " + ref.getName() + symrefPart //$NON-NLS-1$
+						+ peelPart + "\n"); //$NON-NLS-1$
+				continue;
+			}
+
+			advertiseAny(objectId, ref.getName());
 
 			if (!derefTags)
 				continue;
@@ -207,20 +316,13 @@ public abstract class RefAdvertiser {
 			if (!ref.isPeeled()) {
 				if (repository == null)
 					continue;
-				ref = repository.peel(ref);
+				ref = repository.getRefDatabase().peel(ref);
 			}
 
 			if (ref.getPeeledObjectId() != null)
 				advertiseAny(ref.getPeeledObjectId(), ref.getName() + "^{}"); //$NON-NLS-1$
 		}
 		return sent;
-	}
-
-	private Iterable<Ref> getSortedRefs(Map<String, Ref> all) {
-		if (all instanceof RefMap
-				|| (all instanceof SortedMap && ((SortedMap) all).comparator() == null))
-			return all.values();
-		return RefComparator.sort(all.values());
 	}
 
 	/**
@@ -233,7 +335,7 @@ public abstract class RefAdvertiser {
 	 *
 	 * @param id
 	 *            identity of the object that is assumed to exist.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the underlying output stream failed to write out an
 	 *             advertisement record.
 	 */
@@ -241,18 +343,22 @@ public abstract class RefAdvertiser {
 		advertiseAnyOnce(id, ".have"); //$NON-NLS-1$
 	}
 
-	/** @return true if no advertisements have been sent yet. */
+	/**
+	 * Whether no advertisements have been sent yet.
+	 *
+	 * @return true if no advertisements have been sent yet.
+	 */
 	public boolean isEmpty() {
 		return first;
 	}
 
-	private void advertiseAnyOnce(AnyObjectId obj, final String refName)
+	private void advertiseAnyOnce(AnyObjectId obj, String refName)
 			throws IOException {
 		if (!sent.contains(obj))
 			advertiseAny(obj, refName);
 	}
 
-	private void advertiseAny(AnyObjectId obj, final String refName)
+	private void advertiseAny(AnyObjectId obj, String refName)
 			throws IOException {
 		sent.add(obj.toObjectId());
 		advertiseId(obj, refName);
@@ -269,11 +375,11 @@ public abstract class RefAdvertiser {
 	 * @param refName
 	 *            name of the reference to advertise the object as, can be any
 	 *            string not including the NUL byte.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the underlying output stream failed to write out an
 	 *             advertisement record.
 	 */
-	public void advertiseId(final AnyObjectId id, final String refName)
+	public void advertiseId(AnyObjectId id, String refName)
 			throws IOException {
 		tmpLine.setLength(0);
 		id.copyTo(tmpId, tmpLine);
@@ -283,7 +389,7 @@ public abstract class RefAdvertiser {
 			first = false;
 			if (!capablities.isEmpty()) {
 				tmpLine.append('\0');
-				for (final String capName : capablities) {
+				for (String capName : capablities) {
 					tmpLine.append(' ');
 					tmpLine.append(capName);
 				}
@@ -300,7 +406,7 @@ public abstract class RefAdvertiser {
 	 * @param line
 	 *            the advertisement line to be written. The line always ends
 	 *            with LF. Never null or the empty string.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the underlying output stream failed to write out an
 	 *             advertisement record.
 	 */
@@ -309,7 +415,7 @@ public abstract class RefAdvertiser {
 	/**
 	 * Mark the end of the advertisements.
 	 *
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the underlying output stream failed to write out an
 	 *             advertisement record.
 	 */

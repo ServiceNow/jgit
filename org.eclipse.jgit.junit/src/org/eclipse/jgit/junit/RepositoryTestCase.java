@@ -2,50 +2,18 @@
  * Copyright (C) 2009, Google Inc.
  * Copyright (C) 2007-2008, Robin Rosenberg <robin.rosenberg@dewire.com>
  * Copyright (C) 2006-2007, Shawn O. Pearce <spearce@spearce.org>
- * Copyright (C) 2009, Yann Simon <yann.simon.fr@gmail.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2009, Yann Simon <yann.simon.fr@gmail.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.junit;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.Assert.assertEquals;
 
 import java.io.File;
@@ -56,7 +24,10 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.Reader;
 import java.nio.file.Path;
+import java.time.Instant;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
@@ -64,10 +35,12 @@ import org.eclipse.jgit.dircache.DirCacheBuilder;
 import org.eclipse.jgit.dircache.DirCacheCheckout;
 import org.eclipse.jgit.dircache.DirCacheEntry;
 import org.eclipse.jgit.internal.storage.file.FileRepository;
+import org.eclipse.jgit.lib.AnyObjectId;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.FileMode;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectInserter;
+import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.lib.RefUpdate;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.revwalk.RevCommit;
@@ -75,6 +48,7 @@ import org.eclipse.jgit.revwalk.RevWalk;
 import org.eclipse.jgit.treewalk.FileTreeIterator;
 import org.eclipse.jgit.util.FS;
 import org.eclipse.jgit.util.FileUtils;
+import org.junit.After;
 import org.junit.Before;
 
 /**
@@ -84,26 +58,34 @@ import org.junit.Before;
  * repositories and destroying them when the tests are finished.
  */
 public abstract class RepositoryTestCase extends LocalDiskRepositoryTestCase {
-	protected static void copyFile(final File src, final File dst)
+	/**
+	 * Copy a file
+	 *
+	 * @param src
+	 * @param dst
+	 * @throws IOException
+	 */
+	protected static void copyFile(File src, File dst)
 			throws IOException {
-		final FileInputStream fis = new FileInputStream(src);
-		try {
-			final FileOutputStream fos = new FileOutputStream(dst);
-			try {
-				final byte[] buf = new byte[4096];
-				int r;
-				while ((r = fis.read(buf)) > 0) {
-					fos.write(buf, 0, r);
-				}
-			} finally {
-				fos.close();
+		try (FileInputStream fis = new FileInputStream(src);
+				FileOutputStream fos = new FileOutputStream(dst)) {
+			final byte[] buf = new byte[4096];
+			int r;
+			while ((r = fis.read(buf)) > 0) {
+				fos.write(buf, 0, r);
 			}
-		} finally {
-			fis.close();
 		}
 	}
 
-	protected File writeTrashFile(final String name, final String data)
+	/**
+	 * Write a trash file
+	 *
+	 * @param name
+	 * @param data
+	 * @return the trash file
+	 * @throws IOException
+	 */
+	protected File writeTrashFile(String name, String data)
 			throws IOException {
 		return JGitTestUtil.writeTrashFile(db, name, data);
 	}
@@ -119,39 +101,77 @@ public abstract class RepositoryTestCase extends LocalDiskRepositoryTestCase {
 	 * @throws Exception
 	 * @since 4.2
 	 */
-	protected Path writeLink(final String link, final String target)
+	protected Path writeLink(String link, String target)
 			throws Exception {
 		return JGitTestUtil.writeLink(db, link, target);
 	}
 
+	/**
+	 * Write a trash file
+	 *
+	 * @param subdir
+	 * @param name
+	 * @param data
+	 * @return the trash file
+	 * @throws IOException
+	 */
 	protected File writeTrashFile(final String subdir, final String name,
 			final String data)
 			throws IOException {
 		return JGitTestUtil.writeTrashFile(db, subdir, name, data);
 	}
 
-	protected String read(final String name) throws IOException {
+	/**
+	 * Read content of a file
+	 *
+	 * @param name
+	 * @return the file's content
+	 * @throws IOException
+	 */
+	protected String read(String name) throws IOException {
 		return JGitTestUtil.read(db, name);
 	}
 
-	protected boolean check(final String name) {
+	/**
+	 * Check if file exists
+	 *
+	 * @param name
+	 *            file name
+	 * @return if the file exists
+	 */
+	protected boolean check(String name) {
 		return JGitTestUtil.check(db, name);
 	}
 
-	protected void deleteTrashFile(final String name) throws IOException {
+	/**
+	 * Delete a trash file
+	 *
+	 * @param name
+	 *            file name
+	 * @throws IOException
+	 */
+	protected void deleteTrashFile(String name) throws IOException {
 		JGitTestUtil.deleteTrashFile(db, name);
 	}
 
-	protected static void checkFile(File f, final String checkData)
+	/**
+	 * Check content of a file.
+	 *
+	 * @param f
+	 * @param checkData
+	 *            expected content
+	 * @throws IOException
+	 */
+	protected static void checkFile(File f, String checkData)
 			throws IOException {
-		Reader r = new InputStreamReader(new FileInputStream(f), "ISO-8859-1");
-		try {
-			char[] data = new char[(int) f.length()];
-			if (f.length() !=  r.read(data))
-				throw new IOException("Internal error reading file data from "+f);
-			assertEquals(checkData, new String(data));
-		} finally {
-			r.close();
+		try (Reader r = new InputStreamReader(new FileInputStream(f),
+				UTF_8)) {
+			if (checkData.length() > 0) {
+				char[] data = new char[checkData.length()];
+				assertEquals(data.length, r.read(data));
+				assertEquals(checkData, new String(data));
+			}
+			assertEquals(-1, r.read());
 		}
 	}
 
@@ -161,12 +181,20 @@ public abstract class RepositoryTestCase extends LocalDiskRepositoryTestCase {
 	/** Working directory of {@link #db}. */
 	protected File trash;
 
+	/** {@inheritDoc} */
 	@Override
 	@Before
 	public void setUp() throws Exception {
 		super.setUp();
 		db = createWorkRepository();
 		trash = db.getWorkTree();
+	}
+
+	@Override
+	@After
+	public void tearDown() throws Exception {
+		db.close();
+		super.tearDown();
 	}
 
 	/**
@@ -220,8 +248,8 @@ public abstract class RepositoryTestCase extends LocalDiskRepositoryTestCase {
 	 * have an index which matches their prepared content.
 	 *
 	 * @param treeItr
-	 *            a {@link FileTreeIterator} which determines which files should
-	 *            go into the new index
+	 *            a {@link org.eclipse.jgit.treewalk.FileTreeIterator} which
+	 *            determines which files should go into the new index
 	 * @throws FileNotFoundException
 	 * @throws IOException
 	 */
@@ -236,12 +264,13 @@ public abstract class RepositoryTestCase extends LocalDiskRepositoryTestCase {
 
 				dce = new DirCacheEntry(treeItr.getEntryPathString());
 				dce.setFileMode(treeItr.getEntryFileMode());
-				dce.setLastModified(treeItr.getEntryLastModified());
+				dce.setLastModified(treeItr.getEntryLastModifiedInstant());
 				dce.setLength((int) len);
-				FileInputStream in = new FileInputStream(
-						treeItr.getEntryFile());
-				dce.setObjectId(inserter.insert(Constants.OBJ_BLOB, len, in));
-				in.close();
+				try (FileInputStream in = new FileInputStream(
+						treeItr.getEntryFile())) {
+					dce.setObjectId(
+							inserter.insert(Constants.OBJ_BLOB, len, in));
+				}
 				builder.add(dce);
 				treeItr.next(1);
 			}
@@ -261,13 +290,13 @@ public abstract class RepositoryTestCase extends LocalDiskRepositoryTestCase {
 	 *
 	 * @param l
 	 *            the object to lookup
+	 * @param lookupTable
+	 *            a table storing object-name mappings.
 	 * @param nameTemplate
 	 *            the name for that object. Can contain "%n" which will be
 	 *            replaced by a running number before used as a name. If the
 	 *            lookup table already contains the object this parameter will
 	 *            be ignored
-	 * @param lookupTable
-	 *            a table storing object-name mappings.
 	 * @return a name of that object. Is not guaranteed to be unique. Use
 	 *         nameTemplates containing "%n" to always have unique names
 	 */
@@ -288,7 +317,7 @@ public abstract class RepositoryTestCase extends LocalDiskRepositoryTestCase {
 	 * @param str
 	 *            the string in which backslashes should be replaced
 	 * @return the resulting string with slashes
-         * @since 4.2
+	 * @since 4.2
 	 */
 	public static String slashify(String str) {
 		str = str.replace('\\', '/');
@@ -300,7 +329,8 @@ public abstract class RepositoryTestCase extends LocalDiskRepositoryTestCase {
 	 * younger modification timestamp than the modification timestamp of the
 	 * given file. This is done by touching a temporary file, reading the
 	 * lastmodified attribute and, if needed, sleeping. After sleeping this loop
-	 * starts again until the filesystem timer has advanced enough.
+	 * starts again until the filesystem timer has advanced enough. The
+	 * temporary file will be created as a sibling of lastFile.
 	 *
 	 * @param lastFile
 	 *            the file on which we want to wait until the filesystem timer
@@ -310,24 +340,33 @@ public abstract class RepositoryTestCase extends LocalDiskRepositoryTestCase {
 	 *         greater than then the lastmodification time of lastfile.
 	 * @throws InterruptedException
 	 * @throws IOException
+	 * @since 5.1.9
 	 */
-	public static long fsTick(File lastFile) throws InterruptedException,
+	public static Instant fsTick(File lastFile)
+			throws InterruptedException,
 			IOException {
-		long sleepTime = 64;
+		File tmp;
 		FS fs = FS.DETECTED;
-		if (lastFile != null && !fs.exists(lastFile))
-			throw new FileNotFoundException(lastFile.getPath());
-		File tmp = File.createTempFile("FileTreeIteratorWithTimeControl", null);
+		if (lastFile == null) {
+			lastFile = tmp = File
+					.createTempFile("fsTickTmpFile", null);
+		} else {
+			if (!fs.exists(lastFile)) {
+				throw new FileNotFoundException(lastFile.getPath());
+			}
+			tmp = File.createTempFile("fsTickTmpFile", null,
+					lastFile.getParentFile());
+		}
+		long res = FS.getFileStoreAttributes(tmp.toPath())
+				.getFsTimestampResolution().toNanos();
+		long sleepTime = res / 10;
 		try {
-			long startTime = (lastFile == null) ? fs.lastModified(tmp) : fs
-					.lastModified(lastFile);
-			long actTime = fs.lastModified(tmp);
-			while (actTime <= startTime) {
-				Thread.sleep(sleepTime);
-				sleepTime *= 2;
-				FileOutputStream fos = new FileOutputStream(tmp);
-				fos.close();
-				actTime = fs.lastModified(tmp);
+			Instant startTime = fs.lastModifiedInstant(lastFile);
+			Instant actTime = fs.lastModifiedInstant(tmp);
+			while (actTime.compareTo(startTime) <= 0) {
+				TimeUnit.NANOSECONDS.sleep(sleepTime);
+				FileUtils.touch(tmp.toPath());
+				actTime = fs.lastModifiedInstant(tmp);
 			}
 			return actTime;
 		} finally {
@@ -335,6 +374,13 @@ public abstract class RepositoryTestCase extends LocalDiskRepositoryTestCase {
 		}
 	}
 
+	/**
+	 * Create a branch
+	 *
+	 * @param objectId
+	 * @param branchName
+	 * @throws IOException
+	 */
 	protected void createBranch(ObjectId objectId, String branchName)
 			throws IOException {
 		RefUpdate updateRef = db.updateRef(branchName);
@@ -342,6 +388,23 @@ public abstract class RepositoryTestCase extends LocalDiskRepositoryTestCase {
 		updateRef.update();
 	}
 
+	/**
+	 * Get all Refs
+	 *
+	 * @return list of refs
+	 * @throws IOException
+	 */
+	public List<Ref> getRefs() throws IOException {
+		return db.getRefDatabase().getRefs();
+	}
+
+	/**
+	 * Checkout a branch
+	 *
+	 * @param branchName
+	 * @throws IllegalStateException
+	 * @throws IOException
+	 */
 	protected void checkoutBranch(String branchName)
 			throws IllegalStateException, IOException {
 		try (RevWalk walk = new RevWalk(db)) {
@@ -401,13 +464,12 @@ public abstract class RepositoryTestCase extends LocalDiskRepositoryTestCase {
 	 * @return the created commit
 	 */
 	protected RevCommit commitFile(String filename, String contents, String branch) {
-		try {
-			Git git = new Git(db);
+		try (Git git = new Git(db)) {
 			Repository repo = git.getRepository();
 			String originalBranch = repo.getFullBranch();
 			boolean empty = repo.resolve(Constants.HEAD) == null;
 			if (!empty) {
-				if (repo.getRef(branch) == null)
+				if (repo.findRef(branch) == null)
 					git.branchCreate().setName(branch).call();
 				git.checkout().setName(branch).call();
 			}
@@ -423,31 +485,77 @@ public abstract class RepositoryTestCase extends LocalDiskRepositoryTestCase {
 				git.branchCreate().setName(branch).setStartPoint(commit).call();
 
 			return commit;
-		} catch (IOException e) {
-			throw new RuntimeException(e);
-		} catch (GitAPIException e) {
+		} catch (IOException | GitAPIException e) {
 			throw new RuntimeException(e);
 		}
 	}
 
-	protected DirCacheEntry createEntry(final String path, final FileMode mode) {
+	/**
+	 * Create <code>DirCacheEntry</code>
+	 *
+	 * @param path
+	 * @param mode
+	 * @return the DirCacheEntry
+	 */
+	protected DirCacheEntry createEntry(String path, FileMode mode) {
 		return createEntry(path, mode, DirCacheEntry.STAGE_0, path);
 	}
 
+	/**
+	 * Create <code>DirCacheEntry</code>
+	 *
+	 * @param path
+	 * @param mode
+	 * @param content
+	 * @return the DirCacheEntry
+	 */
 	protected DirCacheEntry createEntry(final String path, final FileMode mode,
 			final String content) {
 		return createEntry(path, mode, DirCacheEntry.STAGE_0, content);
 	}
 
+	/**
+	 * Create <code>DirCacheEntry</code>
+	 *
+	 * @param path
+	 * @param mode
+	 * @param stage
+	 * @param content
+	 * @return the DirCacheEntry
+	 */
 	protected DirCacheEntry createEntry(final String path, final FileMode mode,
 			final int stage, final String content) {
 		final DirCacheEntry entry = new DirCacheEntry(path, stage);
 		entry.setFileMode(mode);
-		entry.setObjectId(new ObjectInserter.Formatter().idFor(
-				Constants.OBJ_BLOB, Constants.encode(content)));
+		try (ObjectInserter.Formatter formatter = new ObjectInserter.Formatter()) {
+			entry.setObjectId(formatter.idFor(
+					Constants.OBJ_BLOB, Constants.encode(content)));
+		}
 		return entry;
 	}
 
+	/**
+	 * Create <code>DirCacheEntry</code>
+	 *
+	 * @param path
+	 * @param objectId
+	 * @return the DirCacheEntry
+	 */
+	protected DirCacheEntry createGitLink(String path, AnyObjectId objectId) {
+		final DirCacheEntry entry = new DirCacheEntry(path,
+				DirCacheEntry.STAGE_0);
+		entry.setFileMode(FileMode.GITLINK);
+		entry.setObjectId(objectId);
+		return entry;
+	}
+
+	/**
+	 * Assert files are equal
+	 *
+	 * @param expected
+	 * @param actual
+	 * @throws IOException
+	 */
 	public static void assertEqualsFile(File expected, File actual)
 			throws IOException {
 		assertEquals(expected.getCanonicalFile(), actual.getCanonicalFile());

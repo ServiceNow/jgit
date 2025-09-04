@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2011, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2011, 2019 Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.blame;
@@ -48,10 +15,17 @@ import static org.eclipse.jgit.lib.FileMode.TYPE_FILE;
 import static org.eclipse.jgit.lib.FileMode.TYPE_MASK;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.text.MessageFormat;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.List;
 
+import org.eclipse.jgit.annotations.Nullable;
+import org.eclipse.jgit.api.errors.NoHeadException;
 import org.eclipse.jgit.blame.Candidate.BlobCandidate;
+import org.eclipse.jgit.blame.Candidate.HeadCandidate;
 import org.eclipse.jgit.blame.Candidate.ReverseCandidate;
 import org.eclipse.jgit.blame.ReverseWalk.ReverseCommit;
 import org.eclipse.jgit.diff.DiffAlgorithm;
@@ -62,8 +36,14 @@ import org.eclipse.jgit.diff.HistogramDiff;
 import org.eclipse.jgit.diff.RawText;
 import org.eclipse.jgit.diff.RawTextComparator;
 import org.eclipse.jgit.diff.RenameDetector;
+import org.eclipse.jgit.dircache.DirCache;
+import org.eclipse.jgit.dircache.DirCacheEntry;
+import org.eclipse.jgit.dircache.DirCacheIterator;
+import org.eclipse.jgit.errors.NoWorkTreeException;
 import org.eclipse.jgit.internal.JGitText;
+import org.eclipse.jgit.internal.diff.FilteredRenameDetector;
 import org.eclipse.jgit.lib.AnyObjectId;
+import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.MutableObjectId;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectLoader;
@@ -73,9 +53,12 @@ import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.revwalk.RevFlag;
 import org.eclipse.jgit.revwalk.RevWalk;
+import org.eclipse.jgit.treewalk.FileTreeIterator;
 import org.eclipse.jgit.treewalk.TreeWalk;
+import org.eclipse.jgit.treewalk.TreeWalk.OperationType;
 import org.eclipse.jgit.treewalk.filter.PathFilter;
 import org.eclipse.jgit.treewalk.filter.TreeFilter;
+import org.eclipse.jgit.util.IO;
 
 /**
  * Generate author information for lines based on a provided file.
@@ -87,8 +70,10 @@ import org.eclipse.jgit.treewalk.filter.TreeFilter;
  * <p>
  * Applications that want more incremental update behavior may use either the
  * raw {@link #next()} streaming approach supported by this class, or construct
- * a {@link BlameResult} using {@link BlameResult#create(BlameGenerator)} and
- * incrementally construct the result with {@link BlameResult#computeNext()}.
+ * a {@link org.eclipse.jgit.blame.BlameResult} using
+ * {@link org.eclipse.jgit.blame.BlameResult#create(BlameGenerator)} and
+ * incrementally construct the result with
+ * {@link org.eclipse.jgit.blame.BlameResult#computeNext()}.
  * <p>
  * This class is not thread-safe.
  * <p>
@@ -185,12 +170,20 @@ public class BlameGenerator implements AutoCloseable {
 		treeWalk.setRecursive(true);
 	}
 
-	/** @return repository being scanned for revision history. */
+	/**
+	 * Get repository
+	 *
+	 * @return repository being scanned for revision history
+	 */
 	public Repository getRepository() {
 		return repository;
 	}
 
-	/** @return path file path being processed. */
+	/**
+	 * Get result path
+	 *
+	 * @return path file path being processed
+	 */
 	public String getResultPath() {
 		return resultPath.getPath();
 	}
@@ -199,6 +192,7 @@ public class BlameGenerator implements AutoCloseable {
 	 * Difference algorithm to use when comparing revisions.
 	 *
 	 * @param algorithm
+	 *            a {@link org.eclipse.jgit.diff.DiffAlgorithm}
 	 * @return {@code this}
 	 */
 	public BlameGenerator setDiffAlgorithm(DiffAlgorithm algorithm) {
@@ -210,6 +204,7 @@ public class BlameGenerator implements AutoCloseable {
 	 * Text comparator to use when comparing revisions.
 	 *
 	 * @param comparator
+	 *            a {@link org.eclipse.jgit.diff.RawTextComparator}
 	 * @return {@code this}
 	 */
 	public BlameGenerator setTextComparator(RawTextComparator comparator) {
@@ -238,11 +233,13 @@ public class BlameGenerator implements AutoCloseable {
 	}
 
 	/**
-	 * Obtain the RenameDetector if {@code setFollowFileRenames(true)}.
+	 * Obtain the RenameDetector, allowing the application to configure its
+	 * settings for rename score and breaking behavior.
 	 *
-	 * @return the rename detector, allowing the application to configure its
-	 *         settings for rename score and breaking behavior.
+	 * @return the rename detector, or {@code null} if
+	 *         {@code setFollowFileRenames(false)}.
 	 */
+	@Nullable
 	public RenameDetector getRenameDetector() {
 		return renameDetector;
 	}
@@ -252,15 +249,15 @@ public class BlameGenerator implements AutoCloseable {
 	 * <p>
 	 * Candidates should be pushed in history order from oldest-to-newest.
 	 * Applications should push the starting commit first, then the index
-	 * revision (if the index is interesting), and finally the working tree
-	 * copy (if the working tree is interesting).
+	 * revision (if the index is interesting), and finally the working tree copy
+	 * (if the working tree is interesting).
 	 *
 	 * @param description
 	 *            description of the blob revision, such as "Working Tree".
 	 * @param contents
 	 *            contents of the file.
 	 * @return {@code this}
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the repository cannot be read.
 	 */
 	public BlameGenerator push(String description, byte[] contents)
@@ -281,19 +278,121 @@ public class BlameGenerator implements AutoCloseable {
 	 * @param contents
 	 *            contents of the file.
 	 * @return {@code this}
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the repository cannot be read.
 	 */
 	public BlameGenerator push(String description, RawText contents)
 			throws IOException {
 		if (description == null)
 			description = JGitText.get().blameNotCommittedYet;
-		BlobCandidate c = new BlobCandidate(description, resultPath);
+		BlobCandidate c = new BlobCandidate(getRepository(), description,
+				resultPath);
 		c.sourceText = contents;
 		c.regionList = new Region(0, 0, contents.size());
 		remaining = contents.size();
 		push(c);
 		return this;
+	}
+
+	/**
+	 * Pushes HEAD, index, and working tree as appropriate for blaming the file
+	 * given in the constructor {@link #BlameGenerator(Repository, String)}
+	 * against HEAD. Includes special handling in case the file is in conflict
+	 * state from an unresolved merge conflict.
+	 *
+	 * @return {@code this}
+	 * @throws NoHeadException
+	 *             if the repository has no HEAD
+	 * @throws IOException
+	 *             if an error occurs
+	 * @since 5.6
+	 */
+	public BlameGenerator prepareHead() throws NoHeadException, IOException {
+		Repository repo = getRepository();
+		ObjectId head = repo.resolve(Constants.HEAD);
+		if (head == null) {
+			throw new NoHeadException(MessageFormat
+					.format(JGitText.get().noSuchRefKnown, Constants.HEAD));
+		}
+		if (repo.isBare()) {
+			return push(null, head);
+		}
+		DirCache dc = repo.readDirCache();
+		try (TreeWalk walk = new TreeWalk(repo)) {
+			walk.setOperationType(OperationType.CHECKIN_OP);
+			FileTreeIterator iter = new FileTreeIterator(repo);
+			int fileTree = walk.addTree(iter);
+			int indexTree = walk.addTree(new DirCacheIterator(dc));
+			iter.setDirCacheIterator(walk, indexTree);
+			walk.setFilter(resultPath);
+			walk.setRecursive(true);
+			if (!walk.next()) {
+				return this;
+			}
+			DirCacheIterator dcIter = walk.getTree(indexTree,
+					DirCacheIterator.class);
+			if (dcIter == null) {
+				// Not found in index
+				return this;
+			}
+			iter = walk.getTree(fileTree, FileTreeIterator.class);
+			if (iter == null || !isFile(iter.getEntryRawMode())) {
+				return this;
+			}
+			RawText inTree;
+			long filteredLength = iter.getEntryContentLength();
+			try (InputStream stream = iter.openEntryStream()) {
+				inTree = new RawText(getBytes(iter.getEntryFile().getPath(),
+						stream, filteredLength));
+			}
+			DirCacheEntry indexEntry = dcIter.getDirCacheEntry();
+			if (indexEntry.getStage() == DirCacheEntry.STAGE_0) {
+				push(null, head);
+				push(null, indexEntry.getObjectId());
+				push(null, inTree);
+			} else {
+				// Create a special candidate using the working tree file as
+				// blob and HEAD and the MERGE_HEADs as parents.
+				HeadCandidate c = new HeadCandidate(getRepository(), resultPath,
+						getHeads(repo, head));
+				c.sourceText = inTree;
+				c.regionList = new Region(0, 0, inTree.size());
+				remaining = inTree.size();
+				push(c);
+			}
+		}
+		return this;
+	}
+
+	private List<RevCommit> getHeads(Repository repo, ObjectId head)
+			throws NoWorkTreeException, IOException {
+		List<ObjectId> mergeIds = repo.readMergeHeads();
+		if (mergeIds == null || mergeIds.isEmpty()) {
+			return Collections.singletonList(revPool.parseCommit(head));
+		}
+		List<RevCommit> heads = new ArrayList<>(mergeIds.size() + 1);
+		heads.add(revPool.parseCommit(head));
+		for (ObjectId id : mergeIds) {
+			heads.add(revPool.parseCommit(id));
+		}
+		return heads;
+	}
+
+	private static byte[] getBytes(String path, InputStream in, long maxLength)
+			throws IOException {
+		if (maxLength > Integer.MAX_VALUE) {
+			throw new IOException(
+					MessageFormat.format(JGitText.get().fileIsTooLarge, path));
+		}
+		int max = (int) maxLength;
+		byte[] buffer = new byte[max];
+		int read = IO.readFully(in, buffer, 0);
+		if (read == max) {
+			return buffer;
+		}
+		byte[] copy = new byte[read];
+		System.arraycopy(buffer, 0, copy, 0, read);
+		return copy;
 	}
 
 	/**
@@ -309,7 +408,7 @@ public class BlameGenerator implements AutoCloseable {
 	 * @param id
 	 *            may be a commit or a blob.
 	 * @return {@code this}
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the repository cannot be read.
 	 */
 	public BlameGenerator push(String description, AnyObjectId id)
@@ -318,7 +417,8 @@ public class BlameGenerator implements AutoCloseable {
 		if (ldr.getType() == OBJ_BLOB) {
 			if (description == null)
 				description = JGitText.get().blameNotCommittedYet;
-			BlobCandidate c = new BlobCandidate(description, resultPath);
+			BlobCandidate c = new BlobCandidate(getRepository(), description,
+					resultPath);
 			c.sourceBlob = id.toObjectId();
 			c.sourceText = new RawText(ldr.getCachedBytes(Integer.MAX_VALUE));
 			c.regionList = new Region(0, 0, c.sourceText.size());
@@ -331,7 +431,7 @@ public class BlameGenerator implements AutoCloseable {
 		if (!find(commit, resultPath))
 			return this;
 
-		Candidate c = new Candidate(commit, resultPath);
+		Candidate c = new Candidate(getRepository(), commit, resultPath);
 		c.sourceBlob = idBuf.toObjectId();
 		c.loadText(reader);
 		c.regionList = new Region(0, 0, c.sourceText.size());
@@ -354,8 +454,8 @@ public class BlameGenerator implements AutoCloseable {
 	 * each of these is a descendant commit that removed the line, typically
 	 * this occurs when the same deletion appears in multiple side branches such
 	 * as due to a cherry-pick. Applications relying on reverse should use
-	 * {@link BlameResult} as it filters these duplicate sources and only
-	 * remembers the first (oldest) deletion.
+	 * {@link org.eclipse.jgit.blame.BlameResult} as it filters these duplicate
+	 * sources and only remembers the first (oldest) deletion.
 	 *
 	 * @param start
 	 *            oldest commit to traverse from. The result file will be loaded
@@ -364,7 +464,7 @@ public class BlameGenerator implements AutoCloseable {
 	 *            most recent commit to stop traversal at. Usually an active
 	 *            branch tip, tag, or HEAD.
 	 * @return {@code this}
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the repository cannot be read.
 	 */
 	public BlameGenerator reverse(AnyObjectId start, AnyObjectId end)
@@ -386,8 +486,8 @@ public class BlameGenerator implements AutoCloseable {
 	 * each of these is a descendant commit that removed the line, typically
 	 * this occurs when the same deletion appears in multiple side branches such
 	 * as due to a cherry-pick. Applications relying on reverse should use
-	 * {@link BlameResult} as it filters these duplicate sources and only
-	 * remembers the first (oldest) deletion.
+	 * {@link org.eclipse.jgit.blame.BlameResult} as it filters these duplicate
+	 * sources and only remembers the first (oldest) deletion.
 	 *
 	 * @param start
 	 *            oldest commit to traverse from. The result file will be loaded
@@ -396,7 +496,7 @@ public class BlameGenerator implements AutoCloseable {
 	 *            most recent commits to stop traversal at. Usually an active
 	 *            branch tip, tag, or HEAD.
 	 * @return {@code this}
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the repository cannot be read.
 	 */
 	public BlameGenerator reverse(AnyObjectId start,
@@ -415,7 +515,8 @@ public class BlameGenerator implements AutoCloseable {
 			// just pump the queue
 		}
 
-		ReverseCandidate c = new ReverseCandidate(result, resultPath);
+		ReverseCandidate c = new ReverseCandidate(getRepository(), result,
+				resultPath);
 		c.sourceBlob = idBuf.toObjectId();
 		c.loadText(reader);
 		c.regionList = new Region(0, 0, c.sourceText.size());
@@ -440,7 +541,7 @@ public class BlameGenerator implements AutoCloseable {
 	 * Execute the generator in a blocking fashion until all data is ready.
 	 *
 	 * @return the complete result. Null if no file exists for the given path.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the repository cannot be read.
 	 */
 	public BlameResult computeBlameResult() throws IOException {
@@ -461,7 +562,7 @@ public class BlameGenerator implements AutoCloseable {
 	 *         and {@link #getResultStart()}, {@link #getResultEnd()} methods
 	 *         can be used to inspect the region found. False if there are no
 	 *         more regions to describe.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             repository cannot be read.
 	 */
 	public boolean next() throws IOException {
@@ -521,7 +622,7 @@ public class BlameGenerator implements AutoCloseable {
 		n.beginResult(revPool);
 		outCandidate = n;
 		outRegion = n.regionList;
-		return true;
+		return outRegion != null;
 	}
 
 	private boolean reverseResult(Candidate parent, Candidate source)
@@ -622,7 +723,8 @@ public class BlameGenerator implements AutoCloseable {
 			return false;
 		}
 
-		Candidate next = n.create(parent, PathFilter.create(r.getOldPath()));
+		Candidate next = n.create(getRepository(), parent,
+				PathFilter.create(r.getOldPath()));
 		next.sourceBlob = r.getOldId().toObjectId();
 		next.renameScore = r.getScore();
 		next.loadText(reader);
@@ -638,7 +740,7 @@ public class BlameGenerator implements AutoCloseable {
 
 	private boolean splitBlameWithParent(Candidate n, RevCommit parent)
 			throws IOException {
-		Candidate next = n.create(parent, n.sourcePath);
+		Candidate next = n.create(getRepository(), parent, n.sourcePath);
 		next.sourceBlob = idBuf.toObjectId();
 		next.loadText(reader);
 		return split(next, n);
@@ -725,12 +827,12 @@ public class BlameGenerator implements AutoCloseable {
 
 			Candidate p;
 			if (renames != null && renames[pIdx] != null) {
-				p = n.create(parent,
+				p = n.create(getRepository(), parent,
 						PathFilter.create(renames[pIdx].getOldPath()));
 				p.renameScore = renames[pIdx].getScore();
 				p.sourceBlob = renames[pIdx].getOldId().toObjectId();
 			} else if (ids != null && ids[pIdx] != null) {
-				p = n.create(parent, n.sourcePath);
+				p = n.create(getRepository(), parent, n.sourcePath);
 				p.sourceBlob = ids[pIdx];
 			} else {
 				continue;
@@ -839,28 +941,47 @@ public class BlameGenerator implements AutoCloseable {
 		return outCandidate.sourceCommit;
 	}
 
-	/** @return current author being blamed. */
+	/**
+	 * Get source author
+	 *
+	 * @return current author being blamed
+	 */
 	public PersonIdent getSourceAuthor() {
 		return outCandidate.getAuthor();
 	}
 
-	/** @return current committer being blamed. */
+	/**
+	 * Get source committer
+	 *
+	 * @return current committer being blamed
+	 */
 	public PersonIdent getSourceCommitter() {
 		RevCommit c = getSourceCommit();
 		return c != null ? c.getCommitterIdent() : null;
 	}
 
-	/** @return path of the file being blamed. */
+	/**
+	 * Get source path
+	 *
+	 * @return path of the file being blamed
+	 */
 	public String getSourcePath() {
 		return outCandidate.sourcePath.getPath();
 	}
 
-	/** @return rename score if a rename occurred in {@link #getSourceCommit}. */
+	/**
+	 * Get rename score
+	 *
+	 * @return rename score if a rename occurred in {@link #getSourceCommit}
+	 */
 	public int getRenameScore() {
 		return outCandidate.renameScore;
 	}
 
 	/**
+	 * Get first line of the source data that has been blamed for the current
+	 * region
+	 *
 	 * @return first line of the source data that has been blamed for the
 	 *         current region. This is line number of where the region was added
 	 *         during {@link #getSourceCommit()} in file
@@ -871,6 +992,9 @@ public class BlameGenerator implements AutoCloseable {
 	}
 
 	/**
+	 * Get one past the range of the source data that has been blamed for the
+	 * current region
+	 *
 	 * @return one past the range of the source data that has been blamed for
 	 *         the current region. This is line number of where the region was
 	 *         added during {@link #getSourceCommit()} in file
@@ -882,6 +1006,9 @@ public class BlameGenerator implements AutoCloseable {
 	}
 
 	/**
+	 * Get first line of the result that {@link #getSourceCommit()} has been
+	 * blamed for providing
+	 *
 	 * @return first line of the result that {@link #getSourceCommit()} has been
 	 *         blamed for providing. Line numbers use 0 based indexing.
 	 */
@@ -890,6 +1017,9 @@ public class BlameGenerator implements AutoCloseable {
 	}
 
 	/**
+	 * Get one past the range of the result that {@link #getSourceCommit()} has
+	 * been blamed for providing
+	 *
 	 * @return one past the range of the result that {@link #getSourceCommit()}
 	 *         has been blamed for providing. Line numbers use 0 based indexing.
 	 *         Because a source cannot be blamed for an empty region of the
@@ -902,6 +1032,9 @@ public class BlameGenerator implements AutoCloseable {
 	}
 
 	/**
+	 * Get number of lines in the current region being blamed to
+	 * {@link #getSourceCommit()}
+	 *
 	 * @return number of lines in the current region being blamed to
 	 *         {@link #getSourceCommit()}. This is always the value of the
 	 *         expression {@code getResultEnd() - getResultStart()}, but also
@@ -912,6 +1045,9 @@ public class BlameGenerator implements AutoCloseable {
 	}
 
 	/**
+	 * Get complete contents of the source file blamed for the current output
+	 * region
+	 *
 	 * @return complete contents of the source file blamed for the current
 	 *         output region. This is the contents of {@link #getSourcePath()}
 	 *         within {@link #getSourceCommit()}. The source contents is
@@ -923,13 +1059,15 @@ public class BlameGenerator implements AutoCloseable {
 	}
 
 	/**
+	 * Get complete file contents of the result file blame is annotating
+	 *
 	 * @return complete file contents of the result file blame is annotating.
 	 *         This value is accessible only after being configured and only
 	 *         immediately before the first call to {@link #next()}. Returns
 	 *         null if the path does not exist.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             repository cannot be read.
-	 * @throws IllegalStateException
+	 * @throws java.lang.IllegalStateException
 	 *             {@link #next()} has already been invoked.
 	 */
 	public RawText getResultContents() throws IOException {
@@ -937,6 +1075,8 @@ public class BlameGenerator implements AutoCloseable {
 	}
 
 	/**
+	 * {@inheritDoc}
+	 * <p>
 	 * Release the current blame session.
 	 *
 	 * @since 4.0
@@ -970,9 +1110,10 @@ public class BlameGenerator implements AutoCloseable {
 
 		treeWalk.setFilter(TreeFilter.ANY_DIFF);
 		treeWalk.reset(parent.getTree(), commit.getTree());
-		renameDetector.reset();
-		renameDetector.addAll(DiffEntry.scan(treeWalk));
-		for (DiffEntry ent : renameDetector.compute()) {
+		List<DiffEntry> diffs = DiffEntry.scan(treeWalk);
+		FilteredRenameDetector filteredRenameDetector = new FilteredRenameDetector(
+				renameDetector);
+		for (DiffEntry ent : filteredRenameDetector.compute(diffs, path)) {
 			if (isRename(ent) && ent.getNewPath().equals(path.getPath()))
 				return ent;
 		}

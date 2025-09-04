@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2009-2010, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2009-2010, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.revwalk;
@@ -47,14 +14,12 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
-import org.eclipse.jgit.lib.Constants;
-import org.eclipse.jgit.lib.FileTreeEntry;
+import org.eclipse.jgit.lib.FileMode;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectInserter;
-import org.eclipse.jgit.lib.Tree;
+import org.eclipse.jgit.lib.TreeFormatter;
 import org.junit.Test;
 
-@SuppressWarnings("deprecation")
 public class ObjectWalkTest extends RevWalkTestCase {
 	protected ObjectWalk objw;
 
@@ -220,28 +185,24 @@ public class ObjectWalkTest extends RevWalkTestCase {
 				.fromString("abbbfafe3129f85747aba7bfac992af77134c607");
 		final RevTree tree_root, tree_A, tree_AB;
 		final RevCommit b;
-		{
-			Tree root = new Tree(db);
-			Tree A = root.addTree("A");
-			FileTreeEntry B = root.addFile("B");
-			B.setId(bId);
+		try (ObjectInserter inserter = db.newObjectInserter()) {
+			ObjectId empty = inserter.insert(new TreeFormatter());
 
-			Tree A_A = A.addTree("A");
-			Tree A_B = A.addTree("B");
+			TreeFormatter A = new TreeFormatter();
+			A.append("A", FileMode.TREE, empty);
+			A.append("B", FileMode.TREE, empty);
+			ObjectId idA = inserter.insert(A);
 
-			try (final ObjectInserter inserter = db.newObjectInserter()) {
-				A_A.setId(inserter.insert(Constants.OBJ_TREE, A_A.format()));
-				A_B.setId(inserter.insert(Constants.OBJ_TREE, A_B.format()));
-				A.setId(inserter.insert(Constants.OBJ_TREE, A.format()));
-				root.setId(inserter.insert(Constants.OBJ_TREE, root.format()));
-				inserter.flush();
-			}
+			TreeFormatter root = new TreeFormatter();
+			root.append("A", FileMode.TREE, idA);
+			root.append("B", FileMode.REGULAR_FILE, bId);
+			ObjectId idRoot = inserter.insert(root);
+			inserter.flush();
 
-			tree_root = rw.parseTree(root.getId());
-			tree_A = rw.parseTree(A.getId());
-			tree_AB = rw.parseTree(A_A.getId());
-			assertSame(tree_AB, rw.parseTree(A_B.getId()));
-			b = commit(rw.parseTree(root.getId()));
+			tree_root = objw.parseTree(idRoot);
+			tree_A = objw.parseTree(idA);
+			tree_AB = objw.parseTree(empty);
+			b = commit(tree_root);
 		}
 
 		markStart(b);
@@ -254,5 +215,13 @@ public class ObjectWalkTest extends RevWalkTestCase {
 		assertSame(tree_AB, objw.nextObject());
 		assertSame(rw.lookupBlob(bId), objw.nextObject());
 		assertNull(objw.nextObject());
+	}
+
+	@Test
+	public void testSkipTreeWhenStartFromBlob() throws Exception {
+		final RevBlob f1 = blob("1");
+		objw.markStart(f1);
+		assertSame(f1, objw.nextObject());
+		objw.skipTree();
 	}
 }

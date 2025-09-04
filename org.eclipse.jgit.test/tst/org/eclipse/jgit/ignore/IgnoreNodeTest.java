@@ -1,47 +1,15 @@
 /*
- * Copyright (C) 2010, Red Hat Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, Red Hat Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 package org.eclipse.jgit.ignore;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.eclipse.jgit.junit.Assert.assertEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -55,8 +23,6 @@ import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 
-import org.eclipse.jgit.errors.CorruptObjectException;
-import org.eclipse.jgit.ignore.IgnoreNode.MatchResult;
 import org.eclipse.jgit.junit.RepositoryTestCase;
 import org.eclipse.jgit.lib.FileMode;
 import org.eclipse.jgit.treewalk.FileTreeIterator;
@@ -64,6 +30,7 @@ import org.eclipse.jgit.treewalk.TreeWalk;
 import org.eclipse.jgit.treewalk.WorkingTreeIterator;
 import org.eclipse.jgit.util.FileUtils;
 import org.eclipse.jgit.util.SystemReader;
+import org.junit.After;
 import org.junit.Test;
 
 /**
@@ -79,6 +46,148 @@ public class IgnoreNodeTest extends RepositoryTestCase {
 	private static final boolean tracked = false;
 
 	private TreeWalk walk;
+
+	@After
+	public void closeWalk() {
+		if (walk != null) {
+			walk.close();
+		}
+	}
+
+	@Test
+	public void testSimpleRootGitIgnoreGlobalIgnore() throws IOException {
+		writeIgnoreFile(".gitignore", "x");
+
+		writeTrashFile("a/x/file", "");
+		writeTrashFile("b/x", "");
+		writeTrashFile("x/file", "");
+
+		beginWalk();
+		assertEntry(F, tracked, ".gitignore");
+		assertEntry(D, tracked, "a");
+		assertEntry(D, ignored, "a/x");
+		assertEntry(F, ignored, "a/x/file");
+		assertEntry(D, tracked, "b");
+		assertEntry(F, ignored, "b/x");
+		assertEntry(D, ignored, "x");
+		assertEntry(F, ignored, "x/file");
+		endWalk();
+	}
+
+	@Test
+	public void testSimpleRootGitIgnoreGlobalDirIgnore() throws IOException {
+		writeIgnoreFile(".gitignore", "x/");
+
+		writeTrashFile("a/x/file", "");
+		writeTrashFile("x/file", "");
+
+		beginWalk();
+		assertEntry(F, tracked, ".gitignore");
+		assertEntry(D, tracked, "a");
+		assertEntry(D, ignored, "a/x");
+		assertEntry(F, ignored, "a/x/file");
+		assertEntry(D, ignored, "x");
+		assertEntry(F, ignored, "x/file");
+		endWalk();
+	}
+
+	@Test
+	public void testSimpleRootGitIgnoreWildMatcher() throws IOException {
+		writeIgnoreFile(".gitignore", "**");
+
+		writeTrashFile("a/x", "");
+		writeTrashFile("y", "");
+
+		beginWalk();
+		assertEntry(F, ignored, ".gitignore");
+		assertEntry(D, ignored, "a");
+		assertEntry(F, ignored, "a/x");
+		assertEntry(F, ignored, "y");
+		endWalk();
+	}
+
+	@Test
+	public void testSimpleRootGitIgnoreWildMatcherDirOnly() throws IOException {
+		writeIgnoreFile(".gitignore", "**/");
+
+		writeTrashFile("a/x", "");
+		writeTrashFile("y", "");
+
+		beginWalk();
+		assertEntry(F, tracked, ".gitignore");
+		assertEntry(D, ignored, "a");
+		assertEntry(F, ignored, "a/x");
+		assertEntry(F, tracked, "y");
+		endWalk();
+	}
+
+	@Test
+	public void testSimpleRootGitIgnoreGlobalNegation1() throws IOException {
+		writeIgnoreFile(".gitignore", "*", "!x*");
+		writeTrashFile("x1", "");
+		writeTrashFile("a/x2", "");
+		writeTrashFile("x3/y", "");
+
+		beginWalk();
+		assertEntry(F, ignored, ".gitignore");
+		assertEntry(D, ignored, "a");
+		assertEntry(F, ignored, "a/x2");
+		assertEntry(F, tracked, "x1");
+		assertEntry(D, tracked, "x3");
+		assertEntry(F, ignored, "x3/y");
+		endWalk();
+	}
+
+	@Test
+	public void testSimpleRootGitIgnoreGlobalNegation2() throws IOException {
+		writeIgnoreFile(".gitignore", "*", "!x*", "!/a");
+		writeTrashFile("x1", "");
+		writeTrashFile("a/x2", "");
+		writeTrashFile("x3/y", "");
+
+		beginWalk();
+		assertEntry(F, ignored, ".gitignore");
+		assertEntry(D, tracked, "a");
+		assertEntry(F, tracked, "a/x2");
+		assertEntry(F, tracked, "x1");
+		assertEntry(D, tracked, "x3");
+		assertEntry(F, ignored, "x3/y");
+		endWalk();
+	}
+
+	@Test
+	public void testSimpleRootGitIgnoreGlobalNegation3() throws IOException {
+		writeIgnoreFile(".gitignore", "*", "!x*", "!x*/**");
+		writeTrashFile("x1", "");
+		writeTrashFile("a/x2", "");
+		writeTrashFile("x3/y", "");
+
+		beginWalk();
+		assertEntry(F, ignored, ".gitignore");
+		assertEntry(D, ignored, "a");
+		assertEntry(F, ignored, "a/x2");
+		assertEntry(F, tracked, "x1");
+		assertEntry(D, tracked, "x3");
+		assertEntry(F, tracked, "x3/y");
+		endWalk();
+	}
+
+	@Test
+	public void testSimpleRootGitIgnoreGlobalNegation4() throws IOException {
+		writeIgnoreFile(".gitignore", "*", "!**/");
+		writeTrashFile("x1", "");
+		writeTrashFile("a/x2", "");
+		writeTrashFile("x3/y", "");
+
+		beginWalk();
+		assertEntry(F, ignored, ".gitignore");
+		assertEntry(D, tracked, "a");
+		assertEntry(F, ignored, "a/x2");
+		assertEntry(F, ignored, "x1");
+		assertEntry(D, tracked, "x3");
+		assertEntry(F, ignored, "x3/y");
+		endWalk();
+	}
 
 	@Test
 	public void testRules() throws IOException {
@@ -210,7 +319,7 @@ public class IgnoreNodeTest extends RepositoryTestCase {
 		assertEntry(F, ignored, "src/.gitignore");
 		assertEntry(D, tracked, "src/a");
 		assertEntry(F, tracked, "src/a/keep.java");
-		assertEntry(F, tracked, "src/a/keep.o");
+		assertEntry(F, ignored, "src/a/keep.o");
 		assertEntry(F, tracked, "src/keep.java");
 		assertEntry(F, ignored, "src/nothere.o");
 		endWalk();
@@ -316,15 +425,99 @@ public class IgnoreNodeTest extends RepositoryTestCase {
 	}
 
 	@Test
-	public void testEmptyIgnoreNode() {
-		// Rules are never empty: WorkingTreeIterator optimizes empty files away
-		// So we have to test it manually in case third party clients use
-		// IgnoreNode directly.
-		IgnoreNode node = new IgnoreNode();
-		assertEquals(MatchResult.CHECK_PARENT, node.isIgnored("", false));
-		assertEquals(MatchResult.CHECK_PARENT, node.isIgnored("", false, false));
-		assertEquals(MatchResult.CHECK_PARENT_NEGATE_FIRST_MATCH,
-				node.isIgnored("", false, true));
+	public void testRepeatedNegationInDifferentFiles5() throws IOException {
+		writeIgnoreFile(".gitignore", "e");
+		writeIgnoreFile("a/.gitignore", "e");
+		writeIgnoreFile("a/b/.gitignore", "!e");
+		writeTrashFile("a/b/e/nothere.o", "");
+
+		beginWalk();
+		assertEntry(F, tracked, ".gitignore");
+		assertEntry(D, tracked, "a");
+		assertEntry(F, tracked, "a/.gitignore");
+		assertEntry(D, tracked, "a/b");
+		assertEntry(F, tracked, "a/b/.gitignore");
+		assertEntry(D, tracked, "a/b/e");
+		assertEntry(F, tracked, "a/b/e/nothere.o");
+		endWalk();
+	}
+
+	@Test
+	public void testIneffectiveNegationDifferentLevels1() throws IOException {
+		writeIgnoreFile(".gitignore", "a/b/e/", "!a/b/e/*");
+		writeTrashFile("a/b/e/nothere.o", "");
+
+		beginWalk();
+		assertEntry(F, tracked, ".gitignore");
+		assertEntry(D, tracked, "a");
+		assertEntry(D, tracked, "a/b");
+		assertEntry(D, ignored, "a/b/e");
+		assertEntry(F, ignored, "a/b/e/nothere.o");
+		endWalk();
+	}
+
+	@Test
+	public void testIneffectiveNegationDifferentLevels2() throws IOException {
+		writeIgnoreFile(".gitignore", "a/b/e/");
+		writeIgnoreFile("a/.gitignore", "!b/e/*");
+		writeTrashFile("a/b/e/nothere.o", "");
+
+		beginWalk();
+		assertEntry(F, tracked, ".gitignore");
+		assertEntry(D, tracked, "a");
+		assertEntry(F, tracked, "a/.gitignore");
+		assertEntry(D, tracked, "a/b");
+		assertEntry(D, ignored, "a/b/e");
+		assertEntry(F, ignored, "a/b/e/nothere.o");
+		endWalk();
+	}
+
+	@Test
+	public void testIneffectiveNegationDifferentLevels3() throws IOException {
+		writeIgnoreFile(".gitignore", "a/b/e/");
+		writeIgnoreFile("a/b/.gitignore", "!e/*");
+		writeTrashFile("a/b/e/nothere.o", "");
+
+		beginWalk();
+		assertEntry(F, tracked, ".gitignore");
+		assertEntry(D, tracked, "a");
+		assertEntry(D, tracked, "a/b");
+		assertEntry(F, tracked, "a/b/.gitignore");
+		assertEntry(D, ignored, "a/b/e");
+		assertEntry(F, ignored, "a/b/e/nothere.o");
+		endWalk();
+	}
+
+	@Test
+	public void testIneffectiveNegationDifferentLevels4() throws IOException {
+		writeIgnoreFile(".gitignore", "a/b/e/");
+		writeIgnoreFile("a/b/e/.gitignore", "!*");
+		writeTrashFile("a/b/e/nothere.o", "");
+
+		beginWalk();
+		assertEntry(F, tracked, ".gitignore");
+		assertEntry(D, tracked, "a");
+		assertEntry(D, tracked, "a/b");
+		assertEntry(D, ignored, "a/b/e");
+		assertEntry(F, ignored, "a/b/e/.gitignore");
+		assertEntry(F, ignored, "a/b/e/nothere.o");
+		endWalk();
+	}
+
+	@Test
+	public void testIneffectiveNegationDifferentLevels5() throws IOException {
+		writeIgnoreFile("a/.gitignore", "b/e/");
+		writeIgnoreFile("a/b/.gitignore", "!e/*");
+		writeTrashFile("a/b/e/nothere.o", "");
+
+		beginWalk();
+		assertEntry(D, tracked, "a");
+		assertEntry(F, tracked, "a/.gitignore");
+		assertEntry(D, tracked, "a/b");
+		assertEntry(F, tracked, "a/b/.gitignore");
+		assertEntry(D, ignored, "a/b/e");
+		assertEntry(F, ignored, "a/b/e/nothere.o");
+		endWalk();
 	}
 
 	@Test
@@ -481,8 +674,9 @@ public class IgnoreNodeTest extends RepositoryTestCase {
 		writeTrashFile("a/a", "");
 		writeTrashFile("a/a ", "");
 		writeTrashFile("a/a  ", "");
+		writeTrashFile("b/c", "");
 
-		writeIgnoreFile(".gitignore", "a\\ ", "a \\ ");
+		writeIgnoreFile(".gitignore", "a\\ ", "a \\ ", "b/ ");
 
 		beginWalk();
 		assertEntry(F, tracked, ".gitignore");
@@ -498,6 +692,8 @@ public class IgnoreNodeTest extends RepositoryTestCase {
 		assertEntry(F, tracked, "a/a");
 		assertEntry(F, ignored, "a/a ");
 		assertEntry(F, ignored, "a/a  ");
+		assertEntry(D, ignored, "b");
+		assertEntry(F, ignored, "b/c");
 		endWalk();
 	}
 
@@ -509,9 +705,11 @@ public class IgnoreNodeTest extends RepositoryTestCase {
 						.toString());
 	}
 
-	private void beginWalk() throws CorruptObjectException {
+	private void beginWalk() {
 		walk = new TreeWalk(db);
-		walk.addTree(new FileTreeIterator(db));
+		FileTreeIterator iter = new FileTreeIterator(db);
+		iter.setWalkIgnoredDirectories(true);
+		walk.addTree(iter);
 	}
 
 	private void endWalk() throws IOException {
@@ -539,11 +737,11 @@ public class IgnoreNodeTest extends RepositoryTestCase {
 		writeTrashFile(name, data.toString());
 	}
 
-	private InputStream writeToString(String... rules) throws IOException {
+	private InputStream writeToString(String... rules) {
 		StringBuilder data = new StringBuilder();
 		for (String line : rules) {
 			data.append(line + "\n");
 		}
-		return new ByteArrayInputStream(data.toString().getBytes("UTF-8"));
+		return new ByteArrayInputStream(data.toString().getBytes(UTF_8));
 	}
 }

@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2012, Matthias Sohn <matthias.sohn@sap.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2012, Matthias Sohn <matthias.sohn@sap.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 package org.eclipse.jgit.api;
 
@@ -47,6 +14,7 @@ import java.text.MessageFormat;
 import java.text.ParseException;
 import java.util.Date;
 import java.util.Properties;
+import java.util.concurrent.ExecutionException;
 
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.api.errors.JGitInternalException;
@@ -61,7 +29,6 @@ import org.eclipse.jgit.lib.ProgressMonitor;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.lib.StoredConfig;
 import org.eclipse.jgit.storage.pack.PackConfig;
-import org.eclipse.jgit.util.GitDateParser;
 
 /**
  * A class used to execute a {@code gc} command. It has setters for all
@@ -97,7 +64,10 @@ public class GarbageCollectCommand extends GitCommand<Properties> {
 	private PackConfig pconfig;
 
 	/**
+	 * Constructor for GarbageCollectCommand.
+	 *
 	 * @param repo
+	 *            a {@link org.eclipse.jgit.lib.Repository} object.
 	 */
 	protected GarbageCollectCommand(Repository repo) {
 		super(repo);
@@ -105,6 +75,8 @@ public class GarbageCollectCommand extends GitCommand<Properties> {
 	}
 
 	/**
+	 * Set progress monitor
+	 *
 	 * @param monitor
 	 *            a progress monitor
 	 * @return this instance
@@ -118,8 +90,8 @@ public class GarbageCollectCommand extends GitCommand<Properties> {
 	 * During gc() or prune() each unreferenced, loose object which has been
 	 * created or modified after <code>expire</code> will not be pruned. Only
 	 * older objects may be pruned. If set to null then every object is a
-	 * candidate for pruning. Use {@link GitDateParser} to parse time formats
-	 * used by git gc.
+	 * candidate for pruning. Use {@link org.eclipse.jgit.util.GitDateParser} to
+	 * parse time formats used by git gc.
 	 *
 	 * @param expire
 	 *            minimal age of objects to be pruned.
@@ -159,6 +131,39 @@ public class GarbageCollectCommand extends GitCommand<Properties> {
 		return this;
 	}
 
+	/**
+	 * Whether to preserve old pack files instead of deleting them.
+	 *
+	 * @since 4.7
+	 * @param preserveOldPacks
+	 *            whether to preserve old pack files
+	 * @return this instance
+	 */
+	public GarbageCollectCommand setPreserveOldPacks(boolean preserveOldPacks) {
+		if (pconfig == null)
+			pconfig = new PackConfig(repo);
+
+		pconfig.setPreserveOldPacks(preserveOldPacks);
+		return this;
+	}
+
+	/**
+	 * Whether to prune preserved pack files in the preserved directory.
+	 *
+	 * @since 4.7
+	 * @param prunePreserved
+	 *            whether to prune preserved pack files
+	 * @return this instance
+	 */
+	public GarbageCollectCommand setPrunePreserved(boolean prunePreserved) {
+		if (pconfig == null)
+			pconfig = new PackConfig(repo);
+
+		pconfig.setPrunePreserved(prunePreserved);
+		return this;
+	}
+
+	/** {@inheritDoc} */
 	@Override
 	public Properties call() throws GitAPIException {
 		checkCallable();
@@ -172,9 +177,10 @@ public class GarbageCollectCommand extends GitCommand<Properties> {
 					gc.setExpire(expire);
 
 				try {
-					gc.gc();
+					gc.gc().get();
 					return toProperties(gc.getStatistics());
-				} catch (ParseException e) {
+				} catch (ParseException | InterruptedException
+						| ExecutionException e) {
 					throw new JGitInternalException(JGitText.get().gcFailed, e);
 				}
 			} else if (repo instanceof DfsRepository) {
@@ -197,7 +203,7 @@ public class GarbageCollectCommand extends GitCommand<Properties> {
 	 * Computes and returns the repository statistics.
 	 *
 	 * @return the repository statistics
-	 * @throws GitAPIException
+	 * @throws org.eclipse.jgit.api.errors.GitAPIException
 	 *             thrown if the repository statistics cannot be computed
 	 * @since 3.0
 	 */
@@ -206,9 +212,8 @@ public class GarbageCollectCommand extends GitCommand<Properties> {
 			if (repo instanceof FileRepository) {
 				GC gc = new GC((FileRepository) repo);
 				return toProperties(gc.getStatistics());
-			} else {
-				return new Properties();
 			}
+			return new Properties();
 		} catch (IOException e) {
 			throw new JGitInternalException(
 					JGitText.get().couldNotGetRepoStatistics, e);
@@ -218,6 +223,7 @@ public class GarbageCollectCommand extends GitCommand<Properties> {
 	@SuppressWarnings("boxing")
 	private static Properties toProperties(RepoStatistics stats) {
 		Properties p = new Properties();
+		p.put("numberOfBitmaps", stats.numberOfBitmaps); //$NON-NLS-1$
 		p.put("numberOfLooseObjects", stats.numberOfLooseObjects); //$NON-NLS-1$
 		p.put("numberOfLooseRefs", stats.numberOfLooseRefs); //$NON-NLS-1$
 		p.put("numberOfPackedObjects", stats.numberOfPackedObjects); //$NON-NLS-1$

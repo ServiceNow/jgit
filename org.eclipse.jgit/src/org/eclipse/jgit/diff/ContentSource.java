@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2010, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, 2021 Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.diff;
@@ -55,13 +22,13 @@ import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectLoader;
 import org.eclipse.jgit.lib.ObjectReader;
 import org.eclipse.jgit.lib.ObjectStream;
-import org.eclipse.jgit.treewalk.FileTreeIterator;
 import org.eclipse.jgit.treewalk.TreeWalk;
 import org.eclipse.jgit.treewalk.WorkingTreeIterator;
 import org.eclipse.jgit.treewalk.filter.PathFilter;
 
 /**
- * Supplies the content of a file for {@link DiffFormatter}.
+ * Supplies the content of a file for
+ * {@link org.eclipse.jgit.diff.DiffFormatter}.
  * <p>
  * A content source is not thread-safe. Sources may contain state, including
  * information about the last ObjectLoader they returned. Callers must be
@@ -83,8 +50,9 @@ public abstract class ContentSource {
 	/**
 	 * Construct a content source for a working directory.
 	 *
-	 * If the iterator is a {@link FileTreeIterator} an optimized version is
-	 * used that doesn't require seeking through a TreeWalk.
+	 * If the iterator is a {@link org.eclipse.jgit.treewalk.FileTreeIterator}
+	 * an optimized version is used that doesn't require seeking through a
+	 * TreeWalk.
 	 *
 	 * @param iterator
 	 *            the iterator to obtain source files through.
@@ -102,7 +70,7 @@ public abstract class ContentSource {
 	 * @param id
 	 *            blob id of the file, if known.
 	 * @return the size in bytes.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the file cannot be accessed.
 	 */
 	public abstract long size(String path, ObjectId id) throws IOException;
@@ -117,11 +85,34 @@ public abstract class ContentSource {
 	 * @return a loader that can supply the content of the file. The loader must
 	 *         be used before another loader can be obtained from this same
 	 *         source.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the file cannot be accessed.
 	 */
 	public abstract ObjectLoader open(String path, ObjectId id)
 			throws IOException;
+
+	/**
+	 * Closes the used resources like ObjectReader, TreeWalk etc. Default
+	 * implementation does nothing.
+	 *
+	 * @since 6.2
+	 */
+	public void close() {
+		// Do nothing
+	}
+
+	/**
+	 * Checks if the source is from "working tree", so it can be accessed as a
+	 * file directly.
+	 *
+	 * @since 6.2
+	 *
+	 * @return true if working tree source and false otherwise (loader must be
+	 *         used)
+	 */
+	public boolean isWorkingTreeSource() {
+		return false;
+	}
 
 	private static class ObjectReaderSource extends ContentSource {
 		private final ObjectReader reader;
@@ -143,6 +134,16 @@ public abstract class ContentSource {
 		public ObjectLoader open(String path, ObjectId id) throws IOException {
 			return reader.open(id, Constants.OBJ_BLOB);
 		}
+
+		@Override
+		public void close() {
+			reader.close();
+		}
+
+		@Override
+		public boolean isWorkingTreeSource() {
+			return false;
+		}
 	}
 
 	private static class WorkingTreeSource extends ContentSource {
@@ -155,7 +156,8 @@ public abstract class ContentSource {
 		WorkingTreeIterator ptr;
 
 		WorkingTreeSource(WorkingTreeIterator iterator) {
-			this.tw = new TreeWalk((ObjectReader) null);
+			this.tw = new TreeWalk(iterator.getRepository(),
+					(ObjectReader) null);
 			this.tw.setRecursive(true);
 			this.iterator = iterator;
 		}
@@ -169,10 +171,11 @@ public abstract class ContentSource {
 		@Override
 		public ObjectLoader open(String path, ObjectId id) throws IOException {
 			seek(path);
+			long entrySize = ptr.getEntryContentLength();
 			return new ObjectLoader() {
 				@Override
 				public long getSize() {
-					return ptr.getEntryLength();
+					return entrySize;
 				}
 
 				@Override
@@ -183,7 +186,7 @@ public abstract class ContentSource {
 				@Override
 				public ObjectStream openStream() throws MissingObjectException,
 						IOException {
-					long contentLength = ptr.getEntryContentLength();
+					long contentLength = entrySize;
 					InputStream in = ptr.openEntryStream();
 					in = new BufferedInputStream(in);
 					return new ObjectStream.Filter(getType(), contentLength, in);
@@ -204,6 +207,15 @@ public abstract class ContentSource {
 		private void seek(String path) throws IOException {
 			if (!path.equals(current)) {
 				iterator.reset();
+				// Possibly this iterator had an associated DirCacheIterator,
+				// but we have no access to it and thus don't know about it.
+				// We have to reset this iterator here to work without
+				// DirCacheIterator and to descend always into ignored
+				// directories. Otherwise we might not find tracked files below
+				// ignored folders. Since we're looking only for a single
+				// specific path this is not a performance problem.
+				iterator.setWalkIgnoredDirectories(true);
+				iterator.setDirCacheIterator(null, -1);
 				tw.reset();
 				tw.addTree(iterator);
 				tw.setFilter(PathFilter.create(path));
@@ -214,6 +226,16 @@ public abstract class ContentSource {
 				if (ptr == null)
 					throw new FileNotFoundException(path);
 			}
+		}
+
+		@Override
+		public void close() {
+			tw.close();
+		}
+
+		@Override
+		public boolean isWorkingTreeSource() {
+			return true;
 		}
 	}
 
@@ -282,5 +304,37 @@ public abstract class ContentSource {
 				throw new IllegalArgumentException();
 			}
 		}
+
+		/**
+		 * Closes used resources.
+		 *
+		 * @since 6.2
+		 */
+		public void close() {
+			oldSource.close();
+			newSource.close();
+		}
+
+		/**
+		 * Checks if source (side) is a "working tree".
+		 *
+		 * @since 6.2
+		 *
+		 * @param side
+		 *            which side of the entry to read (OLD or NEW).
+		 * @return is the source a "working tree"
+		 *
+		 */
+		public boolean isWorkingTreeSource(DiffEntry.Side side) {
+			switch (side) {
+			case OLD:
+				return oldSource.isWorkingTreeSource();
+			case NEW:
+				return newSource.isWorkingTreeSource();
+			default:
+				throw new IllegalArgumentException();
+			}
+		}
+
 	}
 }

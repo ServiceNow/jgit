@@ -1,49 +1,16 @@
 /*
- * Copyright (C) 2009-2010, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2009-2010, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.pgm.debug;
 
-import static org.eclipse.jgit.lib.RefDatabase.ALL;
+import static java.nio.charset.StandardCharsets.UTF_8;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -112,11 +79,12 @@ class RebuildCommitGraph extends TextBuiltin {
 
 	private final ProgressMonitor pm = new TextProgressMonitor(errw);
 
-	private Map<ObjectId, ObjectId> rewrites = new HashMap<ObjectId, ObjectId>();
+	private Map<ObjectId, ObjectId> rewrites = new HashMap<>();
 
+	/** {@inheritDoc} */
 	@Override
 	protected void run() throws Exception {
-		if (!really && !db.getRefDatabase().getRefs(ALL).isEmpty()) {
+		if (!really && db.getRefDatabase().hasRefs()) {
 			File directory = db.getDirectory();
 			String absolutePath = directory == null ? "null" //$NON-NLS-1$
 					: directory.getAbsolutePath();
@@ -137,12 +105,12 @@ class RebuildCommitGraph extends TextBuiltin {
 	}
 
 	private void recreateCommitGraph() throws IOException {
-		final Map<ObjectId, ToRewrite> toRewrite = new HashMap<ObjectId, ToRewrite>();
-		List<ToRewrite> queue = new ArrayList<ToRewrite>();
+		final Map<ObjectId, ToRewrite> toRewrite = new HashMap<>();
+		List<ToRewrite> queue = new ArrayList<>();
 		try (RevWalk rw = new RevWalk(db);
 				final BufferedReader br = new BufferedReader(
 						new InputStreamReader(new FileInputStream(graph),
-								Constants.CHARSET))) {
+								UTF_8))) {
 			String line;
 			while ((line = br.readLine()) != null) {
 				final String[] parts = line.split("[ \t]{1,}"); //$NON-NLS-1$
@@ -167,7 +135,7 @@ class RebuildCommitGraph extends TextBuiltin {
 			}
 		}
 
-		pm.beginTask("Rewriting commits", queue.size());
+		pm.beginTask("Rewriting commits", queue.size()); //$NON-NLS-1$
 		try (ObjectInserter oi = db.newObjectInserter()) {
 			final ObjectId emptyTree = oi.insert(Constants.OBJ_TREE,
 					new byte[] {});
@@ -176,7 +144,7 @@ class RebuildCommitGraph extends TextBuiltin {
 			while (!queue.isEmpty()) {
 				final ListIterator<ToRewrite> itr = queue
 						.listIterator(queue.size());
-				queue = new ArrayList<ToRewrite>();
+				queue = new ArrayList<>();
 				REWRITE: while (itr.hasPrevious()) {
 					final ToRewrite t = itr.previous();
 					final ObjectId[] newParents = new ObjectId[t.oldParents.length];
@@ -188,9 +156,8 @@ class RebuildCommitGraph extends TextBuiltin {
 								// rewritten.
 								queue.add(t);
 								continue REWRITE;
-							} else {
-								newParents[k] = p.newId;
 							}
+							newParents[k] = p.newId;
 						} else {
 							// We have the old parent object. Use it.
 							//
@@ -203,7 +170,7 @@ class RebuildCommitGraph extends TextBuiltin {
 					newc.setAuthor(new PersonIdent(me, new Date(t.commitTime)));
 					newc.setCommitter(newc.getAuthor());
 					newc.setParentIds(newParents);
-					newc.setMessage("ORIGINAL " + t.oldId.name() + "\n"); //$NON-NLS-2$
+					newc.setMessage("ORIGINAL " + t.oldId.name() + "\n"); //$NON-NLS-1$ //$NON-NLS-2$
 					t.newId = oi.insert(newc);
 					rewrites.put(t.oldId, t.newId);
 					pm.update(1);
@@ -223,7 +190,7 @@ class RebuildCommitGraph extends TextBuiltin {
 
 		ObjectId newId;
 
-		ToRewrite(final ObjectId o, final long t, final ObjectId[] p) {
+		ToRewrite(ObjectId o, long t, ObjectId[] p) {
 			oldId = o;
 			commitTime = t;
 			oldParents = p;
@@ -235,7 +202,7 @@ class RebuildCommitGraph extends TextBuiltin {
 		final ObjectId id = db.resolve(Constants.HEAD);
 		if (!ObjectId.isId(head) && id != null) {
 			final LockFile lf;
-			lf = new LockFile(new File(db.getDirectory(), Constants.HEAD), db.getFS());
+			lf = new LockFile(new File(db.getDirectory(), Constants.HEAD));
 			if (!lf.lock())
 				throw new IOException(MessageFormat.format(CLIText.get().cannotLock, Constants.HEAD));
 			lf.write(id);
@@ -246,8 +213,7 @@ class RebuildCommitGraph extends TextBuiltin {
 
 	private void deleteAllRefs() throws Exception {
 		final RevWalk rw = new RevWalk(db);
-		Map<String, Ref> refs = db.getRefDatabase().getRefs(ALL);
-		for (final Ref r : refs.values()) {
+		for (Ref r : db.getRefDatabase().getRefs()) {
 			if (Constants.HEAD.equals(r.getName()))
 				continue;
 			final RefUpdate u = db.updateRef(r.getName());
@@ -260,16 +226,18 @@ class RebuildCommitGraph extends TextBuiltin {
 		final Map<String, Ref> refs = computeNewRefs();
 		new RefWriter(refs.values()) {
 			@Override
-			protected void writeFile(final String name, final byte[] content)
+			protected void writeFile(String name, byte[] content)
 					throws IOException {
 				final File file = new File(db.getDirectory(), name);
-				final LockFile lck = new LockFile(file, db.getFS());
+				final LockFile lck = new LockFile(file);
 				if (!lck.lock())
 					throw new ObjectWritingException(MessageFormat.format(CLIText.get().cantWrite, file));
 				try {
 					lck.write(content);
 				} catch (IOException ioe) {
-					throw new ObjectWritingException(MessageFormat.format(CLIText.get().cantWrite, file));
+					throw new ObjectWritingException(
+							MessageFormat.format(CLIText.get().cantWrite, file),
+							ioe);
 				}
 				if (!lck.commit())
 					throw new ObjectWritingException(MessageFormat.format(CLIText.get().cantWrite, file));
@@ -278,11 +246,11 @@ class RebuildCommitGraph extends TextBuiltin {
 	}
 
 	private Map<String, Ref> computeNewRefs() throws IOException {
-		final Map<String, Ref> refs = new HashMap<String, Ref>();
+		final Map<String, Ref> refs = new HashMap<>();
 		try (RevWalk rw = new RevWalk(db);
 				BufferedReader br = new BufferedReader(
 						new InputStreamReader(new FileInputStream(refList),
-								Constants.CHARSET))) {
+								UTF_8))) {
 			String line;
 			while ((line = br.readLine()) != null) {
 				final String[] parts = line.split("[ \t]{1,}"); //$NON-NLS-1$
@@ -300,7 +268,9 @@ class RebuildCommitGraph extends TextBuiltin {
 						errw.println(MessageFormat.format(CLIText.get().skippingObject, type, name));
 						continue;
 					}
-					throw new MissingObjectException(id, type);
+					MissingObjectException mue1 = new MissingObjectException(id, type);
+					mue1.initCause(mue);
+					throw mue1;
 				}
 				refs.put(name, new ObjectIdRef.Unpeeled(Ref.Storage.PACKED,
 						name, id));

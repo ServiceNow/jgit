@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2010, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.transport;
@@ -58,6 +25,8 @@ import java.security.MessageDigest;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.zip.Deflater;
 
 import org.eclipse.jgit.errors.MissingObjectException;
@@ -104,66 +73,50 @@ public class ReceivePackAdvertiseRefsHookTest extends LocalDiskRepositoryTestCas
 		super.setUp();
 
 		src = createBareRepository();
+		addRepoToClose(src);
 		dst = createBareRepository();
+		addRepoToClose(dst);
 
 		// Fill dst with a some common history.
 		//
-		TestRepository<Repository> d = new TestRepository<Repository>(dst);
-		a = d.blob("a");
-		A = d.commit(d.tree(d.file("a", a)));
-		B = d.commit().parent(A).create();
-		d.update(R_MASTER, B);
+		try (TestRepository<Repository> d = new TestRepository<>(dst)) {
+			dst.incrementOpen();
+			a = d.blob("a");
+			A = d.commit(d.tree(d.file("a", a)));
+			B = d.commit().parent(A).create();
+			d.update(R_MASTER, B);
 
-		// Clone from dst into src
-		//
-		Transport t = Transport.open(src, uriOf(dst));
-		try {
-			t.fetch(PM, Collections.singleton(new RefSpec("+refs/*:refs/*")));
-			assertEquals(B, src.resolve(R_MASTER));
-		} finally {
-			t.close();
+			// Clone from dst into src
+			//
+			try (Transport t = Transport.open(src, uriOf(dst))) {
+				t.fetch(PM,
+						Collections.singleton(new RefSpec("+refs/*:refs/*")));
+				assertEquals(B, src.resolve(R_MASTER));
+			}
+
+			// Now put private stuff into dst.
+			//
+			b = d.blob("b");
+			P = d.commit(d.tree(d.file("b", b)), A);
+			d.update(R_PRIVATE, P);
 		}
-
-		// Now put private stuff into dst.
-		//
-		b = d.blob("b");
-		P = d.commit(d.tree(d.file("b", b)), A);
-		d.update(R_PRIVATE, P);
-	}
-
-	@Override
-	@After
-	public void tearDown() throws Exception {
-		if (src != null)
-			src.close();
-		if (dst != null)
-			dst.close();
-		super.tearDown();
 	}
 
 	@Test
 	public void testFilterHidesPrivate() throws Exception {
 		Map<String, Ref> refs;
-		TransportLocal t = new TransportLocal(src, uriOf(dst), dst.getDirectory()) {
+		try (TransportLocal t = new TransportLocal(src, uriOf(dst),
+				dst.getDirectory()) {
 			@Override
-			ReceivePack createReceivePack(final Repository db) {
-				db.close();
-				dst.incrementOpen();
-
+			ReceivePack createReceivePack(Repository db) {
 				final ReceivePack rp = super.createReceivePack(dst);
 				rp.setAdvertiseRefsHook(new HidePrivateHook());
 				return rp;
 			}
-		};
-		try {
-			PushConnection c = t.openPush();
-			try {
+		}) {
+			try (PushConnection c = t.openPush()) {
 				refs = c.getRefsMap();
-			} finally {
-				c.close();
 			}
-		} finally {
-			t.close();
 		}
 
 		assertNotNull(refs);
@@ -174,6 +127,57 @@ public class ReceivePackAdvertiseRefsHookTest extends LocalDiskRepositoryTestCas
 		Ref master = refs.get(R_MASTER);
 		assertNotNull("has master", master);
 		assertEquals(B, master.getObjectId());
+	}
+
+	@Test
+	public void resetsHaves() throws Exception {
+		AtomicReference<Set<ObjectId>> haves = new AtomicReference<>();
+		try (TransportLocal t = new TransportLocal(src, uriOf(dst),
+				dst.getDirectory()) {
+			@Override
+			ReceivePack createReceivePack(Repository db) {
+				ReceivePack rp = super.createReceivePack(dst);
+				rp.setAdvertiseRefsHook(new AdvertiseRefsHook() {
+					@Override
+					public void advertiseRefs(ReceivePack rp2)
+							throws IOException {
+						rp.setAdvertisedRefs(rp.getRepository().getAllRefs(),
+								null);
+						new HidePrivateHook().advertiseRefs(rp);
+						haves.set(rp.getAdvertisedObjects());
+					}
+
+					@Override
+					public void advertiseRefs(UploadPack uploadPack)
+							throws ServiceMayNotContinueException {
+						throw new UnsupportedOperationException();
+					}
+				});
+				return rp;
+			}
+		}) {
+			try (PushConnection c = t.openPush()) {
+				// Just has to open/close for advertisement.
+			}
+		}
+
+		assertEquals(1, haves.get().size());
+		assertTrue(haves.get().contains(B));
+		assertFalse(haves.get().contains(P));
+	}
+
+	private TransportLocal newTransportLocalWithStrictValidation()
+			throws Exception {
+		return new TransportLocal(src, uriOf(dst), dst.getDirectory()) {
+			@Override
+			ReceivePack createReceivePack(Repository db) {
+				final ReceivePack rp = super.createReceivePack(dst);
+				rp.setCheckReceivedObjects(true);
+				rp.setCheckReferencedObjectsAreReachable(true);
+				rp.setAdvertiseRefsHook(new HidePrivateHook());
+				return rp;
+			}
+		};
 	}
 
 	@Test
@@ -196,50 +200,38 @@ public class ReceivePackAdvertiseRefsHookTest extends LocalDiskRepositoryTestCas
 		// Verify the only storage of b is our packed delta above.
 		//
 		ObjectDirectory od = (ObjectDirectory) src.getObjectDatabase();
-		assertTrue("has b", src.hasObject(b));
+		assertTrue("has b", od.has(b));
 		assertFalse("b not loose", od.fileFor(b).exists());
 
 		// Now use b but in a different commit than what is hidden.
 		//
-		TestRepository<Repository> s = new TestRepository<Repository>(src);
-		RevCommit N = s.commit().parent(B).add("q", b).create();
-		s.update(R_MASTER, N);
+		try (TestRepository<Repository> s = new TestRepository<>(src)) {
+			src.incrementOpen();
+			RevCommit N = s.commit().parent(B).add("q", b).create();
+			s.update(R_MASTER, N);
 
-		// Push this new content to the remote, doing strict validation.
-		//
-		TransportLocal t = new TransportLocal(src, uriOf(dst), dst.getDirectory()) {
-			@Override
-			ReceivePack createReceivePack(final Repository db) {
-				db.close();
-				dst.incrementOpen();
-
-				final ReceivePack rp = super.createReceivePack(dst);
-				rp.setCheckReceivedObjects(true);
-				rp.setCheckReferencedObjectsAreReachable(true);
-				rp.setAdvertiseRefsHook(new HidePrivateHook());
-				return rp;
+			// Push this new content to the remote, doing strict validation.
+			//
+			PushResult r;
+			RemoteRefUpdate u = new RemoteRefUpdate( //
+					src, //
+					R_MASTER, // src name
+					R_MASTER, // dst name
+					false, // do not force update
+					null, // local tracking branch
+					null // expected id
+			);
+			try (TransportLocal t = newTransportLocalWithStrictValidation()) {
+				t.setPushThin(true);
+				r = t.push(PM, Collections.singleton(u));
 			}
-		};
-		RemoteRefUpdate u = new RemoteRefUpdate( //
-				src, //
-				R_MASTER, // src name
-				R_MASTER, // dst name
-				false, // do not force update
-				null, // local tracking branch
-				null // expected id
-		);
-		PushResult r;
-		try {
-			t.setPushThin(true);
-			r = t.push(PM, Collections.singleton(u));
-		} finally {
-			t.close();
-		}
 
-		assertNotNull("have result", r);
-		assertNull("private not advertised", r.getAdvertisedRef(R_PRIVATE));
-		assertSame("master updated", RemoteRefUpdate.Status.OK, u.getStatus());
-		assertEquals(N, dst.resolve(R_MASTER));
+			assertNotNull("have result", r);
+			assertNull("private not advertised", r.getAdvertisedRef(R_PRIVATE));
+			assertSame("master updated", RemoteRefUpdate.Status.OK,
+					u.getStatus());
+			assertEquals(N, dst.resolve(R_MASTER));
+		}
 	}
 
 	@Test
@@ -276,11 +268,11 @@ public class ReceivePackAdvertiseRefsHookTest extends LocalDiskRepositoryTestCas
 		int nul = master.indexOf('\0');
 		assertTrue("has capability list", nul > 0);
 		assertEquals(B.name() + ' ' + R_MASTER, master.substring(0, nul));
-		assertSame(PacketLineIn.END, r.readString());
+		assertTrue(PacketLineIn.isEnd(r.readString()));
 
 		assertEquals("unpack error Missing commit " + P.name(), r.readString());
 		assertEquals("ng refs/heads/s n/a (unpacker error)", r.readString());
-		assertSame(PacketLineIn.END, r.readString());
+		assertTrue(PacketLineIn.isEnd(r.readString()));
 	}
 
 	private static void receive(final ReceivePack rp,
@@ -292,129 +284,173 @@ public class ReceivePackAdvertiseRefsHookTest extends LocalDiskRepositoryTestCas
 	@Test
 	public void testUsingHiddenDeltaBaseFails() throws Exception {
 		byte[] delta = { 0x1, 0x1, 0x1, 'c' };
-		TestRepository<Repository> s = new TestRepository<Repository>(src);
-		RevCommit N = s.commit().parent(B).add("q",
-				s.blob(BinaryDelta.apply(dst.open(b).getCachedBytes(), delta)))
-				.create();
+		try (TestRepository<Repository> s = new TestRepository<>(src)) {
+			src.incrementOpen();
+			RevCommit N = s.commit().parent(B)
+					.add("q",
+							s.blob(BinaryDelta.apply(
+									dst.open(b).getCachedBytes(), delta)))
+					.create();
 
-		final TemporaryBuffer.Heap pack = new TemporaryBuffer.Heap(1024);
-		packHeader(pack, 3);
-		copy(pack, src.open(N));
-		copy(pack, src.open(s.parseBody(N).getTree()));
-		pack.write((Constants.OBJ_REF_DELTA) << 4 | 4);
-		b.copyRawTo(pack);
-		deflate(pack, delta);
-		digest(pack);
+			final TemporaryBuffer.Heap pack = new TemporaryBuffer.Heap(1024);
+			packHeader(pack, 3);
+			copy(pack, src.open(N));
+			copy(pack, src.open(s.parseBody(N).getTree()));
+			pack.write((Constants.OBJ_REF_DELTA) << 4 | 4);
+			b.copyRawTo(pack);
+			deflate(pack, delta);
+			digest(pack);
 
-		final TemporaryBuffer.Heap inBuf = new TemporaryBuffer.Heap(1024);
-		final PacketLineOut inPckLine = new PacketLineOut(inBuf);
-		inPckLine.writeString(ObjectId.zeroId().name() + ' ' + N.name() + ' '
-				+ "refs/heads/s" + '\0'
-				+ BasePackPushConnection.CAPABILITY_REPORT_STATUS);
-		inPckLine.end();
-		pack.writeTo(inBuf, PM);
+			final TemporaryBuffer.Heap inBuf = new TemporaryBuffer.Heap(1024);
+			final PacketLineOut inPckLine = new PacketLineOut(inBuf);
+			inPckLine.writeString(ObjectId.zeroId().name() + ' ' + N.name()
+					+ ' ' + "refs/heads/s" + '\0'
+					+ BasePackPushConnection.CAPABILITY_REPORT_STATUS);
+			inPckLine.end();
+			pack.writeTo(inBuf, PM);
 
-		final TemporaryBuffer.Heap outBuf = new TemporaryBuffer.Heap(1024);
-		final ReceivePack rp = new ReceivePack(dst);
-		rp.setCheckReceivedObjects(true);
-		rp.setCheckReferencedObjectsAreReachable(true);
-		rp.setAdvertiseRefsHook(new HidePrivateHook());
-		try {
-			receive(rp, inBuf, outBuf);
-			fail("Expected UnpackException");
-		} catch (UnpackException failed) {
-			Throwable err = failed.getCause();
-			assertTrue(err instanceof MissingObjectException);
-			MissingObjectException moe = (MissingObjectException) err;
-			assertEquals(b, moe.getObjectId());
+			final TemporaryBuffer.Heap outBuf = new TemporaryBuffer.Heap(1024);
+			final ReceivePack rp = new ReceivePack(dst);
+			rp.setCheckReceivedObjects(true);
+			rp.setCheckReferencedObjectsAreReachable(true);
+			rp.setAdvertiseRefsHook(new HidePrivateHook());
+			try {
+				receive(rp, inBuf, outBuf);
+				fail("Expected UnpackException");
+			} catch (UnpackException failed) {
+				Throwable err = failed.getCause();
+				assertTrue(err instanceof MissingObjectException);
+				MissingObjectException moe = (MissingObjectException) err;
+				assertEquals(b, moe.getObjectId());
+			}
+
+			final PacketLineIn r = asPacketLineIn(outBuf);
+			String master = r.readString();
+			int nul = master.indexOf('\0');
+			assertTrue("has capability list", nul > 0);
+			assertEquals(B.name() + ' ' + R_MASTER, master.substring(0, nul));
+			assertTrue(PacketLineIn.isEnd(r.readString()));
+
+			assertEquals("unpack error Missing blob " + b.name(),
+					r.readString());
+			assertEquals("ng refs/heads/s n/a (unpacker error)",
+					r.readString());
+			assertTrue(PacketLineIn.isEnd(r.readString()));
 		}
-
-		final PacketLineIn r = asPacketLineIn(outBuf);
-		String master = r.readString();
-		int nul = master.indexOf('\0');
-		assertTrue("has capability list", nul > 0);
-		assertEquals(B.name() + ' ' + R_MASTER, master.substring(0, nul));
-		assertSame(PacketLineIn.END, r.readString());
-
-		assertEquals("unpack error Missing blob " + b.name(), r.readString());
-		assertEquals("ng refs/heads/s n/a (unpacker error)", r.readString());
-		assertSame(PacketLineIn.END, r.readString());
 	}
 
 	@Test
 	public void testUsingHiddenCommonBlobFails() throws Exception {
 		// Try to use the 'b' blob that is hidden.
 		//
-		TestRepository<Repository> s = new TestRepository<Repository>(src);
-		RevCommit N = s.commit().parent(B).add("q", s.blob("b")).create();
+		try (TestRepository<Repository> s = new TestRepository<>(src)) {
+			src.incrementOpen();
+			RevCommit N = s.commit().parent(B).add("q", s.blob("b")).create();
 
-		// But don't include it in the pack.
-		//
-		final TemporaryBuffer.Heap pack = new TemporaryBuffer.Heap(1024);
-		packHeader(pack, 2);
-		copy(pack, src.open(N));
-		copy(pack,src.open(s.parseBody(N).getTree()));
-		digest(pack);
+			// But don't include it in the pack.
+			//
+			final TemporaryBuffer.Heap pack = new TemporaryBuffer.Heap(1024);
+			packHeader(pack, 2);
+			copy(pack, src.open(N));
+			copy(pack, src.open(s.parseBody(N).getTree()));
+			digest(pack);
 
-		final TemporaryBuffer.Heap inBuf = new TemporaryBuffer.Heap(1024);
-		final PacketLineOut inPckLine = new PacketLineOut(inBuf);
-		inPckLine.writeString(ObjectId.zeroId().name() + ' ' + N.name() + ' '
-				+ "refs/heads/s" + '\0'
-				+ BasePackPushConnection.CAPABILITY_REPORT_STATUS);
-		inPckLine.end();
-		pack.writeTo(inBuf, PM);
+			final TemporaryBuffer.Heap inBuf = new TemporaryBuffer.Heap(1024);
+			final PacketLineOut inPckLine = new PacketLineOut(inBuf);
+			inPckLine.writeString(ObjectId.zeroId().name() + ' ' + N.name()
+					+ ' ' + "refs/heads/s" + '\0'
+					+ BasePackPushConnection.CAPABILITY_REPORT_STATUS);
+			inPckLine.end();
+			pack.writeTo(inBuf, PM);
 
-		final TemporaryBuffer.Heap outBuf = new TemporaryBuffer.Heap(1024);
-		final ReceivePack rp = new ReceivePack(dst);
-		rp.setCheckReceivedObjects(true);
-		rp.setCheckReferencedObjectsAreReachable(true);
-		rp.setAdvertiseRefsHook(new HidePrivateHook());
-		try {
-			receive(rp, inBuf, outBuf);
-			fail("Expected UnpackException");
-		} catch (UnpackException failed) {
-			Throwable err = failed.getCause();
-			assertTrue(err instanceof MissingObjectException);
-			MissingObjectException moe = (MissingObjectException) err;
-			assertEquals(b, moe.getObjectId());
+			final TemporaryBuffer.Heap outBuf = new TemporaryBuffer.Heap(1024);
+			final ReceivePack rp = new ReceivePack(dst);
+			rp.setCheckReceivedObjects(true);
+			rp.setCheckReferencedObjectsAreReachable(true);
+			rp.setAdvertiseRefsHook(new HidePrivateHook());
+			try {
+				receive(rp, inBuf, outBuf);
+				fail("Expected UnpackException");
+			} catch (UnpackException failed) {
+				Throwable err = failed.getCause();
+				assertTrue(err instanceof MissingObjectException);
+				MissingObjectException moe = (MissingObjectException) err;
+				assertEquals(b, moe.getObjectId());
+			}
+
+			final PacketLineIn r = asPacketLineIn(outBuf);
+			String master = r.readString();
+			int nul = master.indexOf('\0');
+			assertTrue("has capability list", nul > 0);
+			assertEquals(B.name() + ' ' + R_MASTER, master.substring(0, nul));
+			assertTrue(PacketLineIn.isEnd(r.readString()));
+
+			assertEquals("unpack error Missing blob " + b.name(),
+					r.readString());
+			assertEquals("ng refs/heads/s n/a (unpacker error)",
+					r.readString());
+			assertTrue(PacketLineIn.isEnd(r.readString()));
 		}
-
-		final PacketLineIn r = asPacketLineIn(outBuf);
-		String master = r.readString();
-		int nul = master.indexOf('\0');
-		assertTrue("has capability list", nul > 0);
-		assertEquals(B.name() + ' ' + R_MASTER, master.substring(0, nul));
-		assertSame(PacketLineIn.END, r.readString());
-
-		assertEquals("unpack error Missing blob " + b.name(), r.readString());
-		assertEquals("ng refs/heads/s n/a (unpacker error)", r.readString());
-		assertSame(PacketLineIn.END, r.readString());
 	}
 
 	@Test
 	public void testUsingUnknownBlobFails() throws Exception {
 		// Try to use the 'n' blob that is not on the server.
 		//
-		TestRepository<Repository> s = new TestRepository<Repository>(src);
-		RevBlob n = s.blob("n");
-		RevCommit N = s.commit().parent(B).add("q", n).create();
+		try (TestRepository<Repository> s = new TestRepository<>(src)) {
+			src.incrementOpen();
+			RevBlob n = s.blob("n");
+			RevCommit N = s.commit().parent(B).add("q", n).create();
 
-		// But don't include it in the pack.
-		//
-		final TemporaryBuffer.Heap pack = new TemporaryBuffer.Heap(1024);
-		packHeader(pack, 2);
-		copy(pack, src.open(N));
-		copy(pack,src.open(s.parseBody(N).getTree()));
-		digest(pack);
+			// But don't include it in the pack.
+			//
+			final TemporaryBuffer.Heap pack = new TemporaryBuffer.Heap(1024);
+			packHeader(pack, 2);
+			copy(pack, src.open(N));
+			copy(pack, src.open(s.parseBody(N).getTree()));
+			digest(pack);
 
-		final TemporaryBuffer.Heap inBuf = new TemporaryBuffer.Heap(1024);
-		final PacketLineOut inPckLine = new PacketLineOut(inBuf);
-		inPckLine.writeString(ObjectId.zeroId().name() + ' ' + N.name() + ' '
-				+ "refs/heads/s" + '\0'
-				+ BasePackPushConnection.CAPABILITY_REPORT_STATUS);
-		inPckLine.end();
-		pack.writeTo(inBuf, PM);
+			final TemporaryBuffer.Heap inBuf = new TemporaryBuffer.Heap(1024);
+			final PacketLineOut inPckLine = new PacketLineOut(inBuf);
+			inPckLine.writeString(ObjectId.zeroId().name() + ' ' + N.name()
+					+ ' ' + "refs/heads/s" + '\0'
+					+ BasePackPushConnection.CAPABILITY_REPORT_STATUS);
+			inPckLine.end();
+			pack.writeTo(inBuf, PM);
 
+			final TemporaryBuffer.Heap outBuf = new TemporaryBuffer.Heap(1024);
+			final ReceivePack rp = new ReceivePack(dst);
+			rp.setCheckReceivedObjects(true);
+			rp.setCheckReferencedObjectsAreReachable(true);
+			rp.setAdvertiseRefsHook(new HidePrivateHook());
+			try {
+				receive(rp, inBuf, outBuf);
+				fail("Expected UnpackException");
+			} catch (UnpackException failed) {
+				Throwable err = failed.getCause();
+				assertTrue(err instanceof MissingObjectException);
+				MissingObjectException moe = (MissingObjectException) err;
+				assertEquals(n, moe.getObjectId());
+			}
+
+			final PacketLineIn r = asPacketLineIn(outBuf);
+			String master = r.readString();
+			int nul = master.indexOf('\0');
+			assertTrue("has capability list", nul > 0);
+			assertEquals(B.name() + ' ' + R_MASTER, master.substring(0, nul));
+			assertTrue(PacketLineIn.isEnd(r.readString()));
+
+			assertEquals("unpack error Missing blob " + n.name(),
+					r.readString());
+			assertEquals("ng refs/heads/s n/a (unpacker error)",
+					r.readString());
+			assertTrue(PacketLineIn.isEnd(r.readString()));
+		}
+	}
+
+	@Test
+	public void testIncludesInvalidGitmodules() throws Exception {
+		final TemporaryBuffer.Heap inBuf = setupSourceRepoInvalidGitmodules();
 		final TemporaryBuffer.Heap outBuf = new TemporaryBuffer.Heap(1024);
 		final ReceivePack rp = new ReceivePack(dst);
 		rp.setCheckReceivedObjects(true);
@@ -424,10 +460,7 @@ public class ReceivePackAdvertiseRefsHookTest extends LocalDiskRepositoryTestCas
 			receive(rp, inBuf, outBuf);
 			fail("Expected UnpackException");
 		} catch (UnpackException failed) {
-			Throwable err = failed.getCause();
-			assertTrue(err instanceof MissingObjectException);
-			MissingObjectException moe = (MissingObjectException) err;
-			assertEquals(n, moe.getObjectId());
+			// Expected
 		}
 
 		final PacketLineIn r = asPacketLineIn(outBuf);
@@ -435,59 +468,101 @@ public class ReceivePackAdvertiseRefsHookTest extends LocalDiskRepositoryTestCas
 		int nul = master.indexOf('\0');
 		assertTrue("has capability list", nul > 0);
 		assertEquals(B.name() + ' ' + R_MASTER, master.substring(0, nul));
-		assertSame(PacketLineIn.END, r.readString());
+		assertTrue(PacketLineIn.isEnd(r.readString()));
 
-		assertEquals("unpack error Missing blob " + n.name(), r.readString());
+		String errorLine = r.readString();
+		assertTrue(errorLine.startsWith("unpack error"));
+		assertTrue(errorLine.contains("Invalid submodule URL '-"));
 		assertEquals("ng refs/heads/s n/a (unpacker error)", r.readString());
-		assertSame(PacketLineIn.END, r.readString());
+		assertTrue(PacketLineIn.isEnd(r.readString()));
+	}
+
+	private TemporaryBuffer.Heap setupSourceRepoInvalidGitmodules()
+			throws IOException, Exception, MissingObjectException {
+		String fakeGitmodules = new StringBuilder()
+				.append("[submodule \"test\"]\n")
+				.append("    path = xlib\n")
+				.append("    url = https://example.com/repo/xlib.git\n\n")
+				.append("[submodule \"test2\"]\n")
+				.append("    path = zlib\n")
+				.append("    url = -upayload.sh\n")
+				.toString();
+
+		try (TestRepository<Repository> s = new TestRepository<>(src)) {
+			src.incrementOpen();
+			RevBlob blob = s.blob(fakeGitmodules);
+			RevCommit N = s.commit().parent(B).add(".gitmodules", blob)
+					.create();
+			RevTree t = s.parseBody(N).getTree();
+
+			final TemporaryBuffer.Heap pack = new TemporaryBuffer.Heap(1024);
+			packHeader(pack, 3);
+			copy(pack, src.open(N));
+			copy(pack, src.open(t));
+			copy(pack, src.open(blob));
+			digest(pack);
+
+			final TemporaryBuffer.Heap inBuf = new TemporaryBuffer.Heap(1024);
+			final PacketLineOut inPckLine = new PacketLineOut(inBuf);
+			inPckLine.writeString(ObjectId.zeroId().name() + ' ' + N.name()
+					+ ' ' + "refs/heads/s" + '\0'
+					+ BasePackPushConnection.CAPABILITY_REPORT_STATUS);
+			inPckLine.end();
+			pack.writeTo(inBuf, PM);
+			return inBuf;
+		}
 	}
 
 	@Test
 	public void testUsingUnknownTreeFails() throws Exception {
-		TestRepository<Repository> s = new TestRepository<Repository>(src);
-		RevCommit N = s.commit().parent(B).add("q", s.blob("a")).create();
-		RevTree t = s.parseBody(N).getTree();
+		try (TestRepository<Repository> s = new TestRepository<>(src)) {
+			src.incrementOpen();
+			RevCommit N = s.commit().parent(B).add("q", s.blob("a")).create();
+			RevTree t = s.parseBody(N).getTree();
 
-		// Don't include the tree in the pack.
-		//
-		final TemporaryBuffer.Heap pack = new TemporaryBuffer.Heap(1024);
-		packHeader(pack, 1);
-		copy(pack, src.open(N));
-		digest(pack);
+			// Don't include the tree in the pack.
+			//
+			final TemporaryBuffer.Heap pack = new TemporaryBuffer.Heap(1024);
+			packHeader(pack, 1);
+			copy(pack, src.open(N));
+			digest(pack);
 
-		final TemporaryBuffer.Heap inBuf = new TemporaryBuffer.Heap(1024);
-		final PacketLineOut inPckLine = new PacketLineOut(inBuf);
-		inPckLine.writeString(ObjectId.zeroId().name() + ' ' + N.name() + ' '
-				+ "refs/heads/s" + '\0'
-				+ BasePackPushConnection.CAPABILITY_REPORT_STATUS);
-		inPckLine.end();
-		pack.writeTo(inBuf, PM);
+			final TemporaryBuffer.Heap inBuf = new TemporaryBuffer.Heap(1024);
+			final PacketLineOut inPckLine = new PacketLineOut(inBuf);
+			inPckLine.writeString(ObjectId.zeroId().name() + ' ' + N.name()
+					+ ' ' + "refs/heads/s" + '\0'
+					+ BasePackPushConnection.CAPABILITY_REPORT_STATUS);
+			inPckLine.end();
+			pack.writeTo(inBuf, PM);
 
-		final TemporaryBuffer.Heap outBuf = new TemporaryBuffer.Heap(1024);
-		final ReceivePack rp = new ReceivePack(dst);
-		rp.setCheckReceivedObjects(true);
-		rp.setCheckReferencedObjectsAreReachable(true);
-		rp.setAdvertiseRefsHook(new HidePrivateHook());
-		try {
-			receive(rp, inBuf, outBuf);
-			fail("Expected UnpackException");
-		} catch (UnpackException failed) {
-			Throwable err = failed.getCause();
-			assertTrue(err instanceof MissingObjectException);
-			MissingObjectException moe = (MissingObjectException) err;
-			assertEquals(t, moe.getObjectId());
+			final TemporaryBuffer.Heap outBuf = new TemporaryBuffer.Heap(1024);
+			final ReceivePack rp = new ReceivePack(dst);
+			rp.setCheckReceivedObjects(true);
+			rp.setCheckReferencedObjectsAreReachable(true);
+			rp.setAdvertiseRefsHook(new HidePrivateHook());
+			try {
+				receive(rp, inBuf, outBuf);
+				fail("Expected UnpackException");
+			} catch (UnpackException failed) {
+				Throwable err = failed.getCause();
+				assertTrue(err instanceof MissingObjectException);
+				MissingObjectException moe = (MissingObjectException) err;
+				assertEquals(t, moe.getObjectId());
+			}
+
+			final PacketLineIn r = asPacketLineIn(outBuf);
+			String master = r.readString();
+			int nul = master.indexOf('\0');
+			assertTrue("has capability list", nul > 0);
+			assertEquals(B.name() + ' ' + R_MASTER, master.substring(0, nul));
+			assertTrue(PacketLineIn.isEnd(r.readString()));
+
+			assertEquals("unpack error Missing tree " + t.name(),
+					r.readString());
+			assertEquals("ng refs/heads/s n/a (unpacker error)",
+					r.readString());
+			assertTrue(PacketLineIn.isEnd(r.readString()));
 		}
-
-		final PacketLineIn r = asPacketLineIn(outBuf);
-		String master = r.readString();
-		int nul = master.indexOf('\0');
-		assertTrue("has capability list", nul > 0);
-		assertEquals(B.name() + ' ' + R_MASTER, master.substring(0, nul));
-		assertSame(PacketLineIn.END, r.readString());
-
-		assertEquals("unpack error Missing tree " + t.name(), r.readString());
-		assertEquals("ng refs/heads/s n/a (unpacker error)", r.readString());
-		assertSame(PacketLineIn.END, r.readString());
 	}
 
 	private static void packHeader(TemporaryBuffer.Heap tinyPack, int cnt)
@@ -564,8 +639,9 @@ public class ReceivePackAdvertiseRefsHookTest extends LocalDiskRepositoryTestCas
 	}
 
 	private static final class HidePrivateHook extends AbstractAdvertiseRefsHook {
+		@Override
 		public Map<String, Ref> getAdvertisedRefs(Repository r, RevWalk revWalk) {
-			Map<String, Ref> refs = new HashMap<String, Ref>(r.getAllRefs());
+			Map<String, Ref> refs = new HashMap<>(r.getAllRefs());
 			assertNotNull(refs.remove(R_PRIVATE));
 			return refs;
 		}

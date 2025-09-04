@@ -1,57 +1,29 @@
 /*
- * Copyright (C) 2011, Abhishek Bhatnagar <abhatnag@redhat.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2011, Abhishek Bhatnagar <abhatnag@redhat.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 package org.eclipse.jgit.api;
 
+import static org.eclipse.jgit.lib.Constants.DOT_GIT_MODULES;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import java.io.File;
+import java.io.IOException;
 import java.util.Set;
 import java.util.TreeSet;
 
 import org.eclipse.jgit.api.errors.GitAPIException;
+import org.eclipse.jgit.api.errors.NoFilepatternException;
 import org.eclipse.jgit.errors.NoWorkTreeException;
 import org.eclipse.jgit.junit.RepositoryTestCase;
+import org.eclipse.jgit.lib.Repository;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -61,6 +33,7 @@ import org.junit.Test;
 public class CleanCommandTest extends RepositoryTestCase {
 	private Git git;
 
+	@Override
 	@Before
 	public void setUp() throws Exception {
 		super.setUp();
@@ -92,7 +65,7 @@ public class CleanCommandTest extends RepositoryTestCase {
 		StatusCommand command = git.status();
 		Status status = command.call();
 		Set<String> files = status.getUntracked();
-		assertTrue(files.size() > 0);
+		assertFalse(files.isEmpty());
 
 		// run clean
 		Set<String> cleanedFiles = git.clean().call();
@@ -114,7 +87,7 @@ public class CleanCommandTest extends RepositoryTestCase {
 		StatusCommand command = git.status();
 		Status status = command.call();
 		Set<String> files = status.getUntracked();
-		assertTrue(files.size() > 0);
+		assertFalse(files.isEmpty());
 
 		// run clean
 		Set<String> cleanedFiles = git.clean().setCleanDirectories(true).call();
@@ -122,7 +95,7 @@ public class CleanCommandTest extends RepositoryTestCase {
 		status = git.status().call();
 		files = status.getUntracked();
 
-		assertTrue(files.size() == 0);
+		assertTrue(files.isEmpty());
 		assertTrue(cleanedFiles.contains("File2.txt"));
 		assertTrue(cleanedFiles.contains("File3.txt"));
 		assertTrue(!cleanedFiles.contains("sub-noclean/File1.txt"));
@@ -137,10 +110,10 @@ public class CleanCommandTest extends RepositoryTestCase {
 		StatusCommand command = git.status();
 		Status status = command.call();
 		Set<String> files = status.getUntracked();
-		assertTrue(files.size() > 0);
+		assertFalse(files.isEmpty());
 
 		// run clean with setPaths
-		Set<String> paths = new TreeSet<String>();
+		Set<String> paths = new TreeSet<>();
 		paths.add("File3.txt");
 		Set<String> cleanedFiles = git.clean().setPaths(paths).call();
 
@@ -158,7 +131,7 @@ public class CleanCommandTest extends RepositoryTestCase {
 		StatusCommand command = git.status();
 		Status status = command.call();
 		Set<String> files = status.getUntracked();
-		assertTrue(files.size() > 0);
+		assertFalse(files.isEmpty());
 
 		// run clean
 		Set<String> cleanedFiles = git.clean().setDryRun(true).call();
@@ -180,7 +153,7 @@ public class CleanCommandTest extends RepositoryTestCase {
 		StatusCommand command = git.status();
 		Status status = command.call();
 		Set<String> files = status.getUntracked();
-		assertTrue(files.size() > 0);
+		assertFalse(files.isEmpty());
 
 		// run clean
 		Set<String> cleanedFiles = git.clean().setDryRun(true)
@@ -227,4 +200,126 @@ public class CleanCommandTest extends RepositoryTestCase {
 		assertTrue(cleanedFiles.contains("ignored-dir/"));
 	}
 
+	@Test
+	public void testCleanDirsWithPrefixFolder() throws Exception {
+		String path = "sub/foo.txt";
+		writeTrashFile(path, "sub is a prefix of sub-noclean");
+		git.add().addFilepattern(path).call();
+		Status beforeCleanStatus = git.status().call();
+		assertTrue(beforeCleanStatus.getAdded().contains(path));
+
+		Set<String> cleanedFiles = git.clean().setCleanDirectories(true).call();
+
+		// The "sub" directory should not be cleaned.
+		assertTrue(!cleanedFiles.contains(path + "/"));
+
+		assertTrue(cleanedFiles.contains("File2.txt"));
+		assertTrue(cleanedFiles.contains("File3.txt"));
+		assertTrue(!cleanedFiles.contains("sub-noclean/File1.txt"));
+		assertTrue(cleanedFiles.contains("sub-noclean/File2.txt"));
+		assertTrue(cleanedFiles.contains("sub-clean/"));
+		assertTrue(cleanedFiles.size() == 4);
+	}
+
+	@Test
+	public void testCleanDirsWithSubmodule() throws Exception {
+		SubmoduleAddCommand command = new SubmoduleAddCommand(db);
+		String path = "sub";
+		command.setPath(path);
+		String uri = db.getDirectory().toURI().toString();
+		command.setURI(uri);
+		try (Repository repo = command.call()) {
+			// Unused
+		}
+
+		Status beforeCleanStatus = git.status().call();
+		assertTrue(beforeCleanStatus.getAdded().contains(DOT_GIT_MODULES));
+		assertTrue(beforeCleanStatus.getAdded().contains(path));
+
+		Set<String> cleanedFiles = git.clean().setCleanDirectories(true).call();
+
+		// The submodule should not be cleaned.
+		assertTrue(!cleanedFiles.contains(path + "/"));
+
+		assertTrue(cleanedFiles.contains("File2.txt"));
+		assertTrue(cleanedFiles.contains("File3.txt"));
+		assertTrue(!cleanedFiles.contains("sub-noclean/File1.txt"));
+		assertTrue(cleanedFiles.contains("sub-noclean/File2.txt"));
+		assertTrue(cleanedFiles.contains("sub-clean/"));
+		assertTrue(cleanedFiles.size() == 4);
+	}
+
+	@Test
+	public void testCleanDirsWithRepository() throws Exception {
+		// Set up a repository inside the outer repository
+		String innerRepoName = "inner-repo";
+		File innerDir = new File(trash, innerRepoName);
+		innerDir.mkdir();
+		InitCommand initRepoCommand = new InitCommand();
+		initRepoCommand.setDirectory(innerDir);
+		initRepoCommand.call();
+
+		Status beforeCleanStatus = git.status().call();
+		Set<String> untrackedFolders = beforeCleanStatus.getUntrackedFolders();
+		Set<String> untrackedFiles = beforeCleanStatus.getUntracked();
+
+		// The inner repository should be listed as an untracked file
+		assertTrue(untrackedFiles.contains(innerRepoName));
+
+		// The inner repository should not be listed as an untracked folder
+		assertTrue(!untrackedFolders.contains(innerRepoName));
+
+		Set<String> cleanedFiles = git.clean().setCleanDirectories(true).call();
+
+		// The inner repository should not be cleaned.
+		assertTrue(!cleanedFiles.contains(innerRepoName + "/"));
+
+		assertTrue(cleanedFiles.contains("File2.txt"));
+		assertTrue(cleanedFiles.contains("File3.txt"));
+		assertTrue(!cleanedFiles.contains("sub-noclean/File1.txt"));
+		assertTrue(cleanedFiles.contains("sub-noclean/File2.txt"));
+		assertTrue(cleanedFiles.contains("sub-clean/"));
+		assertTrue(cleanedFiles.size() == 4);
+
+		Set<String> forceCleanedFiles = git.clean().setCleanDirectories(true)
+				.setForce(true).call();
+
+		// The inner repository should be cleaned this time
+		assertTrue(forceCleanedFiles.contains(innerRepoName + "/"));
+	}
+
+	@Test
+	// To proof Bug 514434. No assertions, but before the bugfix
+	// this test was throwing Exceptions
+	public void testFilesShouldBeCleanedInSubSubFolders()
+			throws IOException, NoFilepatternException, GitAPIException {
+		writeTrashFile(".gitignore",
+				"/ignored-dir\n/sub-noclean/Ignored.txt\n/this_is_ok\n/this_is/not_ok\n");
+		git.add().addFilepattern(".gitignore").call();
+		git.commit().setMessage("adding .gitignore").call();
+		writeTrashFile("this_is_ok/more/subdirs/file.txt", "1");
+		writeTrashFile("this_is/not_ok/more/subdirs/file.txt", "2");
+		git.clean().setCleanDirectories(true).setIgnore(false).call();
+	}
+
+	@Test
+	public void testPrefix() throws Exception {
+		File a = writeTrashFile("a.txt", "a");
+		File b = writeTrashFile("a/a.txt", "sub a");
+		File dir = b.getParentFile();
+		git.clean().call();
+		assertFalse(a.exists());
+		assertTrue(dir.exists());
+		assertTrue(b.exists());
+	}
+
+	@Test
+	public void testPrefixWithDir() throws Exception {
+		File a = writeTrashFile("a.txt", "a");
+		File b = writeTrashFile("a/a.txt", "sub a");
+		File dir = b.getParentFile();
+		git.clean().setCleanDirectories(true).call();
+		assertFalse(a.exists());
+		assertFalse(dir.exists());
+	}
 }

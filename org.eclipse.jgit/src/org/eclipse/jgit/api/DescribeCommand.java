@@ -1,64 +1,40 @@
 /*
- * Copyright (C) 2013, CloudBees, Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2013, CloudBees, Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 package org.eclipse.jgit.api;
 
+import static org.eclipse.jgit.lib.Constants.R_REFS;
 import static org.eclipse.jgit.lib.Constants.R_TAGS;
+import static org.eclipse.jgit.lib.TypedConfigGetter.UNSET_INT;
 
 import java.io.IOException;
 import java.text.MessageFormat;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashMap;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.api.errors.JGitInternalException;
 import org.eclipse.jgit.api.errors.RefNotFoundException;
 import org.eclipse.jgit.errors.IncorrectObjectTypeException;
+import org.eclipse.jgit.errors.InvalidPatternException;
 import org.eclipse.jgit.errors.MissingObjectException;
+import org.eclipse.jgit.fnmatch.FileNameMatcher;
 import org.eclipse.jgit.internal.JGitText;
+import org.eclipse.jgit.lib.AbbrevConfig;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.Ref;
@@ -66,6 +42,7 @@ import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.revwalk.RevFlag;
 import org.eclipse.jgit.revwalk.RevFlagSet;
+import org.eclipse.jgit.revwalk.RevTag;
 import org.eclipse.jgit.revwalk.RevWalk;
 
 /**
@@ -94,8 +71,35 @@ public class DescribeCommand extends GitCommand<String> {
 	private boolean longDesc;
 
 	/**
+	 * Pattern matchers to be applied to tags under consideration.
+	 */
+	private List<FileNameMatcher> matchers = new ArrayList<>();
+
+	/**
+	 * Whether to use all refs in the refs/ namespace
+	 */
+	private boolean useAll;
+
+	/**
+	 * Whether to use all tags (incl. lightweight) or not.
+	 */
+	private boolean useTags;
+
+	/**
+	 * Whether to show a uniquely abbreviated commit hash as a fallback or not.
+	 */
+	private boolean always;
+
+	/**
+	 * The prefix length to use when abbreviating a commit hash.
+	 */
+	private int abbrev = UNSET_INT;
+
+	/**
+	 * Constructor for DescribeCommand.
 	 *
 	 * @param repo
+	 *            the {@link org.eclipse.jgit.lib.Repository}
 	 */
 	protected DescribeCommand(Repository repo) {
 		super(repo);
@@ -113,7 +117,7 @@ public class DescribeCommand extends GitCommand<String> {
 	 *             the supplied commit does not exist.
 	 * @throws IncorrectObjectTypeException
 	 *             the supplied id is not a commit or an annotated tag.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             a pack file or loose object could not be read.
 	 */
 	public DescribeCommand setTarget(ObjectId target) throws IOException {
@@ -125,14 +129,15 @@ public class DescribeCommand extends GitCommand<String> {
 	 * Sets the commit to be described.
 	 *
 	 * @param rev
-	 * 		Commit ID, tag, branch, ref, etc.
-	 * 		See {@link Repository#resolve(String)} for allowed syntax.
+	 *            Commit ID, tag, branch, ref, etc. See
+	 *            {@link org.eclipse.jgit.lib.Repository#resolve(String)} for
+	 *            allowed syntax.
 	 * @return {@code this}
 	 * @throws IncorrectObjectTypeException
 	 *             the supplied id is not a commit or an annotated tag.
-	 * @throws RefNotFoundException
-	 * 				the given rev didn't resolve to any object.
-	 * @throws IOException
+	 * @throws org.eclipse.jgit.api.errors.RefNotFoundException
+	 *             the given rev didn't resolve to any object.
+	 * @throws java.io.IOException
 	 *             a pack file or loose object could not be read.
 	 */
 	public DescribeCommand setTarget(String rev) throws IOException,
@@ -150,7 +155,6 @@ public class DescribeCommand extends GitCommand<String> {
 	 * @param longDesc
 	 *            <code>true</code> if always the long format should be used.
 	 * @return {@code this}
-	 *
 	 * @see <a
 	 *      href="https://www.kernel.org/pub/software/scm/git/docs/git-describe.html"
 	 *      >Git documentation about describe</a>
@@ -161,42 +165,180 @@ public class DescribeCommand extends GitCommand<String> {
 		return this;
 	}
 
-	private String longDescription(Ref tag, int depth, ObjectId tip)
-			throws IOException {
-		return String.format(
-				"%s-%d-g%s", tag.getName().substring(R_TAGS.length()), //$NON-NLS-1$
-				Integer.valueOf(depth), w.getObjectReader().abbreviate(tip)
-						.name());
+	/**
+	 * Instead of using only the annotated tags, use any ref found in refs/
+	 * namespace. This option enables matching any known branch,
+	 * remote-tracking branch, or lightweight tag.
+	 *
+	 * @param all
+	 *            <code>true</code> enables matching any ref found in refs/
+	 *            like setting option --all in c git
+	 * @return {@code this}
+	 * @since 5.10
+	 */
+	public DescribeCommand setAll(boolean all) {
+		this.useAll = all;
+		return this;
 	}
 
 	/**
+	 * Instead of using only the annotated tags, use any tag found in refs/tags
+	 * namespace. This option enables matching lightweight (non-annotated) tags
+	 * or not.
+	 *
+	 * @param tags
+	 *            <code>true</code> enables matching lightweight (non-annotated)
+	 *            tags like setting option --tags in c git
+	 * @return {@code this}
+	 * @since 5.0
+	 */
+	public DescribeCommand setTags(boolean tags) {
+		this.useTags = tags;
+		return this;
+	}
+
+	/**
+	 * Always describe the commit by eventually falling back to a uniquely
+	 * abbreviated commit hash if no other name matches.
+	 *
+	 * @param always
+	 *            <code>true</code> enables falling back to a uniquely
+	 *            abbreviated commit hash
+	 * @return {@code this}
+	 * @since 5.4
+	 */
+	public DescribeCommand setAlways(boolean always) {
+		this.always = always;
+		return this;
+	}
+
+	/**
+	 * Sets the prefix length to use when abbreviating an object SHA-1.
+	 *
+	 * @param abbrev
+	 *            minimum length of the abbreviated string. Must be in the range
+	 *            [{@value AbbrevConfig#MIN_ABBREV},
+	 *            {@value Constants#OBJECT_ID_STRING_LENGTH}].
+	 * @return {@code this}
+	 * @since 6.1
+	 */
+	public DescribeCommand setAbbrev(int abbrev) {
+		if (abbrev == 0) {
+			this.abbrev = 0;
+		} else {
+			this.abbrev = AbbrevConfig.capAbbrev(abbrev);
+		}
+		return this;
+	}
+
+	private String longDescription(Ref tag, int depth, ObjectId tip)
+			throws IOException {
+		if (abbrev == 0) {
+			return formatRefName(tag.getName());
+		}
+		return String.format("%s-%d-g%s", formatRefName(tag.getName()), //$NON-NLS-1$
+				Integer.valueOf(depth),
+				w.getObjectReader().abbreviate(tip, abbrev).name());
+	}
+
+	/**
+	 * Sets one or more {@code glob(7)} patterns that tags must match to be
+	 * considered. If multiple patterns are provided, tags only need match one
+	 * of them.
+	 *
+	 * @param patterns
+	 *            the {@code glob(7)} pattern or patterns
+	 * @return {@code this}
+	 * @throws org.eclipse.jgit.errors.InvalidPatternException
+	 *             if the pattern passed in was invalid.
+	 * @see <a href=
+	 *      "https://www.kernel.org/pub/software/scm/git/docs/git-describe.html"
+	 *      >Git documentation about describe</a>
+	 * @since 4.9
+	 */
+	public DescribeCommand setMatch(String... patterns) throws InvalidPatternException {
+		for (String p : patterns) {
+			matchers.add(new FileNameMatcher(p, null));
+		}
+		return this;
+	}
+
+	private final Comparator<Ref> TAG_TIE_BREAKER = new Comparator<>() {
+
+		@Override
+		public int compare(Ref o1, Ref o2) {
+			try {
+				return tagDate(o2).compareTo(tagDate(o1));
+			} catch (IOException e) {
+				return 0;
+			}
+		}
+
+		private Date tagDate(Ref tag) throws IOException {
+			RevTag t = w.parseTag(tag.getObjectId());
+			w.parseBody(t);
+			return t.getTaggerIdent().getWhen();
+		}
+	};
+
+	private Optional<Ref> getBestMatch(List<Ref> tags) {
+		if (tags == null || tags.isEmpty()) {
+			return Optional.empty();
+		} else if (matchers.isEmpty()) {
+			Collections.sort(tags, TAG_TIE_BREAKER);
+			return Optional.of(tags.get(0));
+		} else {
+			// Find the first tag that matches in the stream of all tags
+			// filtered by matchers ordered by tie break order
+			Stream<Ref> matchingTags = Stream.empty();
+			for (FileNameMatcher matcher : matchers) {
+				Stream<Ref> m = tags.stream().filter(
+						tag -> {
+							matcher.append(formatRefName(tag.getName()));
+							boolean result = matcher.isMatch();
+							matcher.reset();
+							return result;
+						});
+				matchingTags = Stream.of(matchingTags, m).flatMap(i -> i);
+			}
+			return matchingTags.sorted(TAG_TIE_BREAKER).findFirst();
+		}
+	}
+
+	private ObjectId getObjectIdFromRef(Ref r) throws JGitInternalException {
+		try {
+			ObjectId key = repo.getRefDatabase().peel(r).getPeeledObjectId();
+			if (key == null) {
+				key = r.getObjectId();
+			}
+			return key;
+		} catch (IOException e) {
+			throw new JGitInternalException(e.getMessage(), e);
+		}
+	}
+
+	/**
+	 * {@inheritDoc}
+	 * <p>
 	 * Describes the specified commit. Target defaults to HEAD if no commit was
 	 * set explicitly.
-	 *
-	 * @return if there's a tag that points to the commit being described, this
-	 *         tag name is returned. Otherwise additional suffix is added to the
-	 *         nearest tag, just like git-describe(1).
-	 *         <p>
-	 *         If none of the ancestors of the commit being described has any
-	 *         tags at all, then this method returns null, indicating that
-	 *         there's no way to describe this tag.
 	 */
 	@Override
 	public String call() throws GitAPIException {
 		try {
 			checkCallable();
-
-			if (target == null)
+			if (target == null) {
 				setTarget(Constants.HEAD);
-
-			Map<ObjectId, Ref> tags = new HashMap<ObjectId, Ref>();
-
-			for (Ref r : repo.getRefDatabase().getRefs(R_TAGS).values()) {
-				ObjectId key = repo.peel(r).getPeeledObjectId();
-				if (key == null)
-					key = r.getObjectId();
-				tags.put(key, r);
 			}
+			if (abbrev == UNSET_INT) {
+				abbrev = AbbrevConfig.parseFromConfig(repo).get();
+			}
+
+			Collection<Ref> tagList = repo.getRefDatabase()
+					.getRefsByPrefix(useAll ? R_REFS : R_TAGS);
+			Map<ObjectId, List<Ref>> tags = tagList.stream()
+					.filter(this::filterLightweightTags)
+					.collect(Collectors.groupingBy(this::getObjectIdFromRef));
 
 			// combined flags of all the candidate instances
 			final RevFlagSet allFlags = new RevFlagSet();
@@ -240,13 +382,13 @@ public class DescribeCommand extends GitCommand<String> {
 				}
 
 			}
-			List<Candidate> candidates = new ArrayList<Candidate>();    // all the candidates we find
+			List<Candidate> candidates = new ArrayList<>();    // all the candidates we find
 
-			// is the target already pointing to a tag? if so, we are done!
-			Ref lucky = tags.get(target);
-			if (lucky != null) {
-				return longDesc ? longDescription(lucky, 0, target) : lucky
-						.getName().substring(R_TAGS.length());
+			// is the target already pointing to a suitable tag? if so, we are done!
+			Optional<Ref> bestMatch = getBestMatch(tags.get(target));
+			if (bestMatch.isPresent()) {
+				return longDesc ? longDescription(bestMatch.get(), 0, target) :
+						formatRefName(bestMatch.get().getName());
 			}
 
 			w.markStart(target);
@@ -258,9 +400,9 @@ public class DescribeCommand extends GitCommand<String> {
 					// if a tag already dominates this commit,
 					// then there's no point in picking a tag on this commit
 					// since the one that dominates it is always more preferable
-					Ref t = tags.get(c);
-					if (t != null) {
-						Candidate cd = new Candidate(c, t);
+					bestMatch = getBestMatch(tags.get(c));
+					if (bestMatch.isPresent()) {
+						Candidate cd = new Candidate(c, bestMatch.get());
 						candidates.add(cd);
 						cd.depth = seen;
 					}
@@ -301,14 +443,17 @@ public class DescribeCommand extends GitCommand<String> {
 			}
 
 			// if all the nodes are dominated by all the tags, the walk stops
-			if (candidates.isEmpty())
-				return null;
+			if (candidates.isEmpty()) {
+				return always
+						? w.getObjectReader()
+								.abbreviate(target,
+										AbbrevConfig.capAbbrev(abbrev))
+								.name()
+						: null;
+			}
 
-			Candidate best = Collections.min(candidates, new Comparator<Candidate>() {
-				public int compare(Candidate o1, Candidate o2) {
-					return o1.depth - o2.depth;
-				}
-			});
+			Candidate best = Collections.min(candidates,
+					(Candidate o1, Candidate o2) -> o1.depth - o2.depth);
 
 			return best.describe(target);
 		} catch (IOException e) {
@@ -316,6 +461,34 @@ public class DescribeCommand extends GitCommand<String> {
 		} finally {
 			setCallable(false);
 			w.close();
+		}
+	}
+
+	/**
+	 * Removes the refs/ or refs/tags prefix from tag names
+	 * @param name the name of the tag
+	 * @return the tag name with its prefix removed
+	 */
+	private String formatRefName(String name) {
+		return name.startsWith(R_TAGS) ? name.substring(R_TAGS.length()) :
+				name.substring(R_REFS.length());
+	}
+
+	/**
+	 * Whether we use lightweight tags or not for describe Candidates
+	 *
+	 * @param ref
+	 *            reference under inspection
+	 * @return true if it should be used for describe or not regarding
+	 *         {@link org.eclipse.jgit.api.DescribeCommand#useTags}
+	 */
+	@SuppressWarnings("null")
+	private boolean filterLightweightTags(Ref ref) {
+		ObjectId id = ref.getObjectId();
+		try {
+			return this.useAll || this.useTags || (id != null && (w.parseTag(id) != null));
+		} catch (IOException e) {
+			return false;
 		}
 	}
 }

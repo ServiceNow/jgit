@@ -1,67 +1,43 @@
 /*
- * Copyright (C) 2011, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2011, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.internal.storage.dfs;
 
 import static org.eclipse.jgit.internal.storage.dfs.DfsObjDatabase.PackSource.COMPACT;
+import static org.eclipse.jgit.internal.storage.dfs.DfsObjDatabase.PackSource.GC;
 import static org.eclipse.jgit.internal.storage.pack.PackExt.INDEX;
 import static org.eclipse.jgit.internal.storage.pack.PackExt.PACK;
+import static org.eclipse.jgit.internal.storage.pack.PackExt.REFTABLE;
 import static org.eclipse.jgit.internal.storage.pack.StoredObjectRepresentation.PACK_DELTA;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
 
 import org.eclipse.jgit.errors.IncorrectObjectTypeException;
 import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.internal.storage.file.PackIndex;
 import org.eclipse.jgit.internal.storage.file.PackReverseIndex;
 import org.eclipse.jgit.internal.storage.pack.PackWriter;
+import org.eclipse.jgit.internal.storage.reftable.ReftableCompactor;
+import org.eclipse.jgit.internal.storage.reftable.ReftableConfig;
 import org.eclipse.jgit.lib.AnyObjectId;
 import org.eclipse.jgit.lib.NullProgressMonitor;
 import org.eclipse.jgit.lib.ObjectId;
+import org.eclipse.jgit.lib.ObjectIdSet;
 import org.eclipse.jgit.lib.ProgressMonitor;
 import org.eclipse.jgit.revwalk.RevFlag;
 import org.eclipse.jgit.revwalk.RevObject;
@@ -88,16 +64,15 @@ import org.eclipse.jgit.util.io.CountingOutputStream;
  */
 public class DfsPackCompactor {
 	private final DfsRepository repo;
-
 	private final List<DfsPackFile> srcPacks;
+	private final List<DfsReftable> srcReftables;
+	private final List<ObjectIdSet> exclude;
 
-	private final List<PackWriter.ObjectIdSet> exclude;
-
-	private final List<DfsPackDescription> newPacks;
-
-	private final List<PackStatistics> newStats;
+	private PackStatistics newStats;
+	private DfsPackDescription outDesc;
 
 	private int autoAddSize;
+	private ReftableConfig reftableConfig;
 
 	private RevWalk rw;
 	private RevFlag added;
@@ -112,10 +87,22 @@ public class DfsPackCompactor {
 	public DfsPackCompactor(DfsRepository repository) {
 		repo = repository;
 		autoAddSize = 5 * 1024 * 1024; // 5 MiB
-		srcPacks = new ArrayList<DfsPackFile>();
-		exclude = new ArrayList<PackWriter.ObjectIdSet>(4);
-		newPacks = new ArrayList<DfsPackDescription>(1);
-		newStats = new ArrayList<PackStatistics>(1);
+		srcPacks = new ArrayList<>();
+		srcReftables = new ArrayList<>();
+		exclude = new ArrayList<>(4);
+	}
+
+	/**
+	 * Set configuration to write a reftable.
+	 *
+	 * @param cfg
+	 *            configuration to write a reftable. Reftable compacting is
+	 *            disabled (default) when {@code cfg} is {@code null}.
+	 * @return {@code this}
+	 */
+	public DfsPackCompactor setReftableConfig(ReftableConfig cfg) {
+		reftableConfig = cfg;
+		return this;
 	}
 
 	/**
@@ -136,13 +123,25 @@ public class DfsPackCompactor {
 	}
 
 	/**
-	 * Automatically select packs to be included, and add them.
+	 * Add a reftable to be compacted.
+	 *
+	 * @param table
+	 *            a reftable to combine.
+	 * @return {@code this}
+	 */
+	public DfsPackCompactor add(DfsReftable table) {
+		srcReftables.add(table);
+		return this;
+	}
+
+	/**
+	 * Automatically select pack and reftables to be included, and add them.
 	 * <p>
 	 * Packs are selected based on size, smaller packs get included while bigger
 	 * ones are omitted.
 	 *
 	 * @return {@code this}
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             existing packs cannot be read.
 	 */
 	public DfsPackCompactor autoAdd() throws IOException {
@@ -154,6 +153,16 @@ public class DfsPackCompactor {
 			else
 				exclude(pack);
 		}
+
+		if (reftableConfig != null) {
+			for (DfsReftable table : objdb.getReftables()) {
+				DfsPackDescription d = table.getPackDescription();
+				if (d.getPackSource() != GC
+						&& d.getFileSize(REFTABLE) < autoAddSize) {
+					add(table);
+				}
+			}
+		}
 		return this;
 	}
 
@@ -164,7 +173,7 @@ public class DfsPackCompactor {
 	 *            objects to not include.
 	 * @return {@code this}.
 	 */
-	public DfsPackCompactor exclude(PackWriter.ObjectIdSet set) {
+	public DfsPackCompactor exclude(ObjectIdSet set) {
 		exclude.add(set);
 		return this;
 	}
@@ -175,7 +184,7 @@ public class DfsPackCompactor {
 	 * @param pack
 	 *            objects to not include.
 	 * @return {@code this}.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             pack index cannot be loaded.
 	 */
 	public DfsPackCompactor exclude(DfsPackFile pack) throws IOException {
@@ -183,11 +192,7 @@ public class DfsPackCompactor {
 		try (DfsReader ctx = (DfsReader) repo.newObjectReader()) {
 			idx = pack.getPackIndex(ctx);
 		}
-		return exclude(new PackWriter.ObjectIdSet() {
-			public boolean contains(AnyObjectId id) {
-				return idx.hasObject(id);
-			}
-		});
+		return exclude(idx);
 	}
 
 	/**
@@ -196,85 +201,172 @@ public class DfsPackCompactor {
 	 * @param pm
 	 *            progress monitor to receive updates on as packing may take a
 	 *            while, depending on the size of the repository.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the packs cannot be compacted.
 	 */
 	public void compact(ProgressMonitor pm) throws IOException {
-		if (pm == null)
+		if (pm == null) {
 			pm = NullProgressMonitor.INSTANCE;
+		}
 
 		DfsObjDatabase objdb = repo.getObjectDatabase();
-		try (DfsReader ctx = (DfsReader) objdb.newReader()) {
-			PackConfig pc = new PackConfig(repo);
-			pc.setIndexVersion(2);
-			pc.setDeltaCompress(false);
-			pc.setReuseDeltas(true);
-			pc.setReuseObjects(true);
+		try (DfsReader ctx = objdb.newReader()) {
+			if (reftableConfig != null && !srcReftables.isEmpty()) {
+				compactReftables(ctx);
+			}
+			compactPacks(ctx, pm);
 
-			PackWriter pw = new PackWriter(pc, ctx);
-			try {
-				pw.setDeltaBaseAsOffset(true);
-				pw.setReuseDeltaCommits(false);
-
-				addObjectsToPack(pw, ctx, pm);
-				if (pw.getObjectCount() == 0) {
-					List<DfsPackDescription> remove = toPrune();
-					if (remove.size() > 0)
-						objdb.commitPack(
-								Collections.<DfsPackDescription>emptyList(),
-								remove);
-					return;
-				}
-
-				boolean rollback = true;
-				DfsPackDescription pack = objdb.newPack(COMPACT);
-				try {
-					writePack(objdb, pack, pw, pm);
-					writeIndex(objdb, pack, pw);
-
-					PackStatistics stats = pw.getStatistics();
-					pw.close();
-					pw = null;
-
-					pack.setPackStats(stats);
-					objdb.commitPack(Collections.singletonList(pack), toPrune());
-					newPacks.add(pack);
-					newStats.add(stats);
-					rollback = false;
-				} finally {
-					if (rollback)
-						objdb.rollbackPack(Collections.singletonList(pack));
-				}
-			} finally {
-				if (pw != null)
-					pw.close();
+			List<DfsPackDescription> commit = getNewPacks();
+			Collection<DfsPackDescription> remove = toPrune();
+			if (!commit.isEmpty() || !remove.isEmpty()) {
+				objdb.commitPack(commit, remove);
 			}
 		} finally {
 			rw = null;
 		}
 	}
 
-	/** @return all of the source packs that fed into this compaction. */
-	public List<DfsPackDescription> getSourcePacks() {
-		return toPrune();
+	private void compactPacks(DfsReader ctx, ProgressMonitor pm)
+			throws IOException, IncorrectObjectTypeException {
+		DfsObjDatabase objdb = repo.getObjectDatabase();
+		PackConfig pc = new PackConfig(repo);
+		pc.setIndexVersion(2);
+		pc.setDeltaCompress(false);
+		pc.setReuseDeltas(true);
+		pc.setReuseObjects(true);
+
+		try (PackWriter pw = new PackWriter(pc, ctx)) {
+			pw.setDeltaBaseAsOffset(true);
+			pw.setReuseDeltaCommits(false);
+
+			addObjectsToPack(pw, ctx, pm);
+			if (pw.getObjectCount() == 0) {
+				return;
+			}
+
+			boolean rollback = true;
+			initOutDesc(objdb);
+			try {
+				writePack(objdb, outDesc, pw, pm);
+				writeIndex(objdb, outDesc, pw);
+
+				PackStatistics stats = pw.getStatistics();
+
+				outDesc.setPackStats(stats);
+				newStats = stats;
+				rollback = false;
+			} finally {
+				if (rollback) {
+					objdb.rollbackPack(Collections.singletonList(outDesc));
+				}
+			}
+		}
 	}
 
-	/** @return new packs created by this compaction. */
+	private long estimatePackSize() {
+		// Every pack file contains 12 bytes of header and 20 bytes of trailer.
+		// Include the final pack file header and trailer size here and ignore
+		// the same from individual pack files.
+		long size = 32;
+		for (DfsPackFile pack : srcPacks) {
+			size += pack.getPackDescription().getFileSize(PACK) - 32;
+		}
+		return size;
+	}
+
+	private void compactReftables(DfsReader ctx) throws IOException {
+		DfsObjDatabase objdb = repo.getObjectDatabase();
+		Collections.sort(srcReftables, objdb.reftableComparator());
+
+		initOutDesc(objdb);
+		try (DfsReftableStack stack = DfsReftableStack.open(ctx, srcReftables);
+		     DfsOutputStream out = objdb.writeFile(outDesc, REFTABLE)) {
+			ReftableCompactor compact = new ReftableCompactor(out);
+			compact.addAll(stack.readers());
+			compact.setIncludeDeletes(true);
+			compact.setConfig(configureReftable(reftableConfig, out));
+			compact.compact();
+			outDesc.addFileExt(REFTABLE);
+			outDesc.setReftableStats(compact.getStats());
+		}
+	}
+
+	private void initOutDesc(DfsObjDatabase objdb) throws IOException {
+		if (outDesc == null) {
+			outDesc = objdb.newPack(COMPACT, estimatePackSize());
+		}
+	}
+
+	/**
+	 * Get all of the source packs that fed into this compaction.
+	 *
+	 * @return all of the source packs that fed into this compaction.
+	 */
+	public Collection<DfsPackDescription> getSourcePacks() {
+		Set<DfsPackDescription> src = new HashSet<>();
+		for (DfsPackFile pack : srcPacks) {
+			src.add(pack.getPackDescription());
+		}
+		for (DfsReftable table : srcReftables) {
+			src.add(table.getPackDescription());
+		}
+		return src;
+	}
+
+	/**
+	 * Get new packs created by this compaction.
+	 *
+	 * @return new packs created by this compaction.
+	 */
 	public List<DfsPackDescription> getNewPacks() {
-		return newPacks;
+		return outDesc != null
+				? Collections.singletonList(outDesc)
+				: Collections.emptyList();
 	}
 
-	/** @return statistics corresponding to the {@link #getNewPacks()}. */
+	/**
+	 * Get statistics corresponding to the {@link #getNewPacks()}.
+	 * May be null if statistics are not available.
+	 *
+	 * @return statistics corresponding to the {@link #getNewPacks()}.
+	 *
+	 */
 	public List<PackStatistics> getNewPackStatistics() {
-		return newStats;
+		return outDesc != null
+				? Collections.singletonList(newStats)
+				: Collections.emptyList();
 	}
 
-	private List<DfsPackDescription> toPrune() {
-		int cnt = srcPacks.size();
-		List<DfsPackDescription> all = new ArrayList<DfsPackDescription>(cnt);
-		for (DfsPackFile pack : srcPacks)
-			all.add(pack.getPackDescription());
-		return all;
+	private Collection<DfsPackDescription> toPrune() {
+		Set<DfsPackDescription> packs = new HashSet<>();
+		for (DfsPackFile pack : srcPacks) {
+			packs.add(pack.getPackDescription());
+		}
+
+		Set<DfsPackDescription> reftables = new HashSet<>();
+		for (DfsReftable table : srcReftables) {
+			reftables.add(table.getPackDescription());
+		}
+
+		for (Iterator<DfsPackDescription> i = packs.iterator(); i.hasNext();) {
+			DfsPackDescription d = i.next();
+			if (d.hasFileExt(REFTABLE) && !reftables.contains(d)) {
+				i.remove();
+			}
+		}
+
+		for (Iterator<DfsPackDescription> i = reftables.iterator();
+				i.hasNext();) {
+			DfsPackDescription d = i.next();
+			if (d.hasFileExt(PACK) && !packs.contains(d)) {
+				i.remove();
+			}
+		}
+
+		Set<DfsPackDescription> toPrune = new HashSet<>();
+		toPrune.addAll(packs);
+		toPrune.addAll(reftables);
+		return toPrune;
 	}
 
 	private void addObjectsToPack(PackWriter pw, DfsReader ctx,
@@ -283,16 +375,16 @@ public class DfsPackCompactor {
 		// Sort packs by description ordering, this places newer packs before
 		// older packs, allowing the PackWriter to be handed newer objects
 		// first and older objects last.
-		Collections.sort(srcPacks, new Comparator<DfsPackFile>() {
-			public int compare(DfsPackFile a, DfsPackFile b) {
-				return a.getPackDescription().compareTo(b.getPackDescription());
-			}
-		});
+		Collections.sort(
+				srcPacks,
+				Comparator.comparing(
+						DfsPackFile::getPackDescription,
+						DfsPackDescription.objectLookupComparator()));
 
 		rw = new RevWalk(ctx);
 		added = rw.newFlag("ADDED"); //$NON-NLS-1$
 		isBase = rw.newFlag("IS_BASE"); //$NON-NLS-1$
-		List<RevObject> baseObjects = new BlockList<RevObject>();
+		List<RevObject> baseObjects = new BlockList<>();
 
 		pm.beginTask(JGitText.get().countingObjects, ProgressMonitor.UNKNOWN);
 		for (DfsPackFile src : srcPacks) {
@@ -336,51 +428,55 @@ public class DfsPackCompactor {
 	private List<ObjectIdWithOffset> toInclude(DfsPackFile src, DfsReader ctx)
 			throws IOException {
 		PackIndex srcIdx = src.getPackIndex(ctx);
-		List<ObjectIdWithOffset> want = new BlockList<ObjectIdWithOffset>(
+		List<ObjectIdWithOffset> want = new BlockList<>(
 				(int) srcIdx.getObjectCount());
 		SCAN: for (PackIndex.MutableEntry ent : srcIdx) {
 			ObjectId id = ent.toObjectId();
 			RevObject obj = rw.lookupOrNull(id);
 			if (obj != null && (obj.has(added) || obj.has(isBase)))
 				continue;
-			for (PackWriter.ObjectIdSet e : exclude)
+			for (ObjectIdSet e : exclude)
 				if (e.contains(id))
 					continue SCAN;
 			want.add(new ObjectIdWithOffset(id, ent.getOffset()));
 		}
-		Collections.sort(want, new Comparator<ObjectIdWithOffset>() {
-			public int compare(ObjectIdWithOffset a, ObjectIdWithOffset b) {
-				return Long.signum(a.offset - b.offset);
-			}
-		});
+		Collections.sort(want, (ObjectIdWithOffset a,
+				ObjectIdWithOffset b) -> Long.signum(a.offset - b.offset));
 		return want;
 	}
 
 	private static void writePack(DfsObjDatabase objdb,
 			DfsPackDescription pack,
 			PackWriter pw, ProgressMonitor pm) throws IOException {
-		DfsOutputStream out = objdb.writeFile(pack, PACK);
-		try {
+		try (DfsOutputStream out = objdb.writeFile(pack, PACK)) {
 			pw.writePack(pm, pm, out);
 			pack.addFileExt(PACK);
-		} finally {
-			out.close();
+			pack.setBlockSize(PACK, out.blockSize());
 		}
 	}
 
 	private static void writeIndex(DfsObjDatabase objdb,
 			DfsPackDescription pack,
 			PackWriter pw) throws IOException {
-		DfsOutputStream out = objdb.writeFile(pack, INDEX);
-		try {
+		try (DfsOutputStream out = objdb.writeFile(pack, INDEX)) {
 			CountingOutputStream cnt = new CountingOutputStream(out);
 			pw.writeIndex(cnt);
 			pack.addFileExt(INDEX);
 			pack.setFileSize(INDEX, cnt.getCount());
+			pack.setBlockSize(INDEX, out.blockSize());
 			pack.setIndexVersion(pw.getIndexVersion());
-		} finally {
-			out.close();
 		}
+	}
+
+	static ReftableConfig configureReftable(ReftableConfig cfg,
+			DfsOutputStream out) {
+		int bs = out.blockSize();
+		if (bs > 0) {
+			cfg = new ReftableConfig(cfg);
+			cfg.setRefBlockSize(bs);
+			cfg.setAlignBlocks(true);
+		}
+		return cfg;
 	}
 
 	private static class ObjectIdWithOffset extends ObjectId {

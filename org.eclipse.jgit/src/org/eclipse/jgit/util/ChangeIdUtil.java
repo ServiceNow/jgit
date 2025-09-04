@@ -1,53 +1,19 @@
 /*
- * Copyright (C) 2010, Robin Rosenberg
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, Robin Rosenberg and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 package org.eclipse.jgit.util;
 
-import java.io.IOException;
 import java.util.regex.Pattern;
 
 import org.eclipse.jgit.lib.Constants;
-import org.eclipse.jgit.lib.ObjectInserter;
 import org.eclipse.jgit.lib.ObjectId;
+import org.eclipse.jgit.lib.ObjectInserter;
 import org.eclipse.jgit.lib.PersonIdent;
 
 /**
@@ -83,19 +49,19 @@ public class ChangeIdUtil {
 	 * @param firstParentId
 	 *            parent id of previous commit or null
 	 * @param author
-	 *            the {@link PersonIdent} for the presumed author and time
+	 *            the {@link org.eclipse.jgit.lib.PersonIdent} for the presumed
+	 *            author and time
 	 * @param committer
-	 *            the {@link PersonIdent} for the presumed committer and time
+	 *            the {@link org.eclipse.jgit.lib.PersonIdent} for the presumed
+	 *            committer and time
 	 * @param message
 	 *            The commit message
 	 * @return the change id SHA1 string (without the 'I') or null if the
 	 *         message is not complete enough
-	 * @throws IOException
 	 */
 	public static ObjectId computeChangeId(final ObjectId treeId,
 			final ObjectId firstParentId, final PersonIdent author,
-			final PersonIdent committer, final String message)
-			throws IOException {
+			final PersonIdent committer, final String message) {
 		String cleanMessage = clean(message);
 		if (cleanMessage.length() == 0)
 			return null;
@@ -116,8 +82,7 @@ public class ChangeIdUtil {
 		b.append("\n\n"); //$NON-NLS-1$
 		b.append(cleanMessage);
 		try (ObjectInserter f = new ObjectInserter.Formatter()) {
-			return f.idFor(Constants.OBJ_COMMIT, //
-					b.toString().getBytes(Constants.CHARACTER_ENCODING));
+			return f.idFor(Constants.OBJ_COMMIT, Constants.encode(b.toString()));
 		}
 	}
 
@@ -142,7 +107,9 @@ public class ChangeIdUtil {
 	 * line.
 	 *
 	 * @param message
+	 *            a message.
 	 * @param changeId
+	 *            a Change-Id.
 	 * @return a commit message with an inserted Change-Id line
 	 */
 	public static String insertId(String message, ObjectId changeId) {
@@ -152,38 +119,40 @@ public class ChangeIdUtil {
 	/**
 	 * Find the right place to insert a Change-Id and return it.
 	 * <p>
-	 * If no Change-Id is found the Change-Id is inserted before
-	 * the first footer line but after a Bug line.
+	 * If no Change-Id is found the Change-Id is inserted before the first
+	 * footer line but after a Bug line.
 	 *
-	 * If Change-Id is found and replaceExisting is set to false,
-	 * the message is unchanged.
+	 * If Change-Id is found and replaceExisting is set to false, the message is
+	 * unchanged.
 	 *
-	 * If Change-Id is found and replaceExisting is set to true,
-	 * the Change-Id is replaced with {@code changeId}.
+	 * If Change-Id is found and replaceExisting is set to true, the Change-Id
+	 * is replaced with {@code changeId}.
 	 *
 	 * @param message
+	 *            a message.
 	 * @param changeId
+	 *            a Change-Id.
 	 * @param replaceExisting
+	 *            a boolean.
 	 * @return a commit message with an inserted Change-Id line
 	 */
 	public static String insertId(String message, ObjectId changeId,
 			boolean replaceExisting) {
 		int indexOfChangeId = indexOfChangeId(message, "\n"); //$NON-NLS-1$
 		if (indexOfChangeId > 0) {
-			if (!replaceExisting)
+			if (!replaceExisting) {
 				return message;
-			else {
-				StringBuilder ret = new StringBuilder(message.substring(0,
-						indexOfChangeId));
-				ret.append(CHANGE_ID);
-				ret.append(" I"); //$NON-NLS-1$
-				ret.append(ObjectId.toString(changeId));
-				int indexOfNextLineBreak = message.indexOf("\n", //$NON-NLS-1$
-						indexOfChangeId);
-				if (indexOfNextLineBreak > 0)
-					ret.append(message.substring(indexOfNextLineBreak));
-				return ret.toString();
 			}
+			StringBuilder ret = new StringBuilder(
+					message.substring(0, indexOfChangeId));
+			ret.append(CHANGE_ID);
+			ret.append(" I"); //$NON-NLS-1$
+			ret.append(ObjectId.toString(changeId));
+			int indexOfNextLineBreak = message.indexOf('\n',
+					indexOfChangeId);
+			if (indexOfNextLineBreak > 0)
+				ret.append(message.substring(indexOfNextLineBreak));
+			return ret.toString();
 		}
 
 		String[] lines = message.split("\n"); //$NON-NLS-1$
@@ -223,6 +192,7 @@ public class ChangeIdUtil {
 	 * only lines matching {@code footerPattern}.
 	 *
 	 * @param message
+	 *            a message.
 	 * @param delimiter
 	 *            the line delimiter, like "\n" or "\r\n", needed to find the
 	 *            footer

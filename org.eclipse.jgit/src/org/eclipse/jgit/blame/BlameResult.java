@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2011, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2011, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.blame;
@@ -78,7 +45,7 @@ public class BlameResult {
 	 *            the generator the result will consume records from.
 	 * @return the new result object. null if the generator cannot find the path
 	 *         it starts from.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the repository cannot be read.
 	 */
 	public static BlameResult create(BlameGenerator gen) throws IOException {
@@ -123,17 +90,27 @@ public class BlameResult {
 		sourcePaths = new String[cnt];
 	}
 
-	/** @return path of the file this result annotates. */
+	/**
+	 * Get result path
+	 *
+	 * @return path of the file this result annotates
+	 */
 	public String getResultPath() {
 		return resultPath;
 	}
 
-	/** @return contents of the result file, available for display. */
+	/**
+	 * Get result contents
+	 *
+	 * @return contents of the result file, available for display
+	 */
 	public RawText getResultContents() {
 		return resultContents;
 	}
 
-	/** Throw away the {@link #getResultContents()}. */
+	/**
+	 * Throw away the {@link #getResultContents()}.
+	 */
 	public void discardResultContents() {
 		resultContents = null;
 	}
@@ -227,7 +204,7 @@ public class BlameResult {
 	/**
 	 * Compute all pending information.
 	 *
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the repository cannot be read.
 	 */
 	public void computeAll() throws IOException {
@@ -252,26 +229,30 @@ public class BlameResult {
 	 * to determine how many lines of the result were computed.
 	 *
 	 * @return index that is now available. -1 if no more are available.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the repository cannot be read.
 	 */
 	public int computeNext() throws IOException {
 		BlameGenerator gen = generator;
-		if (gen == null)
+		if (gen == null) {
 			return -1;
+		}
 
 		if (gen.next()) {
 			loadFrom(gen);
 			lastLength = gen.getRegionLength();
 			return gen.getResultStart();
-		} else {
-			gen.close();
-			generator = null;
-			return -1;
 		}
+		gen.close();
+		generator = null;
+		return -1;
 	}
 
-	/** @return length of the last segment found by {@link #computeNext()}. */
+	/**
+	 * Get last length
+	 *
+	 * @return length of the last segment found by {@link #computeNext()}
+	 */
 	public int lastLength() {
 		return lastLength;
 	}
@@ -283,7 +264,7 @@ public class BlameResult {
 	 *            first index to examine (inclusive).
 	 * @param end
 	 *            end index (exclusive).
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the repository cannot be read.
 	 */
 	public void computeRange(int start, int end) throws IOException {
@@ -322,6 +303,7 @@ public class BlameResult {
 		}
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public String toString() {
 		StringBuilder r = new StringBuilder();

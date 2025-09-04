@@ -1,63 +1,32 @@
 /*
- * Copyright (C) 2010, 2013, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, 2013, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.transport;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.eclipse.jgit.util.HttpSupport.HDR_AUTHORIZATION;
 import static org.eclipse.jgit.util.HttpSupport.HDR_WWW_AUTHENTICATE;
 
 import java.io.IOException;
-import java.io.UnsupportedEncodingException;
 import java.net.URL;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.Random;
 
 import org.eclipse.jgit.transport.http.HttpConnection;
 import org.eclipse.jgit.util.Base64;
@@ -149,22 +118,32 @@ abstract class HttpAuthMethod {
 	 *
 	 * @param conn
 	 *            the connection that failed.
+	 * @param ignoreTypes
+	 *            authentication types to be ignored.
 	 * @return new authentication method to try.
 	 */
-	static HttpAuthMethod scanResponse(final HttpConnection conn) {
+	static HttpAuthMethod scanResponse(final HttpConnection conn,
+			Collection<Type> ignoreTypes) {
 		final Map<String, List<String>> headers = conn.getHeaderFields();
 		HttpAuthMethod authentication = Type.NONE.method(EMPTY_STRING);
 
-		for (final Entry<String, List<String>> entry : headers.entrySet()) {
+		for (Entry<String, List<String>> entry : headers.entrySet()) {
 			if (HDR_WWW_AUTHENTICATE.equalsIgnoreCase(entry.getKey())) {
 				if (entry.getValue() != null) {
-					for (final String value : entry.getValue()) {
+					for (String value : entry.getValue()) {
 						if (value != null && value.length() != 0) {
 							final String[] valuePart = value.split(
 									SCHEMA_NAME_SEPARATOR, 2);
 
 							try {
-								Type methodType = Type.valueOf(valuePart[0].toUpperCase());
+								Type methodType = Type.valueOf(
+										valuePart[0].toUpperCase(Locale.ROOT));
+
+								if ((ignoreTypes != null)
+										&& (ignoreTypes.contains(methodType))) {
+									continue;
+								}
+
 								if (authentication.getType().compareTo(methodType) >= 0) {
 									continue;
 								}
@@ -192,6 +171,12 @@ abstract class HttpAuthMethod {
 
 	protected final Type type;
 
+	/**
+	 * Constructor for HttpAuthMethod.
+	 *
+	 * @param type
+	 *            authentication method type
+	 */
 	protected HttpAuthMethod(Type type) {
 		this.type = type;
 	}
@@ -219,7 +204,8 @@ abstract class HttpAuthMethod {
 			if (credentialsProvider.supports(u, p)
 					&& credentialsProvider.get(uri, u, p)) {
 				username = u.getValue();
-				password = new String(p.getValue());
+				char[] v = p.getValue();
+				password = (v == null) ? null : new String(p.getValue());
 				p.clear();
 			} else
 				return false;
@@ -288,15 +274,15 @@ abstract class HttpAuthMethod {
 		}
 
 		@Override
-		void authorize(final String username, final String password) {
+		void authorize(String username, String password) {
 			this.user = username;
 			this.pass = password;
 		}
 
 		@Override
-		void configureRequest(final HttpConnection conn) throws IOException {
+		void configureRequest(HttpConnection conn) throws IOException {
 			String ident = user + ":" + pass; //$NON-NLS-1$
-			String enc = Base64.encodeBytes(ident.getBytes("UTF-8")); //$NON-NLS-1$
+			String enc = Base64.encodeBytes(ident.getBytes(UTF_8));
 			conn.setRequestProperty(HDR_AUTHORIZATION, type.getSchemeName()
 					+ " " + enc); //$NON-NLS-1$
 		}
@@ -304,7 +290,7 @@ abstract class HttpAuthMethod {
 
 	/** Performs HTTP digest authentication. */
 	private static class Digest extends HttpAuthMethod {
-		private static final Random PRNG = new Random();
+		private static final SecureRandom PRNG = new SecureRandom();
 
 		private final Map<String, String> params;
 
@@ -327,15 +313,15 @@ abstract class HttpAuthMethod {
 		}
 
 		@Override
-		void authorize(final String username, final String password) {
+		void authorize(String username, String password) {
 			this.user = username;
 			this.pass = password;
 		}
 
 		@SuppressWarnings("boxing")
 		@Override
-		void configureRequest(final HttpConnection conn) throws IOException {
-			final Map<String, String> r = new LinkedHashMap<String, String>();
+		void configureRequest(HttpConnection conn) throws IOException {
+			final Map<String, String> r = new LinkedHashMap<>();
 
 			final String realm = params.get("realm"); //$NON-NLS-1$
 			final String nonce = params.get("nonce"); //$NON-NLS-1$
@@ -410,25 +396,17 @@ abstract class HttpAuthMethod {
 		}
 
 		private static String H(String data) {
-			try {
-				MessageDigest md = newMD5();
-				md.update(data.getBytes("UTF-8")); //$NON-NLS-1$
-				return LHEX(md.digest());
-			} catch (UnsupportedEncodingException e) {
-				throw new RuntimeException("UTF-8 encoding not available", e); //$NON-NLS-1$
-			}
+			MessageDigest md = newMD5();
+			md.update(data.getBytes(UTF_8));
+			return LHEX(md.digest());
 		}
 
 		private static String KD(String secret, String data) {
-			try {
-				MessageDigest md = newMD5();
-				md.update(secret.getBytes("UTF-8")); //$NON-NLS-1$
-				md.update((byte) ':');
-				md.update(data.getBytes("UTF-8")); //$NON-NLS-1$
-				return LHEX(md.digest());
-			} catch (UnsupportedEncodingException e) {
-				throw new RuntimeException("UTF-8 encoding not available", e); //$NON-NLS-1$
-			}
+			MessageDigest md = newMD5();
+			md.update(secret.getBytes(UTF_8));
+			md.update((byte) ':');
+			md.update(data.getBytes(UTF_8));
+			return LHEX(md.digest());
 		}
 
 		private static MessageDigest newMD5() {
@@ -445,8 +423,7 @@ abstract class HttpAuthMethod {
 
 		private static String LHEX(byte[] bin) {
 			StringBuilder r = new StringBuilder(bin.length * 2);
-			for (int i = 0; i < bin.length; i++) {
-				byte b = bin[i];
+			for (byte b : bin) {
 				r.append(LHEX[(b >>> 4) & 0x0f]);
 				r.append(LHEX[b & 0x0f]);
 			}
@@ -454,7 +431,7 @@ abstract class HttpAuthMethod {
 		}
 
 		private static Map<String, String> parse(String auth) {
-			Map<String, String> p = new HashMap<String, String>();
+			Map<String, String> p = new HashMap<>();
 			int next = 0;
 			while (next < auth.length()) {
 				if (next < auth.length() && auth.charAt(next) == ',') {
@@ -529,7 +506,7 @@ abstract class HttpAuthMethod {
 			GSSManager gssManager = GSS_MANAGER_FACTORY.newInstance(conn
 					.getURL());
 			String host = conn.getURL().getHost();
-			String peerName = "HTTP@" + host.toLowerCase(); //$NON-NLS-1$
+			String peerName = "HTTP@" + host.toLowerCase(Locale.ROOT); //$NON-NLS-1$
 			try {
 				GSSName gssName = gssManager.createName(peerName,
 						GSSName.NT_HOSTBASED_SERVICE);
@@ -544,9 +521,7 @@ abstract class HttpAuthMethod {
 				conn.setRequestProperty(HDR_AUTHORIZATION, getType().getSchemeName()
 						+ " " + Base64.encodeBytes(token)); //$NON-NLS-1$
 			} catch (GSSException e) {
-				IOException ioe = new IOException();
-				ioe.initCause(e);
-				throw ioe;
+				throw new IOException(e);
 			}
 		}
 	}

@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2010, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.pgm.debug;
@@ -52,7 +19,6 @@ import java.lang.management.ThreadMXBean;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
 
 import org.eclipse.jgit.diff.DiffAlgorithm;
@@ -84,12 +50,14 @@ import org.kohsuke.args4j.Option;
 class DiffAlgorithms extends TextBuiltin {
 
 	final Algorithm myers = new Algorithm() {
+		@Override
 		DiffAlgorithm create() {
 			return MyersDiff.INSTANCE;
 		}
 	};
 
 	final Algorithm histogram = new Algorithm() {
+		@Override
 		DiffAlgorithm create() {
 			HistogramDiff d = new HistogramDiff();
 			d.setFallbackAlgorithm(null);
@@ -98,6 +66,7 @@ class DiffAlgorithms extends TextBuiltin {
 	};
 
 	final Algorithm histogram_myers = new Algorithm() {
+		@Override
 		DiffAlgorithm create() {
 			HistogramDiff d = new HistogramDiff();
 			d.setFallbackAlgorithm(MyersDiff.INSTANCE);
@@ -111,14 +80,14 @@ class DiffAlgorithms extends TextBuiltin {
 	//
 	//
 
-	@Option(name = "--algorithm", multiValued = true, metaVar = "NAME", usage = "Enable algorithm(s)")
-	List<String> algorithms = new ArrayList<String>();
+	@Option(name = "--algorithm", metaVar = "NAME", usage = "Enable algorithm(s)")
+	List<String> algorithms = new ArrayList<>();
 
 	@Option(name = "--text-limit", metaVar = "LIMIT", usage = "Maximum size in KiB to scan per file revision")
 	int textLimit = 15 * 1024; // 15 MiB as later we do * 1024.
 
-	@Option(name = "--repository", aliases = { "-r" }, multiValued = true, metaVar = "GIT_DIR", usage = "Repository to scan")
-	List<File> gitDirs = new ArrayList<File>();
+	@Option(name = "--repository", aliases = { "-r" }, metaVar = "GIT_DIR", usage = "Repository to scan")
+	List<File> gitDirs = new ArrayList<>();
 
 	@Option(name = "--count", metaVar = "LIMIT", usage = "Number of file revisions to be compared")
 	int count = 0; // unlimited
@@ -127,16 +96,18 @@ class DiffAlgorithms extends TextBuiltin {
 
 	private ThreadMXBean mxBean;
 
+	/** {@inheritDoc} */
 	@Override
 	protected boolean requiresRepository() {
 		return false;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	protected void run() throws Exception {
 		mxBean = ManagementFactory.getThreadMXBean();
 		if (!mxBean.isCurrentThreadCpuTimeSupported())
-			throw die("Current thread CPU time not supported on this JRE");
+			throw die("Current thread CPU time not supported on this JRE"); //$NON-NLS-1$
 
 		if (gitDirs.isEmpty()) {
 			RepositoryBuilder rb = new RepositoryBuilder() //
@@ -155,16 +126,13 @@ class DiffAlgorithms extends TextBuiltin {
 			else
 				rb.findGitDir(dir);
 
-			Repository db = rb.build();
-			try {
-				run(db);
-			} finally {
-				db.close();
+			try (Repository repo = rb.build()) {
+				run(repo);
 			}
 		}
 	}
 
-	private void run(Repository db) throws Exception {
+	private void run(Repository repo) throws Exception {
 		List<Test> all = init();
 
 		long files = 0;
@@ -173,14 +141,14 @@ class DiffAlgorithms extends TextBuiltin {
 		int maxN = 0;
 
 		AbbreviatedObjectId startId;
-		try (ObjectReader or = db.newObjectReader();
+		try (ObjectReader or = repo.newObjectReader();
 			RevWalk rw = new RevWalk(or)) {
 			final MutableObjectId id = new MutableObjectId();
 			TreeWalk tw = new TreeWalk(or);
 			tw.setFilter(TreeFilter.ANY_DIFF);
 			tw.setRecursive(true);
 
-			ObjectId start = db.resolve(Constants.HEAD);
+			ObjectId start = repo.resolve(Constants.HEAD);
 			startId = or.abbreviate(start);
 			rw.markStart(rw.parseCommit(start));
 			for (;;) {
@@ -205,7 +173,7 @@ class DiffAlgorithms extends TextBuiltin {
 					} catch (LargeObjectException tooBig) {
 						continue;
 					}
-					if (RawText.isBinary(raw0))
+					if (RawText.isBinary(raw0, raw0.length, true))
 						continue;
 
 					byte[] raw1;
@@ -215,7 +183,7 @@ class DiffAlgorithms extends TextBuiltin {
 					} catch (LargeObjectException tooBig) {
 						continue;
 					}
-					if (RawText.isBinary(raw1))
+					if (RawText.isBinary(raw1, raw1.length, true))
 						continue;
 
 					RawText txt0 = new RawText(raw0);
@@ -233,33 +201,32 @@ class DiffAlgorithms extends TextBuiltin {
 			}
 		}
 
-		Collections.sort(all, new Comparator<Test>() {
-			public int compare(Test a, Test b) {
-				int cmp = Long.signum(a.runningTimeNanos - b.runningTimeNanos);
-				if (cmp == 0)
-					cmp = a.algorithm.name.compareTo(b.algorithm.name);
-				return cmp;
+		Collections.sort(all, (Test a, Test b) -> {
+			int result = Long.signum(a.runningTimeNanos - b.runningTimeNanos);
+			if (result == 0) {
+				result = a.algorithm.name.compareTo(b.algorithm.name);
 			}
+			return result;
 		});
 
-		File directory = db.getDirectory();
+		File directory = repo.getDirectory();
 		if (directory != null) {
 			String name = directory.getName();
 			File parent = directory.getParentFile();
 			if (name.equals(Constants.DOT_GIT) && parent != null)
 				name = parent.getName();
-			outw.println(name + ": start at " + startId.name());
+			outw.println(name + ": start at " + startId.name()); //$NON-NLS-1$
 		}
 
-		outw.format("  %12d files,     %8d commits\n", valueOf(files),
+		outw.format("  %12d files,     %8d commits\n", valueOf(files), //$NON-NLS-1$
 				valueOf(commits));
-		outw.format("  N=%10d min lines, %8d max lines\n", valueOf(minN),
+		outw.format("  N=%10d min lines, %8d max lines\n", valueOf(minN), //$NON-NLS-1$
 				valueOf(maxN));
 
-		outw.format("%-25s %12s ( %12s  %12s )\n", //
-				"Algorithm", "Time(ns)", "Time(ns) on", "Time(ns) on");
-		outw.format("%-25s %12s ( %12s  %12s )\n", //
-				"", "", "N=" + minN, "N=" + maxN);
+		outw.format("%-25s %12s ( %12s  %12s )\n", //$NON-NLS-1$
+				"Algorithm", "Time(ns)", "Time(ns) on", "Time(ns) on"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
+		outw.format("%-25s %12s ( %12s  %12s )\n", //$NON-NLS-1$
+				"", "", "N=" + minN, "N=" + maxN); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
 		outw.println("-----------------------------------------------------" //$NON-NLS-1$
 				+ "----------------"); //$NON-NLS-1$
 
@@ -319,7 +286,7 @@ class DiffAlgorithms extends TextBuiltin {
 	}
 
 	private List<Test> init() {
-		List<Test> all = new ArrayList<Test>();
+		List<Test> all = new ArrayList<>();
 
 		try {
 			for (Field f : DiffAlgorithms.class.getDeclaredFields()) {
@@ -334,12 +301,9 @@ class DiffAlgorithms extends TextBuiltin {
 					}
 				}
 			}
-		} catch (IllegalArgumentException e) {
-			throw die("Cannot determine names", e);
-		} catch (IllegalAccessException e) {
-			throw die("Cannot determine names", e);
+		} catch (IllegalArgumentException | IllegalAccessException e) {
+			throw die("Cannot determine names", e); //$NON-NLS-1$
 		}
-
 		return all;
 	}
 
@@ -353,7 +317,7 @@ class DiffAlgorithms extends TextBuiltin {
 		return false;
 	}
 
-	private static abstract class Algorithm {
+	private abstract static class Algorithm {
 		String name;
 
 		abstract DiffAlgorithm create();

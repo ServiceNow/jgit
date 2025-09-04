@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2010, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.util;
@@ -89,7 +56,7 @@ public class RefListTest {
 
 	@Test
 	public void testEmptyBuilder() {
-		RefList<Ref> list = new RefList.Builder<Ref>().toRefList();
+		RefList<Ref> list = new RefList.Builder<>().toRefList();
 		assertEquals(0, list.size());
 		assertFalse(list.iterator().hasNext());
 		assertEquals(-1, list.find("a"));
@@ -111,7 +78,7 @@ public class RefListTest {
 
 	@Test
 	public void testBuilder_AddThenSort() {
-		RefList.Builder<Ref> builder = new RefList.Builder<Ref>(1);
+		RefList.Builder<Ref> builder = new RefList.Builder<>(1);
 		builder.add(REF_B);
 		builder.add(REF_A);
 
@@ -128,8 +95,43 @@ public class RefListTest {
 	}
 
 	@Test
+	public void testBuilder_AddThenDedupe() {
+		RefList.Builder<Ref> builder = new RefList.Builder<>(1);
+		builder.add(REF_B);
+		builder.add(REF_A);
+		builder.add(REF_A);
+		builder.add(REF_B);
+		builder.add(REF_c);
+
+		builder.sort();
+		builder.dedupe((a, b) -> b);
+		RefList<Ref> list = builder.toRefList();
+
+		assertEquals(3, list.size());
+		assertSame(REF_A, list.get(0));
+		assertSame(REF_B, list.get(1));
+		assertSame(REF_c, list.get(2));
+	}
+
+	@Test
+	public void testBuilder_AddThenDedupe_Border() {
+		RefList.Builder<Ref> builder = new RefList.Builder<>(1);
+		builder.sort();
+		builder.dedupe((a, b) -> b);
+		RefList<Ref> list = builder.toRefList();
+		assertTrue(list.isEmpty());
+
+		builder = new RefList.Builder<>(1);
+		builder.add(REF_A);
+		builder.sort();
+		builder.dedupe((a, b) -> b);
+		list = builder.toRefList();
+		assertEquals(1, list.size());
+	}
+
+	@Test
 	public void testBuilder_AddAll() {
-		RefList.Builder<Ref> builder = new RefList.Builder<Ref>(1);
+		RefList.Builder<Ref> builder = new RefList.Builder<>(1);
 		Ref[] src = { REF_A, REF_B, REF_c, REF_A };
 		builder.addAll(src, 1, 2);
 
@@ -141,7 +143,7 @@ public class RefListTest {
 
 	@Test
 	public void testBuilder_Set() {
-		RefList.Builder<Ref> builder = new RefList.Builder<Ref>();
+		RefList.Builder<Ref> builder = new RefList.Builder<>();
 		builder.add(REF_A);
 		builder.add(REF_A);
 
@@ -163,7 +165,7 @@ public class RefListTest {
 
 	@Test
 	public void testBuilder_Remove() {
-		RefList.Builder<Ref> builder = new RefList.Builder<Ref>();
+		RefList.Builder<Ref> builder = new RefList.Builder<>();
 		builder.add(REF_A);
 		builder.add(REF_B);
 		builder.remove(0);
@@ -364,7 +366,7 @@ public class RefListTest {
 		exp.append(REF_B);
 		exp.append("]");
 
-		RefList.Builder<Ref> list = new RefList.Builder<Ref>();
+		RefList.Builder<Ref> list = new RefList.Builder<>();
 		list.add(REF_A);
 		list.add(REF_B);
 		assertEquals(exp.toString(), list.toString());
@@ -442,21 +444,21 @@ public class RefListTest {
 
 	@Test
 	public void testCopyConstructorReusesArray() {
-		RefList.Builder<Ref> one = new RefList.Builder<Ref>();
+		RefList.Builder<Ref> one = new RefList.Builder<>();
 		one.add(REF_A);
 
-		RefList<Ref> two = new RefList<Ref>(one.toRefList());
+		RefList<Ref> two = new RefList<>(one.toRefList());
 		one.set(0, REF_B);
 		assertSame(REF_B, two.get(0));
 	}
 
 	private static RefList<Ref> toList(Ref... refs) {
-		RefList.Builder<Ref> b = new RefList.Builder<Ref>(refs.length);
+		RefList.Builder<Ref> b = new RefList.Builder<>(refs.length);
 		b.addAll(refs, 0, refs.length);
 		return b.toRefList();
 	}
 
-	private static Ref newRef(final String name) {
+	private static Ref newRef(String name) {
 		return new ObjectIdRef.Unpeeled(Ref.Storage.LOOSE, name, ID);
 	}
 }

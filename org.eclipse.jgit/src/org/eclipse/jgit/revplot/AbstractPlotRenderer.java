@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2008, 2014 Shawn O. Pearce <spearce@spearce.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, 2014 Shawn O. Pearce <spearce@spearce.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.revplot;
@@ -92,14 +59,14 @@ public abstract class AbstractPlotRenderer<TLane extends PlotLane, TColor> {
 	 *            total height (in pixels) of this cell.
 	 */
 	@SuppressWarnings("unchecked")
-	protected void paintCommit(final PlotCommit<TLane> commit, final int h) {
+	protected void paintCommit(PlotCommit<TLane> commit, int h) {
 		final int dotSize = computeDotSize(h);
 		final TLane myLane = commit.getLane();
 		final int myLaneX = laneC(myLane);
 		final TColor myColor = laneColor(myLane);
 
 		int maxCenter = myLaneX;
-		for (final TLane passingLane : (TLane[]) commit.passingLanes) {
+		for (TLane passingLane : (TLane[]) commit.passingLanes) {
 			final int cx = laneC(passingLane);
 			final TColor c = laneColor(passingLane);
 			drawLine(c, cx, 0, cx, h, LINE_WIDTH);
@@ -114,39 +81,39 @@ public abstract class AbstractPlotRenderer<TLane extends PlotLane, TColor> {
 			drawLine(myColor, myLaneX, h, myLaneX, (h + dotSize) / 2,
 					LINE_WIDTH);
 
-			for (int i = 0; i < commit.mergingLanes.length; i++) {
-				final TLane pLane = (TLane) commit.mergingLanes[i];
+			for (PlotLane mergingLane : commit.mergingLanes) {
+				final TLane pLane = (TLane) mergingLane;
 				final TColor pColor = laneColor(pLane);
 				final int cx = laneC(pLane);
-
 				if (Math.abs(myLaneX - cx) > LANE_WIDTH) {
 					final int ix;
-					if (myLaneX < cx)
+					if (myLaneX < cx) {
 						ix = cx - LANE_WIDTH / 2;
-					else
+					} else {
 						ix = cx + LANE_WIDTH / 2;
+					}
 
 					drawLine(pColor, myLaneX, h / 2, ix, h / 2, LINE_WIDTH);
 					drawLine(pColor, ix, h / 2, cx, h, LINE_WIDTH);
 				} else
 					drawLine(pColor, myLaneX, h / 2, cx, h, LINE_WIDTH);
-
 				maxCenter = Math.max(maxCenter, cx);
 			}
 		}
 
 
 		if (commit.getChildCount() > 0) {
-			for (int i = 0; i < commit.forkingOffLanes.length; i++) {
-				final TLane childLane = (TLane) commit.forkingOffLanes[i];
+			for (PlotLane forkingOffLane : commit.forkingOffLanes) {
+				final TLane childLane = (TLane) forkingOffLane;
 				final TColor cColor = laneColor(childLane);
 				final int cx = laneC(childLane);
 				if (Math.abs(myLaneX - cx) > LANE_WIDTH) {
 					final int ix;
-					if (myLaneX < cx)
+					if (myLaneX < cx) {
 						ix = cx - LANE_WIDTH / 2;
-					else
+					} else {
 						ix = cx + LANE_WIDTH / 2;
+					}
 
 					drawLine(cColor, myLaneX, h / 2, ix, h / 2, LINE_WIDTH);
 					drawLine(cColor, ix, h / 2, cx, 0, LINE_WIDTH);
@@ -190,7 +157,7 @@ public abstract class AbstractPlotRenderer<TLane extends PlotLane, TColor> {
 	 */
 	protected abstract int drawLabel(int x, int y, Ref ref);
 
-	private static int computeDotSize(final int h) {
+	private static int computeDotSize(int h) {
 		int d = (int) (Math.min(h, LANE_WIDTH) * 0.50f);
 		d += (d & 1);
 		return d;
@@ -282,12 +249,12 @@ public abstract class AbstractPlotRenderer<TLane extends PlotLane, TColor> {
 	 */
 	protected abstract void drawText(String msg, int x, int y);
 
-	private static int laneX(final PlotLane myLane) {
+	private static int laneX(PlotLane myLane) {
 		final int p = myLane != null ? myLane.getPosition() : 0;
 		return LEFT_PAD + LANE_WIDTH * p;
 	}
 
-	private static int laneC(final PlotLane myLane) {
+	private static int laneC(PlotLane myLane) {
 		return laneX(myLane) + LANE_WIDTH / 2;
 	}
 }

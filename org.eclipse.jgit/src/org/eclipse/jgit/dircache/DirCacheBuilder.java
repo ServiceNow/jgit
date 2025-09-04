@@ -1,48 +1,18 @@
 /*
  * Copyright (C) 2008-2009, Google Inc.
- * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.dircache;
+
+import static org.eclipse.jgit.lib.FileMode.TYPE_MASK;
+import static org.eclipse.jgit.lib.FileMode.TYPE_TREE;
 
 import java.io.IOException;
 import java.text.MessageFormat;
@@ -51,12 +21,11 @@ import java.util.Arrays;
 import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.lib.AnyObjectId;
 import org.eclipse.jgit.lib.ObjectReader;
-import org.eclipse.jgit.treewalk.AbstractTreeIterator;
 import org.eclipse.jgit.treewalk.CanonicalTreeParser;
-import org.eclipse.jgit.treewalk.TreeWalk;
 
 /**
- * Updates a {@link DirCache} by adding individual {@link DirCacheEntry}s.
+ * Updates a {@link org.eclipse.jgit.dircache.DirCache} by adding individual
+ * {@link org.eclipse.jgit.dircache.DirCacheEntry}s.
  * <p>
  * A builder always starts from a clean slate and appends in every single
  * <code>DirCacheEntry</code> which the final updated index must have to reflect
@@ -81,7 +50,7 @@ public class DirCacheBuilder extends BaseDirCacheEditor {
 	 *            estimated number of entries the builder will have upon
 	 *            completion. This sizes the initial entry table.
 	 */
-	protected DirCacheBuilder(final DirCache dc, final int ecnt) {
+	protected DirCacheBuilder(DirCache dc, int ecnt) {
 		super(dc, ecnt);
 	}
 
@@ -97,10 +66,10 @@ public class DirCacheBuilder extends BaseDirCacheEditor {
 	 *
 	 * @param newEntry
 	 *            the new entry to add.
-	 * @throws IllegalArgumentException
+	 * @throws java.lang.IllegalArgumentException
 	 *             If the FileMode of the entry was not set by the caller.
 	 */
-	public void add(final DirCacheEntry newEntry) {
+	public void add(DirCacheEntry newEntry) {
 		if (newEntry.getRawMode() == 0)
 			throw new IllegalArgumentException(MessageFormat.format(
 					JGitText.get().fileModeNotSetForPath,
@@ -129,7 +98,7 @@ public class DirCacheBuilder extends BaseDirCacheEditor {
 	 * @param cnt
 	 *            number of entries to copy.
 	 */
-	public void keep(final int pos, int cnt) {
+	public void keep(int pos, int cnt) {
 		beforeAdd(cache.getEntry(pos));
 		fastKeep(pos, cnt);
 	}
@@ -160,41 +129,72 @@ public class DirCacheBuilder extends BaseDirCacheEditor {
 	 *            under <code>pathPrefix</code>. The ObjectId must be that of a
 	 *            tree; the caller is responsible for dereferencing a tag or
 	 *            commit (if necessary).
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             a tree cannot be read to iterate through its entries.
 	 */
-	public void addTree(final byte[] pathPrefix, final int stage,
-			final ObjectReader reader, final AnyObjectId tree) throws IOException {
-		final TreeWalk tw = new TreeWalk(reader);
-		tw.addTree(new CanonicalTreeParser(pathPrefix, reader, tree
-				.toObjectId()));
-		tw.setRecursive(true);
-		if (tw.next()) {
-			final DirCacheEntry newEntry = toEntry(stage, tw);
-			beforeAdd(newEntry);
-			fastAdd(newEntry);
-			while (tw.next())
-				fastAdd(toEntry(stage, tw));
+	public void addTree(byte[] pathPrefix, int stage, ObjectReader reader,
+			AnyObjectId tree) throws IOException {
+		CanonicalTreeParser p = createTreeParser(pathPrefix, reader, tree);
+		while (!p.eof()) {
+			if (isTree(p)) {
+				p = enterTree(p, reader);
+				continue;
+			}
+
+			DirCacheEntry first = toEntry(stage, p);
+			beforeAdd(first);
+			fastAdd(first);
+			p = p.next();
+			break;
+		}
+
+		// Rest of tree entries are correctly sorted; use fastAdd().
+		while (!p.eof()) {
+			if (isTree(p)) {
+				p = enterTree(p, reader);
+			} else {
+				fastAdd(toEntry(stage, p));
+				p = p.next();
+			}
 		}
 	}
 
-	private DirCacheEntry toEntry(final int stage, final TreeWalk tw) {
-		final DirCacheEntry e = new DirCacheEntry(tw.getRawPath(), stage);
-		final AbstractTreeIterator i;
+	private static CanonicalTreeParser createTreeParser(byte[] pathPrefix,
+			ObjectReader reader, AnyObjectId tree) throws IOException {
+		return new CanonicalTreeParser(pathPrefix, reader, tree);
+	}
 
-		i = tw.getTree(0, AbstractTreeIterator.class);
-		e.setFileMode(tw.getFileMode(0));
+	private static boolean isTree(CanonicalTreeParser p) {
+		return (p.getEntryRawMode() & TYPE_MASK) == TYPE_TREE;
+	}
+
+	private static CanonicalTreeParser enterTree(CanonicalTreeParser p,
+			ObjectReader reader) throws IOException {
+		p = p.createSubtreeIterator(reader);
+		return p.eof() ? p.next() : p;
+	}
+
+	private static DirCacheEntry toEntry(int stage, CanonicalTreeParser i) {
+		byte[] buf = i.getEntryPathBuffer();
+		int len = i.getEntryPathLength();
+		byte[] path = new byte[len];
+		System.arraycopy(buf, 0, path, 0, len);
+
+		DirCacheEntry e = new DirCacheEntry(path, stage);
+		e.setFileMode(i.getEntryRawMode());
 		e.setObjectIdFromRaw(i.idBuffer(), i.idOffset());
 		return e;
 	}
 
+	/** {@inheritDoc} */
+	@Override
 	public void finish() {
 		if (!sorted)
 			resort();
 		replace();
 	}
 
-	private void beforeAdd(final DirCacheEntry newEntry) {
+	private void beforeAdd(DirCacheEntry newEntry) {
 		if (sorted && entryCnt > 0) {
 			final DirCacheEntry lastEntry = entries[entryCnt - 1];
 			final int cr = DirCache.cmp(lastEntry, newEntry);

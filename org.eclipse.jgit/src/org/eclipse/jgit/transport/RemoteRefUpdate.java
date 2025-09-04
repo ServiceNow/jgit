@@ -1,51 +1,20 @@
 /*
- * Copyright (C) 2008, Marek Zawirski <marek.zawirski@gmail.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, Marek Zawirski <marek.zawirski@gmail.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.transport;
 
 import java.io.IOException;
 import java.text.MessageFormat;
+import java.util.Collection;
 
+import org.eclipse.jgit.annotations.NonNull;
 import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.Ref;
@@ -55,23 +24,24 @@ import org.eclipse.jgit.revwalk.RevWalk;
 
 /**
  * Represent request and status of a remote ref update. Specification is
- * provided by client, while status is handled by {@link PushProcess} class,
- * being read-only for client.
+ * provided by client, while status is handled by
+ * {@link org.eclipse.jgit.transport.PushProcess} class, being read-only for
+ * client.
  * <p>
  * Client can create instances of this class directly, basing on user
- * specification and advertised refs ({@link Connection} or through
- * {@link Transport} helper methods. Apply this specification on remote
- * repository using
- * {@link Transport#push(org.eclipse.jgit.lib.ProgressMonitor, java.util.Collection)}
+ * specification and advertised refs
+ * ({@link org.eclipse.jgit.transport.Connection} or through
+ * {@link org.eclipse.jgit.transport.Transport} helper methods. Apply this
+ * specification on remote repository using
+ * {@link org.eclipse.jgit.transport.Transport#push(org.eclipse.jgit.lib.ProgressMonitor, java.util.Collection)}
  * method.
  * </p>
- *
  */
 public class RemoteRefUpdate {
 	/**
 	 * Represent current status of a remote ref update.
 	 */
-	public static enum Status {
+	public enum Status {
 		/**
 		 * Push process hasn't yet attempted to update this ref. This is the
 		 * default status, prior to push process execution.
@@ -125,7 +95,7 @@ public class RemoteRefUpdate {
 		OK;
 	}
 
-	private final ObjectId expectedOldObjectId;
+	private ObjectId expectedOldObjectId;
 
 	private final ObjectId newObjectId;
 
@@ -148,17 +118,26 @@ public class RemoteRefUpdate {
 	private RefUpdate localUpdate;
 
 	/**
+	 * If set, the RemoteRefUpdate is a placeholder for the "matching" RefSpec
+	 * to be expanded after the advertisements have been received in a push.
+	 */
+	private Collection<RefSpec> fetchSpecs;
+
+	/**
 	 * Construct remote ref update request by providing an update specification.
-	 * Object is created with default {@link Status#NOT_ATTEMPTED} status and no
-	 * message.
+	 * Object is created with default
+	 * {@link org.eclipse.jgit.transport.RemoteRefUpdate.Status#NOT_ATTEMPTED}
+	 * status and no message.
 	 *
 	 * @param localDb
 	 *            local repository to push from.
 	 * @param srcRef
 	 *            source revision - any string resolvable by
-	 *            {@link Repository#resolve(String)}. This resolves to the new
-	 *            object that the caller want remote ref to be after update. Use
-	 *            null or {@link ObjectId#zeroId()} string for delete request.
+	 *            {@link org.eclipse.jgit.lib.Repository#resolve(String)}. This
+	 *            resolves to the new object that the caller want remote ref to
+	 *            be after update. Use null or
+	 *            {@link org.eclipse.jgit.lib.ObjectId#zeroId()} string for
+	 *            delete request.
 	 * @param remoteName
 	 *            full name of a remote ref to update, e.g. "refs/heads/master"
 	 *            (no wildcard, no short name).
@@ -176,18 +155,18 @@ public class RemoteRefUpdate {
 	 *            advertised by remote side before update; update will take
 	 *            place ONLY if remote side advertise exactly this expected id;
 	 *            null if caller doesn't care what object id remote side
-	 *            advertise. Use {@link ObjectId#zeroId()} when expecting no
-	 *            remote ref with this name.
-	 * @throws IOException
+	 *            advertise. Use {@link org.eclipse.jgit.lib.ObjectId#zeroId()}
+	 *            when expecting no remote ref with this name.
+	 * @throws java.io.IOException
 	 *             when I/O error occurred during creating
-	 *             {@link TrackingRefUpdate} for local tracking branch or srcRef
-	 *             can't be resolved to any object.
-	 * @throws IllegalArgumentException
+	 *             {@link org.eclipse.jgit.transport.TrackingRefUpdate} for
+	 *             local tracking branch or srcRef can't be resolved to any
+	 *             object.
+	 * @throws java.lang.IllegalArgumentException
 	 *             if some required parameter was null
 	 */
-	public RemoteRefUpdate(final Repository localDb, final String srcRef,
-			final String remoteName, final boolean forceUpdate,
-			final String localName, final ObjectId expectedOldObjectId)
+	public RemoteRefUpdate(Repository localDb, String srcRef, String remoteName,
+			boolean forceUpdate, String localName, ObjectId expectedOldObjectId)
 			throws IOException {
 		this(localDb, srcRef, srcRef != null ? localDb.resolve(srcRef)
 				: ObjectId.zeroId(), remoteName, forceUpdate, localName,
@@ -196,8 +175,9 @@ public class RemoteRefUpdate {
 
 	/**
 	 * Construct remote ref update request by providing an update specification.
-	 * Object is created with default {@link Status#NOT_ATTEMPTED} status and no
-	 * message.
+	 * Object is created with default
+	 * {@link org.eclipse.jgit.transport.RemoteRefUpdate.Status#NOT_ATTEMPTED}
+	 * status and no message.
 	 *
 	 * @param localDb
 	 *            local repository to push from.
@@ -220,18 +200,18 @@ public class RemoteRefUpdate {
 	 *            advertised by remote side before update; update will take
 	 *            place ONLY if remote side advertise exactly this expected id;
 	 *            null if caller doesn't care what object id remote side
-	 *            advertise. Use {@link ObjectId#zeroId()} when expecting no
-	 *            remote ref with this name.
-	 * @throws IOException
+	 *            advertise. Use {@link org.eclipse.jgit.lib.ObjectId#zeroId()}
+	 *            when expecting no remote ref with this name.
+	 * @throws java.io.IOException
 	 *             when I/O error occurred during creating
-	 *             {@link TrackingRefUpdate} for local tracking branch or srcRef
-	 *             can't be resolved to any object.
-	 * @throws IllegalArgumentException
+	 *             {@link org.eclipse.jgit.transport.TrackingRefUpdate} for
+	 *             local tracking branch or srcRef can't be resolved to any
+	 *             object.
+	 * @throws java.lang.IllegalArgumentException
 	 *             if some required parameter was null
 	 */
-	public RemoteRefUpdate(final Repository localDb, final Ref srcRef,
-			final String remoteName, final boolean forceUpdate,
-			final String localName, final ObjectId expectedOldObjectId)
+	public RemoteRefUpdate(Repository localDb, Ref srcRef, String remoteName,
+			boolean forceUpdate, String localName, ObjectId expectedOldObjectId)
 			throws IOException {
 		this(localDb, srcRef != null ? srcRef.getName() : null,
 				srcRef != null ? srcRef.getObjectId() : null, remoteName,
@@ -240,8 +220,9 @@ public class RemoteRefUpdate {
 
 	/**
 	 * Construct remote ref update request by providing an update specification.
-	 * Object is created with default {@link Status#NOT_ATTEMPTED} status and no
-	 * message.
+	 * Object is created with default
+	 * {@link org.eclipse.jgit.transport.RemoteRefUpdate.Status#NOT_ATTEMPTED}
+	 * status and no message.
 	 *
 	 * @param localDb
 	 *            local repository to push from.
@@ -250,7 +231,8 @@ public class RemoteRefUpdate {
 	 *            be used instead.
 	 * @param srcId
 	 *            The new object that the caller wants remote ref to be after
-	 *            update. Use null or {@link ObjectId#zeroId()} for delete
+	 *            update. Use null or
+	 *            {@link org.eclipse.jgit.lib.ObjectId#zeroId()} for delete
 	 *            request.
 	 * @param remoteName
 	 *            full name of a remote ref to update, e.g. "refs/heads/master"
@@ -269,37 +251,51 @@ public class RemoteRefUpdate {
 	 *            advertised by remote side before update; update will take
 	 *            place ONLY if remote side advertise exactly this expected id;
 	 *            null if caller doesn't care what object id remote side
-	 *            advertise. Use {@link ObjectId#zeroId()} when expecting no
-	 *            remote ref with this name.
-	 * @throws IOException
+	 *            advertise. Use {@link org.eclipse.jgit.lib.ObjectId#zeroId()}
+	 *            when expecting no remote ref with this name.
+	 * @throws java.io.IOException
 	 *             when I/O error occurred during creating
-	 *             {@link TrackingRefUpdate} for local tracking branch or srcRef
-	 *             can't be resolved to any object.
-	 * @throws IllegalArgumentException
+	 *             {@link org.eclipse.jgit.transport.TrackingRefUpdate} for
+	 *             local tracking branch or srcRef can't be resolved to any
+	 *             object.
+	 * @throws java.lang.IllegalArgumentException
 	 *             if some required parameter was null
 	 */
-	public RemoteRefUpdate(final Repository localDb, final String srcRef,
-			final ObjectId srcId, final String remoteName,
-			final boolean forceUpdate, final String localName,
-			final ObjectId expectedOldObjectId) throws IOException {
-		if (remoteName == null)
-			throw new IllegalArgumentException(JGitText.get().remoteNameCantBeNull);
-		if (srcId == null && srcRef != null)
-			throw new IOException(MessageFormat.format(
-					JGitText.get().sourceRefDoesntResolveToAnyObject, srcRef));
+	public RemoteRefUpdate(Repository localDb, String srcRef, ObjectId srcId,
+			String remoteName, boolean forceUpdate, String localName,
+			ObjectId expectedOldObjectId) throws IOException {
+		this(localDb, srcRef, srcId, remoteName, forceUpdate, localName, null,
+				expectedOldObjectId);
+	}
 
-		if (srcRef != null)
+	private RemoteRefUpdate(Repository localDb, String srcRef, ObjectId srcId,
+			String remoteName, boolean forceUpdate, String localName,
+			Collection<RefSpec> fetchSpecs, ObjectId expectedOldObjectId)
+			throws IOException {
+		if (fetchSpecs == null) {
+			if (remoteName == null) {
+				throw new IllegalArgumentException(
+						JGitText.get().remoteNameCannotBeNull);
+			}
+			if (srcId == null && srcRef != null) {
+				throw new IOException(MessageFormat.format(
+						JGitText.get().sourceRefDoesntResolveToAnyObject,
+						srcRef));
+			}
+		}
+		if (srcRef != null) {
 			this.srcRef = srcRef;
-		else if (srcId != null && !srcId.equals(ObjectId.zeroId()))
+		} else if (srcId != null && !srcId.equals(ObjectId.zeroId())) {
 			this.srcRef = srcId.name();
-		else
+		} else {
 			this.srcRef = null;
-
-		if (srcId != null)
+		}
+		if (srcId != null) {
 			this.newObjectId = srcId;
-		else
+		} else {
 			this.newObjectId = ObjectId.zeroId();
-
+		}
+		this.fetchSpecs = fetchSpecs;
 		this.remoteName = remoteName;
 		this.forceUpdate = forceUpdate;
 		if (localName != null && localDb != null) {
@@ -315,8 +311,9 @@ public class RemoteRefUpdate {
 						? localUpdate.getOldObjectId()
 						: ObjectId.zeroId(),
 					newObjectId);
-		} else
+		} else {
 			trackingRefUpdate = null;
+		}
 		this.localDb = localDb;
 		this.expectedOldObjectId = expectedOldObjectId;
 		this.status = Status.NOT_ATTEMPTED;
@@ -333,19 +330,68 @@ public class RemoteRefUpdate {
 	 *            configuration base.
 	 * @param newExpectedOldObjectId
 	 *            new expected object id value.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             when I/O error occurred during creating
-	 *             {@link TrackingRefUpdate} for local tracking branch or srcRef
-	 *             of base object no longer can be resolved to any object.
+	 *             {@link org.eclipse.jgit.transport.TrackingRefUpdate} for
+	 *             local tracking branch or srcRef of base object no longer can
+	 *             be resolved to any object.
 	 */
-	public RemoteRefUpdate(final RemoteRefUpdate base,
-			final ObjectId newExpectedOldObjectId) throws IOException {
-		this(base.localDb, base.srcRef, base.remoteName, base.forceUpdate,
+	public RemoteRefUpdate(RemoteRefUpdate base,
+			ObjectId newExpectedOldObjectId) throws IOException {
+		this(base.localDb, base.srcRef, base.newObjectId, base.remoteName,
+				base.forceUpdate,
 				(base.trackingRefUpdate == null ? null : base.trackingRefUpdate
-						.getLocalName()), newExpectedOldObjectId);
+						.getLocalName()),
+				base.fetchSpecs, newExpectedOldObjectId);
 	}
 
 	/**
+	 * Creates a "placeholder" update for the "matching" RefSpec ":".
+	 *
+	 * @param localDb
+	 *            local repository to push from
+	 * @param forceUpdate
+	 *            whether non-fast-forward updates shall be allowed
+	 * @param fetchSpecs
+	 *            The fetch {@link RefSpec}s to use when this placeholder is
+	 *            expanded to determine remote tracking branch updates
+	 */
+	RemoteRefUpdate(Repository localDb, boolean forceUpdate,
+			@NonNull Collection<RefSpec> fetchSpecs) {
+		this.localDb = localDb;
+		this.forceUpdate = forceUpdate;
+		this.fetchSpecs = fetchSpecs;
+		this.trackingRefUpdate = null;
+		this.srcRef = null;
+		this.remoteName = null;
+		this.newObjectId = null;
+		this.status = Status.NOT_ATTEMPTED;
+	}
+
+	/**
+	 * Tells whether this {@link RemoteRefUpdate} is a placeholder for a
+	 * "matching" {@link RefSpec}.
+	 *
+	 * @return {@code true} if this is a placeholder, {@code false} otherwise
+	 * @since 6.1
+	 */
+	public boolean isMatching() {
+		return fetchSpecs != null;
+	}
+
+	/**
+	 * Retrieves the fetch {@link RefSpec}s of this {@link RemoteRefUpdate}.
+	 *
+	 * @return the fetch {@link RefSpec}s, or {@code null} if
+	 *         {@code this.}{@link #isMatching()} {@code == false}
+	 */
+	Collection<RefSpec> getFetchSpecs() {
+		return fetchSpecs;
+	}
+
+	/**
+	 * Get expected old object id
+	 *
 	 * @return expectedOldObjectId required to be advertised by remote side, as
 	 *         set in constructor; may be null.
 	 */
@@ -354,6 +400,9 @@ public class RemoteRefUpdate {
 	}
 
 	/**
+	 * Whether some object is required to be advertised by remote side, as set
+	 * in constructor
+	 *
 	 * @return true if some object is required to be advertised by remote side,
 	 *         as set in constructor; false otherwise.
 	 */
@@ -362,6 +411,8 @@ public class RemoteRefUpdate {
 	}
 
 	/**
+	 * Get new object id
+	 *
 	 * @return newObjectId for remote ref, as set in constructor.
 	 */
 	public ObjectId getNewObjectId() {
@@ -369,6 +420,8 @@ public class RemoteRefUpdate {
 	}
 
 	/**
+	 * Whether this update is a deleting update
+	 *
 	 * @return true if this update is deleting update; false otherwise.
 	 */
 	public boolean isDelete() {
@@ -376,6 +429,8 @@ public class RemoteRefUpdate {
 	}
 
 	/**
+	 * Get name of remote ref to update
+	 *
 	 * @return name of remote ref to update, as set in constructor.
 	 */
 	public String getRemoteName() {
@@ -383,6 +438,8 @@ public class RemoteRefUpdate {
 	}
 
 	/**
+	 * Get tracking branch update if localName was set in constructor.
+	 *
 	 * @return local tracking branch update if localName was set in constructor.
 	 */
 	public TrackingRefUpdate getTrackingRefUpdate() {
@@ -390,9 +447,12 @@ public class RemoteRefUpdate {
 	}
 
 	/**
+	 * Get source revision as specified by user (in constructor)
+	 *
 	 * @return source revision as specified by user (in constructor), could be
-	 *         any string parseable by {@link Repository#resolve(String)}; can
-	 *         be null if specified that way in constructor - this stands for
+	 *         any string parseable by
+	 *         {@link org.eclipse.jgit.lib.Repository#resolve(String)}; can be
+	 *         null if specified that way in constructor - this stands for
 	 *         delete request.
 	 */
 	public String getSrcRef() {
@@ -400,6 +460,8 @@ public class RemoteRefUpdate {
 	}
 
 	/**
+	 * Whether user specified a local tracking branch for remote update
+	 *
 	 * @return true if user specified a local tracking branch for remote update;
 	 *         false otherwise.
 	 */
@@ -408,6 +470,8 @@ public class RemoteRefUpdate {
 	}
 
 	/**
+	 * Whether this update is forced regardless of old remote ref object
+	 *
 	 * @return true if this update is forced regardless of old remote ref
 	 *         object; false otherwise.
 	 */
@@ -416,6 +480,8 @@ public class RemoteRefUpdate {
 	}
 
 	/**
+	 * Get status of remote ref update operation.
+	 *
 	 * @return status of remote ref update operation.
 	 */
 	public Status getStatus() {
@@ -424,7 +490,8 @@ public class RemoteRefUpdate {
 
 	/**
 	 * Check whether update was fast-forward. Note that this result is
-	 * meaningful only after successful update (when status is {@link Status#OK}).
+	 * meaningful only after successful update (when status is
+	 * {@link org.eclipse.jgit.transport.RemoteRefUpdate.Status#OK}).
 	 *
 	 * @return true if update was fast-forward; false otherwise.
 	 */
@@ -433,6 +500,9 @@ public class RemoteRefUpdate {
 	}
 
 	/**
+	 * Get message describing reasons of status when needed/possible; may be
+	 * null.
+	 *
 	 * @return message describing reasons of status when needed/possible; may be
 	 *         null.
 	 */
@@ -440,7 +510,11 @@ public class RemoteRefUpdate {
 		return message;
 	}
 
-	void setStatus(final Status status) {
+	void setExpectedOldObjectId(ObjectId id) {
+		expectedOldObjectId = id;
+	}
+
+	void setStatus(Status status) {
 		this.status = status;
 	}
 
@@ -448,7 +522,7 @@ public class RemoteRefUpdate {
 		this.fastForward = fastForward;
 	}
 
-	void setMessage(final String message) {
+	void setMessage(String message) {
 		this.message = message;
 	}
 
@@ -457,16 +531,17 @@ public class RemoteRefUpdate {
 	 *
 	 * @param walk
 	 *            walker used for checking update properties.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             when I/O error occurred during update
 	 */
-	protected void updateTrackingRef(final RevWalk walk) throws IOException {
+	protected void updateTrackingRef(RevWalk walk) throws IOException {
 		if (isDelete())
 			trackingRefUpdate.setResult(localUpdate.delete(walk));
 		else
 			trackingRefUpdate.setResult(localUpdate.update(walk));
 	}
 
+	/** {@inheritDoc} */
 	@SuppressWarnings("nls")
 	@Override
 	public String toString() {
@@ -479,7 +554,7 @@ public class RemoteRefUpdate {
 						: "(null)") + "..."
 				+ (newObjectId != null ? newObjectId.name() : "(null)")
 				+ (fastForward ? ", fastForward" : "")
- + ", srcRef=" + srcRef
+				+ ", srcRef=" + srcRef
 				+ (forceUpdate ? ", forceUpdate" : "") + ", message="
 				+ (message != null ? "\"" + message + "\"" : "null") + "]";
 	}

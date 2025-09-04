@@ -1,64 +1,49 @@
 /*
- * Copyright (C) 2010, Robin Rosenberg
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, Robin Rosenberg and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 package org.eclipse.jgit.util;
+
+import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_CORE_SECTION;
+import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_KEY_SUPPORTSATOMICFILECREATION;
 
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.io.PrintStream;
-import java.nio.charset.Charset;
+import java.io.OutputStream;
+import java.nio.file.FileAlreadyExistsException;
+import java.nio.file.FileStore;
+import java.nio.file.FileSystemException;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.attribute.PosixFilePermission;
+import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
+import org.eclipse.jgit.annotations.Nullable;
 import org.eclipse.jgit.api.errors.JGitInternalException;
-import org.eclipse.jgit.lib.Constants;
+import org.eclipse.jgit.errors.CommandFailedException;
+import org.eclipse.jgit.errors.ConfigInvalidException;
+import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.lib.Repository;
+import org.eclipse.jgit.lib.StoredConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Base FS for POSIX based systems
@@ -66,10 +51,24 @@ import org.eclipse.jgit.lib.Repository;
  * @since 3.0
  */
 public class FS_POSIX extends FS {
+	private static final Logger LOG = LoggerFactory.getLogger(FS_POSIX.class);
+
+	private static final String DEFAULT_GIT_LOCATION = "/usr/bin/git"; //$NON-NLS-1$
+
 	private static final int DEFAULT_UMASK = 0022;
 	private volatile int umask = -1;
 
-	/** Default constructor. */
+	private static final Map<FileStore, Boolean> CAN_HARD_LINK = new ConcurrentHashMap<>();
+
+	private volatile AtomicFileCreation supportsAtomicFileCreation = AtomicFileCreation.UNDEFINED;
+
+	private enum AtomicFileCreation {
+		SUPPORTED, NOT_SUPPORTED, UNDEFINED
+	}
+
+	/**
+	 * Default constructor.
+	 */
 	protected FS_POSIX() {
 	}
 
@@ -86,6 +85,7 @@ public class FS_POSIX extends FS {
 		}
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public FS newInstance() {
 		return new FS_POSIX(this);
@@ -118,11 +118,11 @@ public class FS_POSIX extends FS {
 					new String[] { "sh", "-c", "umask" }, //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 					null, null);
 			try (BufferedReader lineRead = new BufferedReader(
-					new InputStreamReader(p.getInputStream(), Charset
-							.defaultCharset().name()))) {
+					new InputStreamReader(p.getInputStream(), SystemReader
+							.getInstance().getDefaultCharset().name()))) {
 				if (p.waitFor() == 0) {
 					String s = lineRead.readLine();
-					if (s.matches("0?\\d{3}")) { //$NON-NLS-1$
+					if (s != null && s.matches("0?\\d{3}")) { //$NON-NLS-1$
 						return Integer.parseInt(s, 8);
 					}
 				}
@@ -133,22 +133,54 @@ public class FS_POSIX extends FS {
 		}
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	protected File discoverGitExe() {
 		String path = SystemReader.getInstance().getenv("PATH"); //$NON-NLS-1$
 		File gitExe = searchPath(path, "git"); //$NON-NLS-1$
 
-		if (gitExe == null) {
-			if (SystemReader.getInstance().isMacOS()) {
+		if (SystemReader.getInstance().isMacOS()) {
+			if (gitExe == null
+					|| DEFAULT_GIT_LOCATION.equals(gitExe.getPath())) {
 				if (searchPath(path, "bash") != null) { //$NON-NLS-1$
 					// On MacOSX, PATH is shorter when Eclipse is launched from the
 					// Finder than from a terminal. Therefore try to launch bash as a
 					// login shell and search using that.
-					String w = readPipe(userHome(),
+					try {
+						String w = readPipe(userHome(),
 							new String[]{"bash", "--login", "-c", "which git"}, // //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
-							Charset.defaultCharset().name());
-					if (!StringUtils.isEmptyOrNull(w))
-						gitExe = new File(w);
+								SystemReader.getInstance().getDefaultCharset()
+										.name());
+						if (!StringUtils.isEmptyOrNull(w)) {
+							gitExe = new File(w);
+						}
+					} catch (CommandFailedException e) {
+						LOG.warn(e.getMessage());
+					}
+				}
+			}
+			if (gitExe != null
+					&& DEFAULT_GIT_LOCATION.equals(gitExe.getPath())) {
+				// If we still have the default git exe, it's an XCode wrapper
+				// that may prompt the user to install the XCode command line
+				// tools if not already present. Avoid the prompt by returning
+				// null if no XCode git is there.
+				try {
+					String w = readPipe(userHome(),
+							new String[] { "xcode-select", "-p" }, //$NON-NLS-1$ //$NON-NLS-2$
+							SystemReader.getInstance().getDefaultCharset()
+									.name());
+					if (StringUtils.isEmptyOrNull(w)) {
+						gitExe = null;
+					} else {
+						File realGitExe = new File(new File(w),
+								DEFAULT_GIT_LOCATION.substring(1));
+						if (!realGitExe.exists()) {
+							gitExe = null;
+						}
+					}
+				} catch (CommandFailedException e) {
+					gitExe = null;
 				}
 			}
 		}
@@ -156,30 +188,34 @@ public class FS_POSIX extends FS {
 		return gitExe;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public boolean isCaseSensitive() {
 		return !SystemReader.getInstance().isMacOS();
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public boolean supportsExecute() {
 		return true;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public boolean canExecute(File f) {
 		return FileUtils.canExecute(f);
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public boolean setExecute(File f, boolean canExecute) {
 		if (!isFile(f))
 			return false;
 		if (!canExecute)
-			return f.setExecutable(false);
+			return f.setExecutable(false, false);
 
 		try {
-			Path path = f.toPath();
+			Path path = FileUtils.toPath(f);
 			Set<PosixFilePermission> pset = Files.getPosixFilePermissions(path);
 
 			// owner (user) is always allowed to execute.
@@ -211,9 +247,10 @@ public class FS_POSIX extends FS {
 		}
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public ProcessBuilder runInShell(String cmd, String[] args) {
-		List<String> argv = new ArrayList<String>(4 + args.length);
+		List<String> argv = new ArrayList<>(4 + args.length);
 		argv.add("sh"); //$NON-NLS-1$
 		argv.add("-c"); //$NON-NLS-1$
 		argv.add(cmd + " \"$@\""); //$NON-NLS-1$
@@ -224,69 +261,218 @@ public class FS_POSIX extends FS {
 		return proc;
 	}
 
-	/**
-	 * @since 4.0
-	 */
+	@Override
+	String shellQuote(String cmd) {
+		return QuotedString.BOURNE.quote(cmd);
+	}
+
+	/** {@inheritDoc} */
 	@Override
 	public ProcessResult runHookIfPresent(Repository repository, String hookName,
-			String[] args, PrintStream outRedirect, PrintStream errRedirect,
+			String[] args, OutputStream outRedirect, OutputStream errRedirect,
 			String stdinArgs) throws JGitInternalException {
 		return internalRunHookIfPresent(repository, hookName, args, outRedirect,
 				errRedirect, stdinArgs);
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public boolean retryFailedLockFileCommit() {
 		return false;
 	}
 
-	@Override
-	public boolean supportsSymlinks() {
-		return true;
-	}
-
+	/** {@inheritDoc} */
 	@Override
 	public void setHidden(File path, boolean hidden) throws IOException {
 		// no action on POSIX
 	}
 
-	/**
-	 * @since 3.3
-	 */
+	/** {@inheritDoc} */
 	@Override
 	public Attributes getAttributes(File path) {
 		return FileUtils.getFileAttributesPosix(this, path);
 	}
 
-	/**
-	 * @since 3.3
-	 */
+	/** {@inheritDoc} */
 	@Override
 	public File normalize(File file) {
 		return FileUtils.normalize(file);
 	}
 
-	/**
-	 * @since 3.3
-	 */
+	/** {@inheritDoc} */
 	@Override
 	public String normalize(String name) {
 		return FileUtils.normalize(name);
 	}
 
+	/** {@inheritDoc} */
+	@Override
+	public boolean supportsAtomicCreateNewFile() {
+		if (supportsAtomicFileCreation == AtomicFileCreation.UNDEFINED) {
+			try {
+				StoredConfig config = SystemReader.getInstance().getUserConfig();
+				String value = config.getString(CONFIG_CORE_SECTION, null,
+						CONFIG_KEY_SUPPORTSATOMICFILECREATION);
+				if (value != null) {
+					supportsAtomicFileCreation = StringUtils.toBoolean(value)
+							? AtomicFileCreation.SUPPORTED
+							: AtomicFileCreation.NOT_SUPPORTED;
+				} else {
+					supportsAtomicFileCreation = AtomicFileCreation.SUPPORTED;
+				}
+			} catch (IOException | ConfigInvalidException e) {
+				LOG.warn(JGitText.get().assumeAtomicCreateNewFile, e);
+				supportsAtomicFileCreation = AtomicFileCreation.SUPPORTED;
+			}
+		}
+		return supportsAtomicFileCreation == AtomicFileCreation.SUPPORTED;
+	}
+
+	@Override
+	@SuppressWarnings("boxing")
 	/**
-	 * @since 3.7
+	 * {@inheritDoc}
+	 * <p>
+	 * An implementation of the File#createNewFile() semantics which works also
+	 * on NFS. If the config option
+	 * {@code core.supportsAtomicCreateNewFile = true} (which is the default)
+	 * then simply File#createNewFile() is called.
+	 *
+	 * But if {@code core.supportsAtomicCreateNewFile = false} then after
+	 * successful creation of the lock file a hard link to that lock file is
+	 * created and the attribute nlink of the lock file is checked to be 2. If
+	 * multiple clients manage to create the same lock file nlink would be
+	 * greater than 2 showing the error.
+	 *
+	 * @see "https://www.time-travellers.org/shane/papers/NFS_considered_harmful.html"
+	 *
+	 * @deprecated use {@link FS_POSIX#createNewFileAtomic(File)} instead
+	 * @since 4.5
+	 */
+	@Deprecated
+	public boolean createNewFile(File lock) throws IOException {
+		if (!lock.createNewFile()) {
+			return false;
+		}
+		if (supportsAtomicCreateNewFile()) {
+			return true;
+		}
+		Path lockPath = lock.toPath();
+		Path link = null;
+		FileStore store = null;
+		try {
+			store = Files.getFileStore(lockPath);
+		} catch (SecurityException e) {
+			return true;
+		}
+		try {
+			Boolean canLink = CAN_HARD_LINK.computeIfAbsent(store,
+					s -> Boolean.TRUE);
+			if (Boolean.FALSE.equals(canLink)) {
+				return true;
+			}
+			link = Files.createLink(
+					Paths.get(lock.getAbsolutePath() + ".lnk"), //$NON-NLS-1$
+					lockPath);
+			Integer nlink = (Integer) (Files.getAttribute(lockPath,
+					"unix:nlink")); //$NON-NLS-1$
+			if (nlink > 2) {
+				LOG.warn(MessageFormat.format(
+						JGitText.get().failedAtomicFileCreation, lockPath,
+						nlink));
+				return false;
+			} else if (nlink < 2) {
+				CAN_HARD_LINK.put(store, Boolean.FALSE);
+			}
+			return true;
+		} catch (UnsupportedOperationException | IllegalArgumentException e) {
+			CAN_HARD_LINK.put(store, Boolean.FALSE);
+			return true;
+		} finally {
+			if (link != null) {
+				Files.delete(link);
+			}
+		}
+	}
+
+	/**
+	 * {@inheritDoc}
+	 * <p>
+	 * An implementation of the File#createNewFile() semantics which can create
+	 * a unique file atomically also on NFS. If the config option
+	 * {@code core.supportsAtomicCreateNewFile = true} (which is the default)
+	 * then simply Files#createFile() is called.
+	 *
+	 * But if {@code core.supportsAtomicCreateNewFile = false} then after
+	 * successful creation of the lock file a hard link to that lock file is
+	 * created and the attribute nlink of the lock file is checked to be 2. If
+	 * multiple clients manage to create the same lock file nlink would be
+	 * greater than 2 showing the error. The hard link needs to be retained
+	 * until the corresponding file is no longer needed in order to prevent that
+	 * another process can create the same file concurrently using another NFS
+	 * client which might not yet see the file due to caching.
+	 *
+	 * @see "https://www.time-travellers.org/shane/papers/NFS_considered_harmful.html"
+	 * @param file
+	 *            the unique file to be created atomically
+	 * @return LockToken this lock token must be held until the file is no
+	 *         longer needed
+	 * @throws IOException
+	 * @since 5.0
 	 */
 	@Override
-	public File findHook(Repository repository, String hookName) {
-		final File gitdir = repository.getDirectory();
-		if (gitdir == null) {
-			return null;
+	public LockToken createNewFileAtomic(File file) throws IOException {
+		Path path;
+		try {
+			path = file.toPath();
+			Files.createFile(path);
+		} catch (FileAlreadyExistsException | InvalidPathException e) {
+			return token(false, null);
 		}
-		final Path hookPath = gitdir.toPath().resolve(Constants.HOOKS)
-				.resolve(hookName);
-		if (Files.isExecutable(hookPath))
-			return hookPath.toFile();
-		return null;
+		if (supportsAtomicCreateNewFile()) {
+			return token(true, null);
+		}
+		Path link = null;
+		FileStore store = null;
+		try {
+			store = Files.getFileStore(path);
+		} catch (SecurityException e) {
+			return token(true, null);
+		}
+		try {
+			Boolean canLink = CAN_HARD_LINK.computeIfAbsent(store,
+					s -> Boolean.TRUE);
+			if (Boolean.FALSE.equals(canLink)) {
+				return token(true, null);
+			}
+			link = Files.createLink(Paths.get(uniqueLinkPath(file)), path);
+			Integer nlink = (Integer) (Files.getAttribute(path,
+					"unix:nlink")); //$NON-NLS-1$
+			if (nlink.intValue() > 2) {
+				LOG.warn(MessageFormat.format(
+						JGitText.get().failedAtomicFileCreation, path, nlink));
+				return token(false, link);
+			} else if (nlink.intValue() < 2) {
+				CAN_HARD_LINK.put(store, Boolean.FALSE);
+			}
+			return token(true, link);
+		} catch (UnsupportedOperationException | IllegalArgumentException
+				| FileSystemException | SecurityException e) {
+			CAN_HARD_LINK.put(store, Boolean.FALSE);
+			return token(true, link);
+		}
+	}
+
+	private static LockToken token(boolean created, @Nullable Path p) {
+		return ((p != null) && Files.exists(p))
+				? new LockToken(created, Optional.of(p))
+				: new LockToken(created, Optional.empty());
+	}
+
+	private static String uniqueLinkPath(File file) {
+		UUID id = UUID.randomUUID();
+		return file.getAbsolutePath() + "." //$NON-NLS-1$
+				+ Long.toHexString(id.getMostSignificantBits())
+				+ Long.toHexString(id.getLeastSignificantBits());
 	}
 }

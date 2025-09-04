@@ -1,45 +1,12 @@
 /*
  * Copyright (C) 2008-2010, Google Inc.
- * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.lib;
@@ -53,13 +20,20 @@ import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.revwalk.RevObject;
 import org.eclipse.jgit.revwalk.RevWalk;
 import org.eclipse.jgit.transport.PushCertificate;
+import org.eclipse.jgit.util.References;
 
 /**
  * Creates, updates or deletes any reference.
  */
 public abstract class RefUpdate {
-	/** Status of an update request. */
-	public static enum Result {
+	/**
+	 * Status of an update request.
+	 * <p>
+	 * New values may be added to this enum in the future. Callers may assume that
+	 * unknown values are failures, and may generally treat them the same as
+	 * {@link #REJECTED_OTHER_REASON}.
+	 */
+	public enum Result {
 		/** The ref update/delete has not been attempted by the caller. */
 		NOT_ATTEMPTED,
 
@@ -114,6 +88,10 @@ public abstract class RefUpdate {
 		 * merged into the new value. The configuration did not allow a forced
 		 * update/delete to take place, so ref still contains the old value. No
 		 * previous history was lost.
+		 * <p>
+		 * <em>Note:</em> Despite the general name, this result only refers to the
+		 * non-fast-forward case. For more general errors, see {@link
+		 * #REJECTED_OTHER_REASON}.
 		 */
 		REJECTED,
 
@@ -139,7 +117,25 @@ public abstract class RefUpdate {
 		 * The ref was renamed from another name
 		 * <p>
 		 */
-		RENAMED
+		RENAMED,
+
+		/**
+		 * One or more objects aren't in the repository.
+		 * <p>
+		 * This is severe indication of either repository corruption on the
+		 * server side, or a bug in the client wherein the client did not supply
+		 * all required objects during the pack transfer.
+		 *
+		 * @since 4.9
+		 */
+		REJECTED_MISSING_OBJECT,
+
+		/**
+		 * Rejected for some other reason not covered by another enum value.
+		 *
+		 * @since 4.9
+		 */
+		REJECTED_OTHER_REASON;
 	}
 
 	/** New value the caller wants this ref to have. */
@@ -156,6 +152,12 @@ public abstract class RefUpdate {
 
 	/** Should the Result value be appended to {@link #refLogMessage}. */
 	private boolean refLogIncludeResult;
+
+	/**
+	 * Should reflogs be written even if the configured default for this ref is
+	 * not to write it.
+	 */
+	private boolean forceRefLog;
 
 	/** Old value of the ref, obtained after we lock it. */
 	private ObjectId oldValue;
@@ -193,16 +195,24 @@ public abstract class RefUpdate {
 	 * @param ref
 	 *            the reference that will be updated by this operation.
 	 */
-	protected RefUpdate(final Ref ref) {
+	protected RefUpdate(Ref ref) {
 		this.ref = ref;
 		oldValue = ref.getObjectId();
 		refLogMessage = ""; //$NON-NLS-1$
 	}
 
-	/** @return the reference database this update modifies. */
+	/**
+	 * Get the reference database this update modifies.
+	 *
+	 * @return the reference database this update modifies.
+	 */
 	protected abstract RefDatabase getRefDatabase();
 
-	/** @return the repository storing the database's objects. */
+	/**
+	 * Get the repository storing the database's objects.
+	 *
+	 * @return the repository storing the database's objects.
+	 */
 	protected abstract Repository getRepository();
 
 	/**
@@ -217,33 +227,44 @@ public abstract class RefUpdate {
 	 *            current reference.
 	 * @return true if the lock was acquired and the reference is likely
 	 *         protected from concurrent modification; false if it failed.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the lock couldn't be taken due to an unexpected storage
 	 *             failure, and not because of a concurrent update.
 	 */
 	protected abstract boolean tryLock(boolean deref) throws IOException;
 
-	/** Releases the lock taken by {@link #tryLock} if it succeeded. */
+	/**
+	 * Releases the lock taken by {@link #tryLock} if it succeeded.
+	 */
 	protected abstract void unlock();
 
 	/**
+	 * Do update
+	 *
 	 * @param desiredResult
+	 *            a {@link org.eclipse.jgit.lib.RefUpdate.Result} object.
 	 * @return {@code result}
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 */
 	protected abstract Result doUpdate(Result desiredResult) throws IOException;
 
 	/**
+	 * Do delete
+	 *
 	 * @param desiredResult
+	 *            a {@link org.eclipse.jgit.lib.RefUpdate.Result} object.
 	 * @return {@code result}
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 */
 	protected abstract Result doDelete(Result desiredResult) throws IOException;
 
 	/**
+	 * Do link
+	 *
 	 * @param target
-	 * @return {@link Result#NEW} on success.
-	 * @throws IOException
+	 *            a {@link java.lang.String} object.
+	 * @return {@link org.eclipse.jgit.lib.RefUpdate.Result#NEW} on success.
+	 * @throws java.io.IOException
 	 */
 	protected abstract Result doLink(String target) throws IOException;
 
@@ -256,7 +277,11 @@ public abstract class RefUpdate {
 		return getRef().getName();
 	}
 
-	/** @return the reference this update will create or modify. */
+	/**
+	 * Get the reference this update will create or modify.
+	 *
+	 * @return the reference this update will create or modify.
+	 */
 	public Ref getRef() {
 		return ref;
 	}
@@ -278,33 +303,49 @@ public abstract class RefUpdate {
 	}
 
 	/**
+	 * Return whether this update is actually detaching a symbolic ref.
+	 *
+	 * @return true if detaching a symref.
+	 * @since 4.9
+	 */
+	public boolean isDetachingSymbolicRef() {
+		return detachingSymbolicRef;
+	}
+
+	/**
 	 * Set the new value the ref will update to.
 	 *
 	 * @param id
 	 *            the new value.
 	 */
-	public void setNewObjectId(final AnyObjectId id) {
+	public void setNewObjectId(AnyObjectId id) {
 		newValue = id.copy();
 	}
 
 	/**
+	 * Get the expected value of the ref after the lock is taken, but before
+	 * update occurs.
+	 *
 	 * @return the expected value of the ref after the lock is taken, but before
 	 *         update occurs. Null to avoid the compare and swap test. Use
-	 *         {@link ObjectId#zeroId()} to indicate expectation of a
-	 *         non-existant ref.
+	 *         {@link org.eclipse.jgit.lib.ObjectId#zeroId()} to indicate
+	 *         expectation of a non-existant ref.
 	 */
 	public ObjectId getExpectedOldObjectId() {
 		return expValue;
 	}
 
 	/**
+	 * Set the expected value of the ref after the lock is taken, but before
+	 * update occurs.
+	 *
 	 * @param id
 	 *            the expected value of the ref after the lock is taken, but
 	 *            before update occurs. Null to avoid the compare and swap test.
-	 *            Use {@link ObjectId#zeroId()} to indicate expectation of a
-	 *            non-existant ref.
+	 *            Use {@link org.eclipse.jgit.lib.ObjectId#zeroId()} to indicate
+	 *            expectation of a non-existant ref.
 	 */
-	public void setExpectedOldObjectId(final AnyObjectId id) {
+	public void setExpectedOldObjectId(AnyObjectId id) {
 		expValue = id != null ? id.toObjectId() : null;
 	}
 
@@ -323,11 +364,15 @@ public abstract class RefUpdate {
 	 * @param b
 	 *            true if this update should ignore merge tests.
 	 */
-	public void setForceUpdate(final boolean b) {
+	public void setForceUpdate(boolean b) {
 		force = b;
 	}
 
-	/** @return identity of the user making the change in the reflog. */
+	/**
+	 * Get identity of the user making the change in the reflog.
+	 *
+	 * @return identity of the user making the change in the reflog.
+	 */
 	public PersonIdent getRefLogIdent() {
 		return refLogIdent;
 	}
@@ -344,7 +389,7 @@ public abstract class RefUpdate {
 	 *            automatically determined based on the repository
 	 *            configuration.
 	 */
-	public void setRefLogIdent(final PersonIdent pi) {
+	public void setRefLogIdent(PersonIdent pi) {
 		refLogIdent = pi;
 	}
 
@@ -358,13 +403,23 @@ public abstract class RefUpdate {
 		return refLogMessage;
 	}
 
-	/** @return {@code true} if the ref log message should show the result. */
+	/**
+	 * Whether the ref log message should show the result.
+	 *
+	 * @return {@code true} if the ref log message should show the result.
+	 */
 	protected boolean isRefLogIncludingResult() {
 		return refLogIncludeResult;
 	}
 
 	/**
 	 * Set the message to include in the reflog.
+	 * <p>
+	 * Repository implementations may limit which reflogs are written by default,
+	 * based on the project configuration. If a repo is not configured to write
+	 * logs for this ref by default, setting the message alone may have no effect.
+	 * To indicate that the repo should write logs for this update in spite of
+	 * configured defaults, use {@link #setForceRefLog(boolean)}.
 	 *
 	 * @param msg
 	 *            the message to describe this change. It may be null if
@@ -374,7 +429,7 @@ public abstract class RefUpdate {
 	 *            forced-update) should be appended to the user supplied
 	 *            message.
 	 */
-	public void setRefLogMessage(final String msg, final boolean appendStatus) {
+	public void setRefLogMessage(String msg, boolean appendStatus) {
 		if (msg == null && !appendStatus)
 			disableRefLog();
 		else if (msg == null && appendStatus) {
@@ -386,10 +441,32 @@ public abstract class RefUpdate {
 		}
 	}
 
-	/** Don't record this update in the ref's associated reflog. */
+	/**
+	 * Don't record this update in the ref's associated reflog.
+	 */
 	public void disableRefLog() {
 		refLogMessage = null;
 		refLogIncludeResult = false;
+	}
+
+	/**
+	 * Force writing a reflog for the updated ref.
+	 *
+	 * @param force whether to force.
+	 * @since 4.9
+	 */
+	public void setForceRefLog(boolean force) {
+		forceRefLog = force;
+	}
+
+	/**
+	 * Check whether the reflog should be written regardless of repo defaults.
+	 *
+	 * @return whether force writing is enabled.
+	 * @since 4.9
+	 */
+	protected boolean isForceRefLog() {
+		return forceRefLog;
 	}
 
 	/**
@@ -465,7 +542,7 @@ public abstract class RefUpdate {
 	 * the merge test is performed.
 	 *
 	 * @return the result status of the update.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             an unexpected IO error occurred while writing changes.
 	 */
 	public Result forceUpdate() throws IOException {
@@ -485,11 +562,12 @@ public abstract class RefUpdate {
 	 * </pre>
 	 *
 	 * @return the result status of the update.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             an unexpected IO error occurred while writing changes.
 	 */
 	public Result update() throws IOException {
 		try (RevWalk rw = new RevWalk(getRepository())) {
+			rw.setRetainBody(false);
 			return update(rw);
 		}
 	}
@@ -503,10 +581,10 @@ public abstract class RefUpdate {
 	 *            a RevWalk instance this update command can borrow to perform
 	 *            the merge test. The walk will be reset to perform the test.
 	 * @return the result status of the update.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             an unexpected IO error occurred while writing changes.
 	 */
-	public Result update(final RevWalk walk) throws IOException {
+	public Result update(RevWalk walk) throws IOException {
 		requireCanDoUpdate();
 		try {
 			return result = updateImpl(walk, new Store() {
@@ -533,10 +611,11 @@ public abstract class RefUpdate {
 	 * </pre>
 	 *
 	 * @return the result status of the delete.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 */
 	public Result delete() throws IOException {
 		try (RevWalk rw = new RevWalk(getRepository())) {
+			rw.setRetainBody(false);
 			return delete(rw);
 		}
 	}
@@ -548,12 +627,15 @@ public abstract class RefUpdate {
 	 *            a RevWalk instance this delete command can borrow to perform
 	 *            the merge test. The walk will be reset to perform the test.
 	 * @return the result status of the delete.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 */
-	public Result delete(final RevWalk walk) throws IOException {
-		final String myName = getRef().getLeaf().getName();
-		if (myName.startsWith(Constants.R_HEADS)) {
-			Ref head = getRefDatabase().getRef(Constants.HEAD);
+	public Result delete(RevWalk walk) throws IOException {
+		final String myName = detachingSymbolicRef
+				? getRef().getName()
+				: getRef().getLeaf().getName();
+		if (myName.startsWith(Constants.R_HEADS) && !getRepository().isBare()) {
+			// Don't allow the currently checked out branch to be deleted.
+			Ref head = getRefDatabase().exactRef(Constants.HEAD);
 			while (head != null && head.isSymbolic()) {
 				head = head.getTarget();
 				if (myName.equals(head.getName()))
@@ -583,8 +665,9 @@ public abstract class RefUpdate {
 	 * @param target
 	 *            name of the new target for this reference. The new target name
 	 *            must be absolute, so it must begin with {@code refs/}.
-	 * @return {@link Result#NEW} or {@link Result#FORCED} on success.
-	 * @throws IOException
+	 * @return {@link org.eclipse.jgit.lib.RefUpdate.Result#NEW} or
+	 *         {@link org.eclipse.jgit.lib.RefUpdate.Result#FORCED} on success.
+	 * @throws java.io.IOException
 	 */
 	public Result link(String target) throws IOException {
 		if (!target.startsWith(Constants.R_REFS))
@@ -595,7 +678,7 @@ public abstract class RefUpdate {
 			if (!tryLock(false))
 				return Result.LOCK_FAILURE;
 
-			final Ref old = getRefDatabase().getRef(getName());
+			final Ref old = getRefDatabase().exactRef(getName());
 			if (old != null && old.isSymbolic()) {
 				final Ref dst = old.getTarget();
 				if (target.equals(dst.getName()))
@@ -605,7 +688,7 @@ public abstract class RefUpdate {
 			if (old != null && old.getObjectId() != null)
 				setOldObjectId(old.getObjectId());
 
-			final Ref dst = getRefDatabase().getRef(target);
+			final Ref dst = getRefDatabase().exactRef(target);
 			if (dst != null && dst.getObjectId() != null)
 				setNewObjectId(dst.getObjectId());
 
@@ -618,37 +701,54 @@ public abstract class RefUpdate {
 		}
 	}
 
-	private Result updateImpl(final RevWalk walk, final Store store)
+	private Result updateImpl(RevWalk walk, Store store)
 			throws IOException {
 		RevObject newObj;
 		RevObject oldObj;
 
 		// don't make expensive conflict check if this is an existing Ref
-		if (oldValue == null && checkConflicting && getRefDatabase().isNameConflicting(getName()))
+		if (oldValue == null && checkConflicting
+				&& getRefDatabase().isNameConflicting(getName())) {
 			return Result.LOCK_FAILURE;
+		}
 		try {
-			if (!tryLock(true))
+			// If we're detaching a symbolic reference, we should update the reference
+			// itself. Otherwise, we will update the leaf reference, which should be
+			// an ObjectIdRef.
+			if (!tryLock(!detachingSymbolicRef)) {
 				return Result.LOCK_FAILURE;
+			}
 			if (expValue != null) {
 				final ObjectId o;
 				o = oldValue != null ? oldValue : ObjectId.zeroId();
-				if (!AnyObjectId.equals(expValue, o))
+				if (!AnyObjectId.isEqual(expValue, o)) {
 					return Result.LOCK_FAILURE;
+				}
 			}
-			if (oldValue == null)
+			try {
+				newObj = safeParseNew(walk, newValue);
+			} catch (MissingObjectException e) {
+				return Result.REJECTED_MISSING_OBJECT;
+			}
+
+			if (oldValue == null) {
 				return store.execute(Result.NEW);
+			}
 
-			newObj = safeParse(walk, newValue);
-			oldObj = safeParse(walk, oldValue);
-			if (newObj == oldObj && !detachingSymbolicRef)
+			oldObj = safeParseOld(walk, oldValue);
+			if (References.isSameObject(newObj, oldObj)
+					&& !detachingSymbolicRef) {
 				return store.execute(Result.NO_CHANGE);
+			}
 
-			if (isForceUpdate())
+			if (isForceUpdate()) {
 				return store.execute(Result.FORCED);
+			}
 
 			if (newObj instanceof RevCommit && oldObj instanceof RevCommit) {
-				if (walk.isMergedInto((RevCommit) oldObj, (RevCommit) newObj))
+				if (walk.isMergedInto((RevCommit) oldObj, (RevCommit) newObj)) {
 					return store.execute(Result.FAST_FORWARD);
+				}
 			}
 
 			return Result.REJECTED;
@@ -662,22 +762,30 @@ public abstract class RefUpdate {
 	 * are checked explicitly.
 	 *
 	 * @param check
+	 *            whether to enable the check for conflicting ref names.
 	 * @since 3.0
 	 */
 	public void setCheckConflicting(boolean check) {
 		checkConflicting = check;
 	}
 
-	private static RevObject safeParse(final RevWalk rw, final AnyObjectId id)
+	private static RevObject safeParseNew(RevWalk rw, AnyObjectId newId)
+			throws IOException {
+		if (newId == null || ObjectId.zeroId().equals(newId)) {
+			return null;
+		}
+		return rw.parseAny(newId);
+	}
+
+	private static RevObject safeParseOld(RevWalk rw, AnyObjectId oldId)
 			throws IOException {
 		try {
-			return id != null ? rw.parseAny(id) : null;
+			return oldId != null ? rw.parseAny(oldId) : null;
 		} catch (MissingObjectException e) {
-			// We can expect some objects to be missing, like if we are
-			// trying to force a deletion of a branch and the object it
-			// points to has been pruned from the database due to freak
-			// corruption accidents (it happens with 'git new-work-dir').
-			//
+			// We can expect some old objects to be missing, like if we are trying to
+			// force a deletion of a branch and the object it points to has been
+			// pruned from the database due to freak corruption accidents (it happens
+			// with 'git new-work-dir').
 			return null;
 		}
 	}
@@ -686,7 +794,7 @@ public abstract class RefUpdate {
 	 * Handle the abstraction of storing a ref update. This is because both
 	 * updating and deleting of a ref have merge testing in common.
 	 */
-	private abstract class Store {
+	private abstract static class Store {
 		abstract Result execute(Result status) throws IOException;
 	}
 }

@@ -1,45 +1,12 @@
 /*
  * Copyright (C) 2007, Robin Rosenberg <robin.rosenberg@dewire.com>
- * Copyright (C) 2006-2008, Shawn O. Pearce <spearce@spearce.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2006-2008, Shawn O. Pearce <spearce@spearce.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.lib;
@@ -82,56 +49,64 @@ public abstract class FileMode {
 	/** Bit pattern for {@link #TYPE_MASK} matching {@link #MISSING}. */
 	public static final int TYPE_MISSING = 0000000;
 
-	/** Mode indicating an entry is a tree (aka directory). */
-	@SuppressWarnings("synthetic-access")
+	/**
+	 * Mode indicating an entry is a tree (aka directory).
+	 */
 	public static final FileMode TREE = new FileMode(TYPE_TREE,
 			Constants.OBJ_TREE) {
-		public boolean equals(final int modeBits) {
+		@Override
+		@SuppressWarnings("NonOverridingEquals")
+		public boolean equals(int modeBits) {
 			return (modeBits & TYPE_MASK) == TYPE_TREE;
 		}
 	};
 
 	/** Mode indicating an entry is a symbolic link. */
-	@SuppressWarnings("synthetic-access")
 	public static final FileMode SYMLINK = new FileMode(TYPE_SYMLINK,
 			Constants.OBJ_BLOB) {
-		public boolean equals(final int modeBits) {
+		@Override
+		@SuppressWarnings("NonOverridingEquals")
+		public boolean equals(int modeBits) {
 			return (modeBits & TYPE_MASK) == TYPE_SYMLINK;
 		}
 	};
 
 	/** Mode indicating an entry is a non-executable file. */
-	@SuppressWarnings("synthetic-access")
 	public static final FileMode REGULAR_FILE = new FileMode(0100644,
 			Constants.OBJ_BLOB) {
-		public boolean equals(final int modeBits) {
+		@Override
+		@SuppressWarnings("NonOverridingEquals")
+		public boolean equals(int modeBits) {
 			return (modeBits & TYPE_MASK) == TYPE_FILE && (modeBits & 0111) == 0;
 		}
 	};
 
 	/** Mode indicating an entry is an executable file. */
-	@SuppressWarnings("synthetic-access")
 	public static final FileMode EXECUTABLE_FILE = new FileMode(0100755,
 			Constants.OBJ_BLOB) {
-		public boolean equals(final int modeBits) {
+		@Override
+		@SuppressWarnings("NonOverridingEquals")
+		public boolean equals(int modeBits) {
 			return (modeBits & TYPE_MASK) == TYPE_FILE && (modeBits & 0111) != 0;
 		}
 	};
 
 	/** Mode indicating an entry is a submodule commit in another repository. */
-	@SuppressWarnings("synthetic-access")
 	public static final FileMode GITLINK = new FileMode(TYPE_GITLINK,
 			Constants.OBJ_COMMIT) {
-		public boolean equals(final int modeBits) {
+		@Override
+		@SuppressWarnings("NonOverridingEquals")
+		public boolean equals(int modeBits) {
 			return (modeBits & TYPE_MASK) == TYPE_GITLINK;
 		}
 	};
 
 	/** Mode indicating an entry is missing during parallel walks. */
-	@SuppressWarnings("synthetic-access")
 	public static final FileMode MISSING = new FileMode(TYPE_MISSING,
 			Constants.OBJ_BAD) {
-		public boolean equals(final int modeBits) {
+		@Override
+		@SuppressWarnings("NonOverridingEquals")
+		public boolean equals(int modeBits) {
 			return modeBits == 0;
 		}
 	};
@@ -143,7 +118,7 @@ public abstract class FileMode {
 	 *            the mode bits the caller has somehow obtained.
 	 * @return the FileMode instance that represents the given bits.
 	 */
-	public static final FileMode fromBits(final int bits) {
+	public static final FileMode fromBits(int bits) {
 		switch (bits & TYPE_MASK) {
 		case TYPE_MISSING:
 			if (bits == 0)
@@ -163,7 +138,8 @@ public abstract class FileMode {
 
 		return new FileMode(bits, Constants.OBJ_BAD) {
 			@Override
-			public boolean equals(final int a) {
+			@SuppressWarnings("NonOverridingEquals")
+			public boolean equals(int a) {
 				return bits == a;
 			}
 		};
@@ -175,7 +151,7 @@ public abstract class FileMode {
 
 	private final int objectType;
 
-	private FileMode(int mode, final int expType) {
+	private FileMode(int mode, int expType) {
 		modeBits = mode;
 		objectType = expType;
 		if (mode != 0) {
@@ -197,12 +173,15 @@ public abstract class FileMode {
 	}
 
 	/**
-	 * Test a file mode for equality with this {@link FileMode} object.
+	 * Test a file mode for equality with this
+	 * {@link org.eclipse.jgit.lib.FileMode} object.
 	 *
 	 * @param modebits
+	 *            a int.
 	 * @return true if the mode bits represent the same mode as this object
 	 */
-	public abstract boolean equals(final int modebits);
+	@SuppressWarnings("NonOverridingEquals")
+	public abstract boolean equals(int modebits);
 
 	/**
 	 * Copy this mode as a sequence of octal US-ASCII bytes.
@@ -215,10 +194,10 @@ public abstract class FileMode {
 	 *
 	 * @param os
 	 *            stream to copy the mode to.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the stream encountered an error during the copy.
 	 */
-	public void copyTo(final OutputStream os) throws IOException {
+	public void copyTo(OutputStream os) throws IOException {
 		os.write(octalBytes);
 	}
 
@@ -240,6 +219,8 @@ public abstract class FileMode {
 	}
 
 	/**
+	 * Copy the number of bytes written by {@link #copyTo(OutputStream)}.
+	 *
 	 * @return the number of bytes written by {@link #copyTo(OutputStream)}.
 	 */
 	public int copyToLength() {
@@ -249,7 +230,7 @@ public abstract class FileMode {
 	/**
 	 * Get the object type that should appear for this type of mode.
 	 * <p>
-	 * See the object type constants in {@link Constants}.
+	 * See the object type constants in {@link org.eclipse.jgit.lib.Constants}.
 	 *
 	 * @return one of the well known object type constants.
 	 */
@@ -257,12 +238,19 @@ public abstract class FileMode {
 		return objectType;
 	}
 
-	/** Format this mode as an octal string (for debugging only). */
+	/**
+	 * {@inheritDoc}
+	 * <p>
+	 * Format this mode as an octal string (for debugging only).
+	 */
+	@Override
 	public String toString() {
 		return Integer.toOctalString(modeBits);
 	}
 
 	/**
+	 * Get the mode bits as an integer.
+	 *
 	 * @return The mode bits as an integer.
 	 */
 	public int getBits() {

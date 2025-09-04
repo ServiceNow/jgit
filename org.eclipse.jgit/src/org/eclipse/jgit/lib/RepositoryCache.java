@@ -1,84 +1,62 @@
 /*
- * Copyright (C) 2009, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2009, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.lib;
 
 import java.io.File;
 import java.io.IOException;
-import java.lang.ref.Reference;
-import java.lang.ref.SoftReference;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
+import org.eclipse.jgit.annotations.NonNull;
 import org.eclipse.jgit.errors.RepositoryNotFoundException;
 import org.eclipse.jgit.internal.storage.file.FileRepository;
+import org.eclipse.jgit.lib.internal.WorkQueue;
 import org.eclipse.jgit.util.FS;
 import org.eclipse.jgit.util.IO;
 import org.eclipse.jgit.util.RawParseUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-/** Cache of active {@link Repository} instances. */
+/**
+ * Cache of active {@link org.eclipse.jgit.lib.Repository} instances.
+ */
 public class RepositoryCache {
+	private static final Logger LOG = LoggerFactory
+			.getLogger(RepositoryCache.class);
+
 	private static final RepositoryCache cache = new RepositoryCache();
 
 	/**
 	 * Open an existing repository, reusing a cached instance if possible.
 	 * <p>
 	 * When done with the repository, the caller must call
-	 * {@link Repository#close()} to decrement the repository's usage counter.
+	 * {@link org.eclipse.jgit.lib.Repository#close()} to decrement the
+	 * repository's usage counter.
 	 *
 	 * @param location
-	 *            where the local repository is. Typically a {@link FileKey}.
+	 *            where the local repository is. Typically a
+	 *            {@link org.eclipse.jgit.lib.RepositoryCache.FileKey}.
 	 * @return the repository instance requested; caller must close when done.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the repository could not be read (likely its core.version
 	 *             property is not supported).
-	 * @throws RepositoryNotFoundException
+	 * @throws org.eclipse.jgit.errors.RepositoryNotFoundException
 	 *             there is no repository at the given location.
 	 */
-	public static Repository open(final Key location) throws IOException,
+	public static Repository open(Key location) throws IOException,
 			RepositoryNotFoundException {
 		return open(location, true);
 	}
@@ -87,23 +65,25 @@ public class RepositoryCache {
 	 * Open a repository, reusing a cached instance if possible.
 	 * <p>
 	 * When done with the repository, the caller must call
-	 * {@link Repository#close()} to decrement the repository's usage counter.
+	 * {@link org.eclipse.jgit.lib.Repository#close()} to decrement the
+	 * repository's usage counter.
 	 *
 	 * @param location
-	 *            where the local repository is. Typically a {@link FileKey}.
+	 *            where the local repository is. Typically a
+	 *            {@link org.eclipse.jgit.lib.RepositoryCache.FileKey}.
 	 * @param mustExist
 	 *            If true, and the repository is not found, throws {@code
 	 *            RepositoryNotFoundException}. If false, a repository instance
 	 *            is created and registered anyway.
 	 * @return the repository instance requested; caller must close when done.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the repository could not be read (likely its core.version
 	 *             property is not supported).
 	 * @throws RepositoryNotFoundException
 	 *             There is no repository at the given location, only thrown if
 	 *             {@code mustExist} is true.
 	 */
-	public static Repository open(final Key location, final boolean mustExist)
+	public static Repository open(Key location, boolean mustExist)
 			throws IOException {
 		return cache.openRepository(location, mustExist);
 	}
@@ -112,9 +92,10 @@ public class RepositoryCache {
 	 * Register one repository into the cache.
 	 * <p>
 	 * During registration the cache automatically increments the usage counter,
-	 * permitting it to retain the reference. A {@link FileKey} for the
-	 * repository's {@link Repository#getDirectory()} is used to index the
-	 * repository in the cache.
+	 * permitting it to retain the reference. A
+	 * {@link org.eclipse.jgit.lib.RepositoryCache.FileKey} for the repository's
+	 * {@link org.eclipse.jgit.lib.Repository#getDirectory()} is used to index
+	 * the repository in the cache.
 	 * <p>
 	 * If another repository already is registered in the cache at this
 	 * location, the other instance is closed.
@@ -122,7 +103,7 @@ public class RepositoryCache {
 	 * @param db
 	 *            repository to register.
 	 */
-	public static void register(final Repository db) {
+	public static void register(Repository db) {
 		if (db.getDirectory() != null) {
 			FileKey key = FileKey.exact(db.getDirectory(), db.getFS());
 			cache.registerRepository(key, db);
@@ -130,26 +111,46 @@ public class RepositoryCache {
 	}
 
 	/**
-	 * Remove a repository from the cache.
+	 * Close and remove a repository from the cache.
 	 * <p>
-	 * Removes a repository from the cache, if it is still registered here,
-	 * permitting it to close.
+	 * Removes a repository from the cache, if it is still registered here, and
+	 * close it.
 	 *
 	 * @param db
 	 *            repository to unregister.
 	 */
-	public static void close(final Repository db) {
+	public static void close(@NonNull Repository db) {
 		if (db.getDirectory() != null) {
 			FileKey key = FileKey.exact(db.getDirectory(), db.getFS());
-			cache.unregisterRepository(key);
+			cache.unregisterAndCloseRepository(key);
 		}
 	}
 
 	/**
 	 * Remove a repository from the cache.
 	 * <p>
-	 * Removes a repository from the cache, if it is still registered here,
-	 * permitting it to close.
+	 * Removes a repository from the cache, if it is still registered here. This
+	 * method will not close the repository, only remove it from the cache. See
+	 * {@link org.eclipse.jgit.lib.RepositoryCache#close(Repository)} to remove
+	 * and close the repository.
+	 *
+	 * @param db
+	 *            repository to unregister.
+	 * @since 4.3
+	 */
+	public static void unregister(Repository db) {
+		if (db.getDirectory() != null) {
+			unregister(FileKey.exact(db.getDirectory(), db.getFS()));
+		}
+	}
+
+	/**
+	 * Remove a repository from the cache.
+	 * <p>
+	 * Removes a repository from the cache, if it is still registered here. This
+	 * method will not close the repository, only remove it from the cache. See
+	 * {@link org.eclipse.jgit.lib.RepositoryCache#close(Repository)} to remove
+	 * and close the repository.
 	 *
 	 * @param location
 	 *            location of the repository to remove.
@@ -160,6 +161,8 @@ public class RepositoryCache {
 	}
 
 	/**
+	 * Get the locations of all repositories registered in the cache.
+	 *
 	 * @return the locations of all repositories registered in the cache.
 	 * @since 4.1
 	 */
@@ -167,76 +170,133 @@ public class RepositoryCache {
 		return cache.getKeys();
 	}
 
-	/** Unregister all repositories from the cache. */
+	static boolean isCached(@NonNull Repository repo) {
+		File gitDir = repo.getDirectory();
+		if (gitDir == null) {
+			return false;
+		}
+		FileKey key = new FileKey(gitDir, repo.getFS());
+		return cache.cacheMap.get(key) == repo;
+	}
+
+	/**
+	 * Unregister all repositories from the cache.
+	 */
 	public static void clear() {
 		cache.clearAll();
 	}
 
-	private final ConcurrentHashMap<Key, Reference<Repository>> cacheMap;
+	static void clearExpired() {
+		cache.clearAllExpired();
+	}
+
+	static void reconfigure(RepositoryCacheConfig repositoryCacheConfig) {
+		cache.configureEviction(repositoryCacheConfig);
+	}
+
+	private final Map<Key, Repository> cacheMap;
 
 	private final Lock[] openLocks;
 
+	private ScheduledFuture<?> cleanupTask;
+
+	private volatile long expireAfter;
+
+	private final Object schedulerLock = new Lock();
+
 	private RepositoryCache() {
-		cacheMap = new ConcurrentHashMap<Key, Reference<Repository>>();
+		cacheMap = new ConcurrentHashMap<>();
 		openLocks = new Lock[4];
-		for (int i = 0; i < openLocks.length; i++)
+		for (int i = 0; i < openLocks.length; i++) {
 			openLocks[i] = new Lock();
+		}
+		configureEviction(new RepositoryCacheConfig());
 	}
 
-	@SuppressWarnings("resource")
+	private void configureEviction(
+			RepositoryCacheConfig repositoryCacheConfig) {
+		expireAfter = repositoryCacheConfig.getExpireAfter();
+		ScheduledThreadPoolExecutor scheduler = WorkQueue.getExecutor();
+		synchronized (schedulerLock) {
+			if (cleanupTask != null) {
+				cleanupTask.cancel(false);
+			}
+			long delay = repositoryCacheConfig.getCleanupDelay();
+			if (delay == RepositoryCacheConfig.NO_CLEANUP) {
+				return;
+			}
+			cleanupTask = scheduler.scheduleWithFixedDelay(() -> {
+				try {
+					cache.clearAllExpired();
+				} catch (Throwable e) {
+					LOG.error(e.getMessage(), e);
+				}
+			}, delay, delay, TimeUnit.MILLISECONDS);
+		}
+	}
+
 	private Repository openRepository(final Key location,
 			final boolean mustExist) throws IOException {
-		Reference<Repository> ref = cacheMap.get(location);
-		Repository db = ref != null ? ref.get() : null;
+		Repository db = cacheMap.get(location);
 		if (db == null) {
 			synchronized (lockFor(location)) {
-				ref = cacheMap.get(location);
-				db = ref != null ? ref.get() : null;
+				db = cacheMap.get(location);
 				if (db == null) {
 					db = location.open(mustExist);
-					ref = new SoftReference<Repository>(db);
-					cacheMap.put(location, ref);
+					cacheMap.put(location, db);
+				} else {
+					db.incrementOpen();
 				}
 			}
+		} else {
+			db.incrementOpen();
 		}
-		db.incrementOpen();
 		return db;
 	}
 
-	private void registerRepository(final Key location, final Repository db) {
-		db.incrementOpen();
-		SoftReference<Repository> newRef = new SoftReference<Repository>(db);
-		Reference<Repository> oldRef = cacheMap.put(location, newRef);
-		Repository oldDb = oldRef != null ? oldRef.get() : null;
-		if (oldDb != null)
-			oldDb.close();
+	private void registerRepository(Key location, Repository db) {
+		try (Repository oldDb = cacheMap.put(location, db)) {
+			// oldDb is auto-closed
+		}
 	}
 
-	private void unregisterRepository(final Key location) {
-		Reference<Repository> oldRef = cacheMap.remove(location);
-		Repository oldDb = oldRef != null ? oldRef.get() : null;
-		if (oldDb != null)
-			oldDb.close();
+	private Repository unregisterRepository(Key location) {
+		return cacheMap.remove(location);
 	}
 
-	private Collection<Key> getKeys() {
-		return new ArrayList<Key>(cacheMap.keySet());
+	private boolean isExpired(Repository db) {
+		return db != null && db.useCnt.get() <= 0
+			&& (System.currentTimeMillis() - db.closedAt.get() > expireAfter);
 	}
 
-	private void clearAll() {
-		for (int stage = 0; stage < 2; stage++) {
-			for (Iterator<Map.Entry<Key, Reference<Repository>>> i = cacheMap
-					.entrySet().iterator(); i.hasNext();) {
-				final Map.Entry<Key, Reference<Repository>> e = i.next();
-				final Repository db = e.getValue().get();
-				if (db != null)
-					db.close();
-				i.remove();
+	private void unregisterAndCloseRepository(Key location) {
+		synchronized (lockFor(location)) {
+			Repository oldDb = unregisterRepository(location);
+			if (oldDb != null) {
+				oldDb.doClose();
 			}
 		}
 	}
 
-	private Lock lockFor(final Key location) {
+	private Collection<Key> getKeys() {
+		return new ArrayList<>(cacheMap.keySet());
+	}
+
+	private void clearAllExpired() {
+		for (Repository db : cacheMap.values()) {
+			if (isExpired(db)) {
+				RepositoryCache.close(db);
+			}
+		}
+	}
+
+	private void clearAll() {
+		for (Key k : cacheMap.keySet()) {
+			unregisterAndCloseRepository(k);
+		}
+	}
+
+	private Lock lockFor(Key location) {
 		return openLocks[(location.hashCode() >>> 1) % openLocks.length];
 	}
 
@@ -290,7 +350,7 @@ public class RepositoryCache {
 		 * @return a key for the given directory.
 		 * @see #lenient(File, FS)
 		 */
-		public static FileKey exact(final File directory, FS fs) {
+		public static FileKey exact(File directory, FS fs) {
 			return new FileKey(directory, fs);
 		}
 
@@ -313,7 +373,7 @@ public class RepositoryCache {
 		 * @return a key for the given directory.
 		 * @see #exact(File, FS)
 		 */
-		public static FileKey lenient(final File directory, FS fs) {
+		public static FileKey lenient(File directory, FS fs) {
 			final File gitdir = resolve(directory, fs);
 			return new FileKey(gitdir != null ? gitdir : directory, fs);
 		}
@@ -328,12 +388,12 @@ public class RepositoryCache {
 		 *            the file system abstraction which will be necessary to
 		 *            perform certain file system operations.
 		 */
-		protected FileKey(final File directory, FS fs) {
+		protected FileKey(File directory, FS fs) {
 			path = canonical(directory);
 			this.fs = fs;
 		}
 
-		private static File canonical(final File path) {
+		private static File canonical(File path) {
 			try {
 				return path.getCanonicalFile();
 			} catch (IOException e) {
@@ -346,7 +406,8 @@ public class RepositoryCache {
 			return path;
 		}
 
-		public Repository open(final boolean mustExist) throws IOException {
+		@Override
+		public Repository open(boolean mustExist) throws IOException {
 			if (mustExist && !isGitRepository(path, fs))
 				throw new RepositoryNotFoundException(path);
 			return new FileRepository(path);
@@ -358,7 +419,7 @@ public class RepositoryCache {
 		}
 
 		@Override
-		public boolean equals(final Object o) {
+		public boolean equals(Object o) {
 			return o instanceof FileKey && path.equals(((FileKey) o).path);
 		}
 
@@ -382,19 +443,20 @@ public class RepositoryCache {
 		 *         it doesn't look enough like a Git directory to really be a
 		 *         Git directory.
 		 */
-		public static boolean isGitRepository(final File dir, FS fs) {
-			return fs.resolve(dir, "objects").exists() //$NON-NLS-1$
+		public static boolean isGitRepository(File dir, FS fs) {
+			return fs.resolve(dir, Constants.OBJECTS).exists()
 					&& fs.resolve(dir, "refs").exists() //$NON-NLS-1$
-					&& isValidHead(new File(dir, Constants.HEAD));
+					&& (fs.resolve(dir, Constants.REFTABLE).exists()
+							|| isValidHead(new File(dir, Constants.HEAD)));
 		}
 
-		private static boolean isValidHead(final File head) {
+		private static boolean isValidHead(File head) {
 			final String ref = readFirstLine(head);
 			return ref != null
 					&& (ref.startsWith("ref: refs/") || ObjectId.isId(ref)); //$NON-NLS-1$
 		}
 
-		private static String readFirstLine(final File head) {
+		private static String readFirstLine(File head) {
 			try {
 				final byte[] buf = IO.readFully(head, 4096);
 				int n = buf.length;
@@ -427,7 +489,7 @@ public class RepositoryCache {
 		 * @return the actual directory location if a better match is found;
 		 *         null if there is no suitable match.
 		 */
-		public static File resolve(final File directory, FS fs) {
+		public static File resolve(File directory, FS fs) {
 			if (isGitRepository(directory, fs))
 				return directory;
 			if (isGitRepository(new File(directory, Constants.DOT_GIT), fs))

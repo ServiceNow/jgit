@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.awtui;
@@ -64,6 +31,7 @@ import org.eclipse.jgit.awtui.SwingCommitList.SwingLane;
 import org.eclipse.jgit.lib.PersonIdent;
 import org.eclipse.jgit.revplot.PlotCommit;
 import org.eclipse.jgit.revplot.PlotCommitList;
+import org.eclipse.jgit.util.References;
 
 /**
  * Draws a commit graph in a JTable.
@@ -81,7 +49,9 @@ public class CommitGraphPane extends JTable {
 
 	private final SwingCommitList allCommits;
 
-	/** Create a new empty panel. */
+	/**
+	 * Create a new empty panel.
+	 */
 	public CommitGraphPane() {
 		allCommits = new SwingCommitList();
 		configureHeader();
@@ -110,13 +80,15 @@ public class CommitGraphPane extends JTable {
 		return allCommits;
 	}
 
+	/** {@inheritDoc} */
 	@Override
-	public void setModel(final TableModel dataModel) {
+	public void setModel(TableModel dataModel) {
 		if (dataModel != null && !(dataModel instanceof CommitTableModel))
 			throw new ClassCastException(UIText.get().mustBeSpecialTableModel);
 		super.setModel(dataModel);
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	protected TableModel createDefaultDataModel() {
 		return new CommitTableModel();
@@ -146,15 +118,18 @@ public class CommitGraphPane extends JTable {
 
 		PersonIdent lastAuthor;
 
+		@Override
 		public int getColumnCount() {
 			return 3;
 		}
 
+		@Override
 		public int getRowCount() {
 			return allCommits != null ? allCommits.size() : 0;
 		}
 
-		public Object getValueAt(final int rowIndex, final int columnIndex) {
+		@Override
+		public Object getValueAt(int rowIndex, int columnIndex) {
 			final PlotCommit<SwingLane> c = allCommits.get(rowIndex);
 			switch (columnIndex) {
 			case 0:
@@ -168,8 +143,8 @@ public class CommitGraphPane extends JTable {
 			}
 		}
 
-		PersonIdent authorFor(final PlotCommit<SwingLane> c) {
-			if (c != lastCommit) {
+		PersonIdent authorFor(PlotCommit<SwingLane> c) {
+			if (!References.isSameObject(c, lastCommit)) {
 				lastCommit = c;
 				lastAuthor = c.getAuthorIdent();
 			}
@@ -180,6 +155,7 @@ public class CommitGraphPane extends JTable {
 	static class NameCellRender extends DefaultTableCellRenderer {
 		private static final long serialVersionUID = 1L;
 
+		@Override
 		public Component getTableCellRendererComponent(final JTable table,
 				final Object value, final boolean isSelected,
 				final boolean hasFocus, final int row, final int column) {
@@ -201,6 +177,7 @@ public class CommitGraphPane extends JTable {
 		private final DateFormat fmt = new SimpleDateFormat(
 				"yyyy-MM-dd HH:mm:ss"); //$NON-NLS-1$
 
+		@Override
 		public Component getTableCellRendererComponent(final JTable table,
 				final Object value, final boolean isSelected,
 				final boolean hasFocus, final int row, final int column) {
@@ -223,6 +200,7 @@ public class CommitGraphPane extends JTable {
 
 		PlotCommit<SwingLane> commit;
 
+		@Override
 		@SuppressWarnings("unchecked")
 		public Component getTableCellRendererComponent(final JTable table,
 				final Object value, final boolean isSelected,
@@ -234,7 +212,7 @@ public class CommitGraphPane extends JTable {
 		}
 
 		@Override
-		protected void paintComponent(final Graphics inputGraphics) {
+		protected void paintComponent(Graphics inputGraphics) {
 			if (inputGraphics == null)
 				return;
 			renderer.paint(inputGraphics, commit);
@@ -249,7 +227,7 @@ public class CommitGraphPane extends JTable {
 			strokeCache[i] = new BasicStroke(i);
 	}
 
-	static Stroke stroke(final int width) {
+	static Stroke stroke(int width) {
 		if (width < strokeCache.length)
 			return strokeCache[width];
 		return new BasicStroke(width);

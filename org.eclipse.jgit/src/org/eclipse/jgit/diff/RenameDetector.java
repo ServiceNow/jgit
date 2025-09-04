@@ -1,50 +1,18 @@
 /*
- * Copyright (C) 2010, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.diff;
 
 import static org.eclipse.jgit.diff.DiffEntry.Side.NEW;
 import static org.eclipse.jgit.diff.DiffEntry.Side.OLD;
+import static org.eclipse.jgit.storage.pack.PackConfig.DEFAULT_BIG_FILE_THRESHOLD;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -55,6 +23,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 
+import org.eclipse.jgit.api.errors.CanceledException;
 import org.eclipse.jgit.diff.DiffEntry.ChangeType;
 import org.eclipse.jgit.diff.SimilarityIndex.TableFullException;
 import org.eclipse.jgit.internal.JGitText;
@@ -65,11 +34,15 @@ import org.eclipse.jgit.lib.ObjectReader;
 import org.eclipse.jgit.lib.ProgressMonitor;
 import org.eclipse.jgit.lib.Repository;
 
-/** Detect and resolve object renames. */
+/**
+ * Detect and resolve object renames.
+ */
 public class RenameDetector {
 	private static final int EXACT_RENAME_SCORE = 100;
 
-	private static final Comparator<DiffEntry> DIFF_COMPARATOR = new Comparator<DiffEntry>() {
+	private static final Comparator<DiffEntry> DIFF_COMPARATOR = new Comparator<>() {
+
+		@Override
 		public int compare(DiffEntry a, DiffEntry b) {
 			int cmp = nameOf(a).compareTo(nameOf(b));
 			if (cmp == 0)
@@ -126,6 +99,19 @@ public class RenameDetector {
 	/** Limit in the number of files to consider for renames. */
 	private int renameLimit;
 
+	/**
+	 * File size threshold (in bytes) for detecting renames. Files larger
+	 * than this size will not be processed for renames.
+	 */
+	private int bigFileThreshold = DEFAULT_BIG_FILE_THRESHOLD;
+
+	/**
+	 * Skip detecting content renames for binary files. Content renames are
+	 * those that are not exact, that is with a slight content modification
+	 * between the two files.
+	 */
+	private boolean skipContentRenamesForBinaryFiles = false;
+
 	/** Set if the number of adds or deletes was over the limit. */
 	private boolean overRenameLimit;
 
@@ -155,6 +141,8 @@ public class RenameDetector {
 	}
 
 	/**
+	 * Get rename score
+	 *
 	 * @return minimum score required to pair an add/delete as a rename. The
 	 *         score ranges are within the bounds of (0, 100).
 	 */
@@ -172,7 +160,7 @@ public class RenameDetector {
 	 *
 	 * @param score
 	 *            new rename score, must be within [0, 100].
-	 * @throws IllegalArgumentException
+	 * @throws java.lang.IllegalArgumentException
 	 *             the score was not within [0, 100].
 	 */
 	public void setRenameScore(int score) {
@@ -183,6 +171,8 @@ public class RenameDetector {
 	}
 
 	/**
+	 * Get break score
+	 *
 	 * @return the similarity score required to keep modified file pairs
 	 *         together. Any modify pairs that score below this will be broken
 	 *         apart into separate add/deletes. Values less than or equal to
@@ -194,6 +184,8 @@ public class RenameDetector {
 	}
 
 	/**
+	 * Set break score
+	 *
 	 * @param breakScore
 	 *            the similarity score required to keep modified file pairs
 	 *            together. Any modify pairs that score below this will be
@@ -205,7 +197,11 @@ public class RenameDetector {
 		this.breakScore = breakScore;
 	}
 
-	/** @return limit on number of paths to perform inexact rename detection. */
+	/**
+	 * Get rename limit
+	 *
+	 * @return limit on number of paths to perform inexact rename detection
+	 */
 	public int getRenameLimit() {
 		return renameLimit;
 	}
@@ -219,10 +215,52 @@ public class RenameDetector {
 	 * must be allocated, and 1,000,000 file compares may need to be performed.
 	 *
 	 * @param limit
-	 *            new file limit.
+	 *            new file limit. 0 means no limit; a negative number means no
+	 *            inexact rename detection will be performed, only exact rename
+	 *            detection.
 	 */
 	public void setRenameLimit(int limit) {
 		renameLimit = limit;
+	}
+
+	/**
+	 * Get file size threshold for detecting renames. Files larger
+	 * than this size will not be processed for rename detection.
+	 *
+	 * @return threshold in bytes of the file size.
+	 * @since 5.12
+	 */
+	public int getBigFileThreshold() { return bigFileThreshold; }
+
+	/**
+	 * Set the file size threshold for detecting renames. Files larger than this
+	 * threshold will be skipped during rename detection computation.
+	 *
+	 * @param threshold file size threshold in bytes.
+	 * @since 5.12
+	 */
+	public void setBigFileThreshold(int threshold) {
+		this.bigFileThreshold = threshold;
+	}
+
+	/**
+	 * Get skipping detecting content renames for binary files.
+	 *
+	 * @return true if content renames should be skipped for binary files, false otherwise.
+	 * @since 5.12
+	 */
+	public boolean getSkipContentRenamesForBinaryFiles() {
+		return skipContentRenamesForBinaryFiles;
+	}
+
+	/**
+	 * Sets skipping detecting content renames for binary files.
+	 *
+	 * @param value true if content renames should be skipped for binary files, false otherwise.
+	 * @since 5.12
+	 */
+	public void setSkipContentRenamesForBinaryFiles(boolean value) {
+		this.skipContentRenamesForBinaryFiles = value;
 	}
 
 	/**
@@ -247,7 +285,7 @@ public class RenameDetector {
 	 *
 	 * @param entriesToAdd
 	 *            one or more entries to add.
-	 * @throws IllegalStateException
+	 * @throws java.lang.IllegalStateException
 	 *             if {@code getEntries} was already invoked.
 	 */
 	public void addAll(Collection<DiffEntry> entriesToAdd) {
@@ -287,7 +325,7 @@ public class RenameDetector {
 	 *
 	 * @param entry
 	 *            to add.
-	 * @throws IllegalStateException
+	 * @throws java.lang.IllegalStateException
 	 *             if {@code getEntries} was already invoked.
 	 */
 	public void add(DiffEntry entry) {
@@ -298,14 +336,20 @@ public class RenameDetector {
 	 * Detect renames in the current file set.
 	 * <p>
 	 * This convenience function runs without a progress monitor.
+	 * </p>
 	 *
-	 * @return an unmodifiable list of {@link DiffEntry}s representing all files
-	 *         that have been changed.
-	 * @throws IOException
+	 * @return an unmodifiable list of {@link org.eclipse.jgit.diff.DiffEntry}s
+	 *         representing all files that have been changed.
+	 * @throws java.io.IOException
 	 *             file contents cannot be read from the repository.
 	 */
 	public List<DiffEntry> compute() throws IOException {
-		return compute(NullProgressMonitor.INSTANCE);
+		try {
+			return compute(NullProgressMonitor.INSTANCE);
+		} catch (CanceledException e) {
+			// Won't happen with a NullProgressMonitor
+			return Collections.emptyList();
+		}
 	}
 
 	/**
@@ -313,12 +357,15 @@ public class RenameDetector {
 	 *
 	 * @param pm
 	 *            report progress during the detection phases.
-	 * @return an unmodifiable list of {@link DiffEntry}s representing all files
-	 *         that have been changed.
-	 * @throws IOException
+	 * @return an unmodifiable list of {@link org.eclipse.jgit.diff.DiffEntry}s
+	 *         representing all files that have been changed.
+	 * @throws java.io.IOException
 	 *             file contents cannot be read from the repository.
+	 * @throws CanceledException
+	 *             if rename detection was cancelled
 	 */
-	public List<DiffEntry> compute(ProgressMonitor pm) throws IOException {
+	public List<DiffEntry> compute(ProgressMonitor pm)
+			throws IOException, CanceledException {
 		if (!done) {
 			try {
 				return compute(objectReader, pm);
@@ -336,13 +383,15 @@ public class RenameDetector {
 	 *            reader to obtain objects from the repository with.
 	 * @param pm
 	 *            report progress during the detection phases.
-	 * @return an unmodifiable list of {@link DiffEntry}s representing all files
-	 *         that have been changed.
-	 * @throws IOException
+	 * @return an unmodifiable list of {@link org.eclipse.jgit.diff.DiffEntry}s
+	 *         representing all files that have been changed.
+	 * @throws java.io.IOException
 	 *             file contents cannot be read from the repository.
+	 * @throws CanceledException
+	 *             if rename detection was cancelled
 	 */
 	public List<DiffEntry> compute(ObjectReader reader, ProgressMonitor pm)
-			throws IOException {
+			throws IOException, CanceledException {
 		final ContentSource cs = ContentSource.create(reader);
 		return compute(new ContentSource.Pair(cs, cs), pm);
 	}
@@ -354,13 +403,15 @@ public class RenameDetector {
 	 *            reader to obtain objects from the repository with.
 	 * @param pm
 	 *            report progress during the detection phases.
-	 * @return an unmodifiable list of {@link DiffEntry}s representing all files
-	 *         that have been changed.
-	 * @throws IOException
+	 * @return an unmodifiable list of {@link org.eclipse.jgit.diff.DiffEntry}s
+	 *         representing all files that have been changed.
+	 * @throws java.io.IOException
 	 *             file contents cannot be read from the repository.
+	 * @throws CanceledException
+	 *             if rename detection was cancelled
 	 */
 	public List<DiffEntry> compute(ContentSource.Pair reader, ProgressMonitor pm)
-			throws IOException {
+			throws IOException, CanceledException {
 		if (!done) {
 			done = true;
 
@@ -390,17 +441,26 @@ public class RenameDetector {
 		return Collections.unmodifiableList(entries);
 	}
 
-	/** Reset this rename detector for another rename detection pass. */
+	/**
+	 * Reset this rename detector for another rename detection pass.
+	 */
 	public void reset() {
-		entries = new ArrayList<DiffEntry>();
-		deleted = new ArrayList<DiffEntry>();
-		added = new ArrayList<DiffEntry>();
+		entries = new ArrayList<>();
+		deleted = new ArrayList<>();
+		added = new ArrayList<>();
 		done = false;
 	}
 
+	private void advanceOrCancel(ProgressMonitor pm) throws CanceledException {
+		if (pm.isCancelled()) {
+			throw new CanceledException(JGitText.get().renameCancelled);
+		}
+		pm.update(1);
+	}
+
 	private void breakModifies(ContentSource.Pair reader, ProgressMonitor pm)
-			throws IOException {
-		ArrayList<DiffEntry> newEntries = new ArrayList<DiffEntry>(entries.size());
+			throws IOException, CanceledException {
+		ArrayList<DiffEntry> newEntries = new ArrayList<>(entries.size());
 
 		pm.beginTask(JGitText.get().renamesBreakingModifies, entries.size());
 
@@ -420,22 +480,22 @@ public class RenameDetector {
 			} else {
 				newEntries.add(e);
 			}
-			pm.update(1);
+			advanceOrCancel(pm);
 		}
 
 		entries = newEntries;
 	}
 
-	private void rejoinModifies(ProgressMonitor pm) {
-		HashMap<String, DiffEntry> nameMap = new HashMap<String, DiffEntry>();
-		ArrayList<DiffEntry> newAdded = new ArrayList<DiffEntry>(added.size());
+	private void rejoinModifies(ProgressMonitor pm) throws CanceledException {
+		HashMap<String, DiffEntry> nameMap = new HashMap<>();
+		ArrayList<DiffEntry> newAdded = new ArrayList<>(added.size());
 
 		pm.beginTask(JGitText.get().renamesRejoiningModifies, added.size()
 				+ deleted.size());
 
 		for (DiffEntry src : deleted) {
 			nameMap.put(src.oldPath, src);
-			pm.update(1);
+			advanceOrCancel(pm);
 		}
 
 		for (DiffEntry dst : added) {
@@ -451,11 +511,11 @@ public class RenameDetector {
 			} else {
 				newAdded.add(dst);
 			}
-			pm.update(1);
+			advanceOrCancel(pm);
 		}
 
 		added = newAdded;
-		deleted = new ArrayList<DiffEntry>(nameMap.values());
+		deleted = new ArrayList<>(nameMap.values());
 	}
 
 	private int calculateModifyScore(ContentSource.Pair reader, DiffEntry d)
@@ -481,13 +541,15 @@ public class RenameDetector {
 
 	private void findContentRenames(ContentSource.Pair reader,
 			ProgressMonitor pm)
-			throws IOException {
+			throws IOException, CanceledException {
 		int cnt = Math.max(added.size(), deleted.size());
 		if (getRenameLimit() == 0 || cnt <= getRenameLimit()) {
 			SimilarityRenameDetector d;
 
 			d = new SimilarityRenameDetector(reader, deleted, added);
 			d.setRenameScore(getRenameScore());
+			d.setBigFileThreshold(getBigFileThreshold());
+			d.setSkipBinaryFiles(getSkipContentRenamesForBinaryFiles());
 			d.compute(pm);
 			overRenameLimit |= d.isTableOverflow();
 			deleted = d.getLeftOverSources();
@@ -499,7 +561,8 @@ public class RenameDetector {
 	}
 
 	@SuppressWarnings("unchecked")
-	private void findExactRenames(ProgressMonitor pm) {
+	private void findExactRenames(ProgressMonitor pm)
+			throws CanceledException {
 		pm.beginTask(JGitText.get().renamesFindingExact, //
 				added.size() + added.size() + deleted.size()
 						+ added.size() * deleted.size());
@@ -507,8 +570,8 @@ public class RenameDetector {
 		HashMap<AbbreviatedObjectId, Object> deletedMap = populateMap(deleted, pm);
 		HashMap<AbbreviatedObjectId, Object> addedMap = populateMap(added, pm);
 
-		ArrayList<DiffEntry> uniqueAdds = new ArrayList<DiffEntry>(added.size());
-		ArrayList<List<DiffEntry>> nonUniqueAdds = new ArrayList<List<DiffEntry>>();
+		ArrayList<DiffEntry> uniqueAdds = new ArrayList<>(added.size());
+		ArrayList<List<DiffEntry>> nonUniqueAdds = new ArrayList<>();
 
 		for (Object o : addedMap.values()) {
 			if (o instanceof DiffEntry)
@@ -517,7 +580,7 @@ public class RenameDetector {
 				nonUniqueAdds.add((List<DiffEntry>) o);
 		}
 
-		ArrayList<DiffEntry> left = new ArrayList<DiffEntry>(added.size());
+		ArrayList<DiffEntry> left = new ArrayList<>(added.size());
 
 		for (DiffEntry a : uniqueAdds) {
 			Object del = deletedMap.get(a.newId);
@@ -545,7 +608,7 @@ public class RenameDetector {
 			} else {
 				left.add(a);
 			}
-			pm.update(1);
+			advanceOrCancel(pm);
 		}
 
 		for (List<DiffEntry> adds : nonUniqueAdds) {
@@ -587,6 +650,10 @@ public class RenameDetector {
 						int score = SimilarityRenameDetector.nameScore(addedName, deletedName);
 						matrix[mNext] = SimilarityRenameDetector.encode(score, delIdx, addIdx);
 						mNext++;
+						if (pm.isCancelled()) {
+							throw new CanceledException(
+									JGitText.get().renameCancelled);
+						}
 					}
 				}
 
@@ -600,7 +667,7 @@ public class RenameDetector {
 					DiffEntry a = adds.get(addIdx);
 
 					if (a == null) {
-						pm.update(1);
+						advanceOrCancel(pm);
 						continue; // was already matched earlier
 					}
 
@@ -618,15 +685,16 @@ public class RenameDetector {
 
 					entries.add(DiffEntry.pair(type, d, a, 100));
 					adds.set(addIdx, null); // Claim the destination was matched.
-					pm.update(1);
+					advanceOrCancel(pm);
 				}
 			} else {
 				left.addAll(adds);
 			}
+			advanceOrCancel(pm);
 		}
 		added = left;
 
-		deleted = new ArrayList<DiffEntry>(deletedMap.size());
+		deleted = new ArrayList<>(deletedMap.size());
 		for (Object o : deletedMap.values()) {
 			if (o instanceof DiffEntry) {
 				DiffEntry e = (DiffEntry) o;
@@ -675,12 +743,13 @@ public class RenameDetector {
 
 	@SuppressWarnings("unchecked")
 	private HashMap<AbbreviatedObjectId, Object> populateMap(
-			List<DiffEntry> diffEntries, ProgressMonitor pm) {
-		HashMap<AbbreviatedObjectId, Object> map = new HashMap<AbbreviatedObjectId, Object>();
+			List<DiffEntry> diffEntries, ProgressMonitor pm)
+			throws CanceledException {
+		HashMap<AbbreviatedObjectId, Object> map = new HashMap<>();
 		for (DiffEntry de : diffEntries) {
 			Object old = map.put(id(de), de);
 			if (old instanceof DiffEntry) {
-				ArrayList<DiffEntry> list = new ArrayList<DiffEntry>(2);
+				ArrayList<DiffEntry> list = new ArrayList<>(2);
 				list.add((DiffEntry) old);
 				list.add(de);
 				map.put(id(de), list);
@@ -689,7 +758,7 @@ public class RenameDetector {
 				((List<DiffEntry>) old).add(de);
 				map.put(id(de), old);
 			}
-			pm.update(1);
+			advanceOrCancel(pm);
 		}
 		return map;
 	}

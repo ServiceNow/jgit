@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2010, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.internal.storage.pack;
@@ -51,8 +18,9 @@ import java.io.OutputStream;
  * <p>
  * The index can be passed a result buffer, and output an instruction sequence
  * that transforms the source buffer used by the index into the result buffer.
- * The instruction sequence can be executed by {@link BinaryDelta} to recreate
- * the result buffer.
+ * The instruction sequence can be executed by
+ * {@link org.eclipse.jgit.internal.storage.pack.BinaryDelta} to recreate the
+ * result buffer.
  * <p>
  * An index stores the entire contents of the source buffer, but also a table of
  * block identities mapped to locations where the block appears in the source
@@ -154,8 +122,8 @@ public class DeltaIndex {
 		// logic linear in the size of the input rather than quadratic.
 		//
 		int cnt = 0;
-		for (int i = 0; i < table.length; i++) {
-			int h = table[i];
+		for (int element : table) {
+			int h = element;
 			if (h == 0)
 				continue;
 
@@ -191,7 +159,11 @@ public class DeltaIndex {
 		}
 	}
 
-	/** @return size of the source buffer this index has scanned. */
+	/**
+	 * Get size of the source buffer this index has scanned.
+	 *
+	 * @return size of the source buffer this index has scanned.
+	 */
 	public long getSourceSize() {
 		return src.length;
 	}
@@ -244,7 +216,7 @@ public class DeltaIndex {
 	 *            the desired result buffer. The generated instructions will
 	 *            recreate this buffer when applied to the source buffer stored
 	 *            within this index.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the output stream refused to write the instructions.
 	 */
 	public void encode(OutputStream out, byte[] res) throws IOException {
@@ -274,7 +246,7 @@ public class DeltaIndex {
 	 * @return true if the delta is smaller than deltaSizeLimit; false if the
 	 *         encoder aborted because the encoded delta instructions would be
 	 *         longer than deltaSizeLimit bytes.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the output stream refused to write the instructions.
 	 */
 	public boolean encode(OutputStream out, byte[] res, int deltaSizeLimit)
@@ -421,6 +393,8 @@ public class DeltaIndex {
 		return start - resPtr;
 	}
 
+	/** {@inheritDoc} */
+	@Override
 	@SuppressWarnings("nls")
 	public String toString() {
 		String[] units = { "bytes", "KiB", "MiB", "GiB" };

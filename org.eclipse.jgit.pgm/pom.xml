@@ -1,45 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-   Copyright (C) 2009-2010, Google Inc.
-   and other copyright owners as documented in the project's IP log.
+  Copyright (C) 2009-2010, Google Inc. and others
 
-   This program and the accompanying materials are made available
-   under the terms of the Eclipse Distribution License v1.0 which
-   accompanies this distribution, is reproduced below, and is
-   available at http://www.eclipse.org/org/documents/edl-v10.php
+  This program and the accompanying materials are made available under the
+  terms of the Eclipse Distribution License v. 1.0 which is available at
+  http://www.eclipse.org/org/documents/edl-v10.php.
 
-   All rights reserved.
-
-   Redistribution and use in source and binary forms, with or
-   without modification, are permitted provided that the following
-   conditions are met:
-
-   - Redistributions of source code must retain the above copyright
-     notice, this list of conditions and the following disclaimer.
-
-   - Redistributions in binary form must reproduce the above
-     copyright notice, this list of conditions and the following
-     disclaimer in the documentation and/or other materials provided
-     with the distribution.
-
-   - Neither the name of the Eclipse Foundation, Inc. nor the
-     names of its contributors may be used to endorse or promote
-     products derived from this software without specific prior
-     written permission.
-
-   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
-   CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
-   INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
-   OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
-   CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
-   NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-   LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-   CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
-   STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
-   ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+  SPDX-License-Identifier: BSD-3-Clause
 -->
 
 <project xmlns="http://maven.apache.org/POM/4.0.0"
@@ -50,7 +17,7 @@
   <parent>
     <groupId>org.eclipse.jgit</groupId>
     <artifactId>org.eclipse.jgit-parent</artifactId>
-    <version>4.2.0-SNAPSHOT</version>
+    <version>6.6.1-snc-2</version>
   </parent>
 
   <artifactId>org.eclipse.jgit.pgm</artifactId>
@@ -63,6 +30,7 @@
   <properties>
     <translate-qualifier/>
     <source-bundle-manifest>${project.build.directory}/META-INF/SOURCE-MANIFEST.MF</source-bundle-manifest>
+    <maven.deploy.skip>true</maven.deploy.skip>
   </properties>
 
   <dependencies>
@@ -95,21 +63,71 @@
     </dependency>
 
     <dependency>
+      <groupId>org.eclipse.jgit</groupId>
+      <artifactId>org.eclipse.jgit.gpg.bc</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.eclipse.jgit</groupId>
+      <artifactId>org.eclipse.jgit.http.apache</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.eclipse.jgit</groupId>
+      <artifactId>org.eclipse.jgit.ssh.apache</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.eclipse.jgit</groupId>
+      <artifactId>org.eclipse.jgit.ssh.apache.agent</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.eclipse.jgit</groupId>
+      <artifactId>org.eclipse.jgit.ssh.jsch</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.httpcomponents</groupId>
+      <artifactId>httpclient</artifactId>
+    </dependency>
+
+    <dependency>
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-api</artifactId>
-      <version>${slf4j-version}</version>
     </dependency>
 
     <dependency>
       <groupId>org.slf4j</groupId>
-      <artifactId>slf4j-log4j12</artifactId>
-      <version>${slf4j-version}</version>
+      <artifactId>slf4j-simple</artifactId>
     </dependency>
 
     <dependency>
-      <groupId>log4j</groupId>
-      <artifactId>log4j</artifactId>
-      <version>${log4j-version}</version>
+      <groupId>org.eclipse.jetty</groupId>
+      <artifactId>jetty-servlet</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.eclipse.jgit</groupId>
+      <artifactId>org.eclipse.jgit.lfs</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.eclipse.jgit</groupId>
+      <artifactId>org.eclipse.jgit.lfs.server</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.tukaani</groupId>
+      <artifactId>xz</artifactId>
+      <optional>true</optional>
     </dependency>
   </dependencies>
 
@@ -141,40 +159,19 @@
       </plugin>
 
       <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-shade-plugin</artifactId>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
         <executions>
           <execution>
-            <phase>package</phase>
             <goals>
-              <goal>shade</goal>
+              <goal>repackage</goal>
             </goals>
             <configuration>
               <finalName>jgit-cli</finalName>
-              <createDependencyReducedPom>false</createDependencyReducedPom>
-              <transformers>
-                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />
-                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                  <manifestEntries>
-                    <Main-Class>org.eclipse.jgit.pgm.Main</Main-Class>
-                    <Implementation-Title>JGit Command Line Interface</Implementation-Title>
-                  </manifestEntries>
-                </transformer>
-              </transformers>
-              <filters>
-                <!-- exclude the signing data for individual jars, ueberjar will be signed again -->
-                <filter>
-                  <artifact>*:*</artifact>
-                  <excludes>
-                    <exclude>META-INF/*.SF</exclude>
-                    <exclude>META-INF/*.DSA</exclude>
-                    <exclude>META-INF/*.RSA</exclude>
-                    <exclude>OSGI-OPT/**</exclude>
-                  </excludes>
-                </filter>
-              </filters>
-              <shadedArtifactAttached>true</shadedArtifactAttached>
-              <shadedClassifierName>shaded</shadedClassifierName> <!-- Any name that makes sense -->
+              <attach>false</attach>
+              <mainClass>org.eclipse.jgit.pgm.Main</mainClass>
+              <executable>true</executable>
+              <embeddedLaunchScript>jgit.sh</embeddedLaunchScript>
             </configuration>
           </execution>
         </executions>
@@ -189,11 +186,13 @@
             <phase>package</phase>
             <configuration>
               <target>
-                <concat destfile="${basedir}/target/jgit" force="yes" binary="true">
-                  <fileset file="${basedir}/jgit.sh" />
-                  <fileset file="${basedir}/target/jgit-cli.jar" />
-                </concat>
-                <chmod file="${basedir}/target/jgit" perm="a+x"/>
+                <move
+                  file="${basedir}/target/jgit-cli.jar"
+                  force="yes"
+                  tofile="${basedir}/target/jgit" />
+                <chmod
+                  file="${basedir}/target/jgit"
+                  perm="a+x" />
               </target>
             </configuration>
             <goals>

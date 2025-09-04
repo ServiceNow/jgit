@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2012, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2012, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.internal.storage.file;
@@ -46,9 +13,6 @@ package org.eclipse.jgit.internal.storage.file;
 import java.text.MessageFormat;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
-
-import com.googlecode.javaewah.EWAHCompressedBitmap;
-import com.googlecode.javaewah.IntIterator;
 
 import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.lib.AnyObjectId;
@@ -59,7 +23,12 @@ import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectIdOwnerMap;
 import org.eclipse.jgit.util.BlockList;
 
-/** A compressed bitmap representation of the entire object graph. */
+import com.googlecode.javaewah.EWAHCompressedBitmap;
+import com.googlecode.javaewah.IntIterator;
+
+/**
+ * A compressed bitmap representation of the entire object graph.
+ */
 public class BitmapIndexImpl implements BitmapIndex {
 	private static final int EXTRA_BITS = 10 * 1024;
 
@@ -85,6 +54,7 @@ public class BitmapIndexImpl implements BitmapIndex {
 		return packIndex;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public CompressedBitmap getBitmap(AnyObjectId objectId) {
 		EWAHCompressedBitmap compressed = packIndex.getBitmap(objectId);
@@ -93,6 +63,7 @@ public class BitmapIndexImpl implements BitmapIndex {
 		return new CompressedBitmap(compressed, this);
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public CompressedBitmapBuilder newBitmapBuilder() {
 		return new CompressedBitmapBuilder(this);
@@ -209,22 +180,6 @@ public class BitmapIndexImpl implements BitmapIndex {
 		}
 
 		@Override
-		public boolean add(AnyObjectId objectId, int type) {
-			int position = bitmapIndex.findOrInsert(objectId, type);
-			if (bitset.contains(position))
-				return false;
-
-			Bitmap entry = bitmapIndex.getBitmap(objectId);
-			if (entry != null) {
-				or(entry);
-				return false;
-			}
-
-			bitset.set(position);
-			return true;
-		}
-
-		@Override
 		public boolean contains(AnyObjectId objectId) {
 			int position = bitmapIndex.findPosition(objectId);
 			return 0 <= position && bitset.contains(position);
@@ -297,6 +252,11 @@ public class BitmapIndexImpl implements BitmapIndex {
 			return bitmapIndex;
 		}
 
+		@Override
+		public EWAHCompressedBitmap retrieveCompressed() {
+			return build().retrieveCompressed();
+		}
+
 		private EWAHCompressedBitmap ewahBitmap(Bitmap other) {
 			if (other instanceof CompressedBitmap) {
 				CompressedBitmap b = (CompressedBitmap) other;
@@ -365,11 +325,12 @@ public class BitmapIndexImpl implements BitmapIndex {
 			final IntIterator trees = ofObjectType(Constants.OBJ_TREE);
 			final IntIterator blobs = ofObjectType(Constants.OBJ_BLOB);
 			final IntIterator tags = ofObjectType(Constants.OBJ_TAG);
-			return new Iterator<BitmapObject>() {
+			return new Iterator<>() {
 				private final BitmapObjectImpl out = new BitmapObjectImpl();
 				private int type;
 				private IntIterator cached = dynamic;
 
+				@Override
 				public boolean hasNext() {
 					if (!cached.hasNext()) {
 						if (commits.hasNext()) {
@@ -391,6 +352,7 @@ public class BitmapIndexImpl implements BitmapIndex {
 					return true;
 				}
 
+				@Override
 				public BitmapObject next() {
 					if (!hasNext())
 						throw new NoSuchElementException();
@@ -408,13 +370,15 @@ public class BitmapIndexImpl implements BitmapIndex {
 					return out;
 				}
 
+				@Override
 				public void remove() {
 					throw new UnsupportedOperationException();
 				}
 			};
 		}
 
-		EWAHCompressedBitmap getEwahCompressedBitmap() {
+		@Override
+		public EWAHCompressedBitmap retrieveCompressed() {
 			return bitmap;
 		}
 
@@ -439,10 +403,10 @@ public class BitmapIndexImpl implements BitmapIndex {
 
 	private static final class MutableBitmapIndex {
 		private final ObjectIdOwnerMap<MutableEntry>
-				revMap = new ObjectIdOwnerMap<MutableEntry>();
+				revMap = new ObjectIdOwnerMap<>();
 
 		private final BlockList<MutableEntry>
-				revList = new BlockList<MutableEntry>();
+				revList = new BlockList<>();
 
 		int findPosition(AnyObjectId objectId) {
 			MutableEntry entry = revMap.get(objectId);
@@ -504,10 +468,10 @@ public class BitmapIndexImpl implements BitmapIndex {
 	static final EWAHCompressedBitmap ones(int sizeInBits) {
 		EWAHCompressedBitmap mask = new EWAHCompressedBitmap();
 		mask.addStreamOfEmptyWords(
-				true, sizeInBits / EWAHCompressedBitmap.wordinbits);
-		int remaining = sizeInBits % EWAHCompressedBitmap.wordinbits;
+				true, sizeInBits / EWAHCompressedBitmap.WORD_IN_BITS);
+		int remaining = sizeInBits % EWAHCompressedBitmap.WORD_IN_BITS;
 		if (remaining > 0)
-			mask.add((1L << remaining) - 1, remaining);
+			mask.addWord((1L << remaining) - 1, remaining);
 		return mask;
 	}
 }

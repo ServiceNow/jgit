@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2010, Sasa Zivkov <sasa.zivkov@sap.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, Sasa Zivkov <sasa.zivkov@sap.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.notes;
@@ -56,14 +23,13 @@ import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.merge.MergeStrategy;
 import org.eclipse.jgit.merge.Merger;
 import org.eclipse.jgit.merge.ThreeWayMerger;
-import org.eclipse.jgit.treewalk.AbstractTreeIterator;
-import org.eclipse.jgit.treewalk.TreeWalk;
 
 /**
  * Three-way note tree merge.
  * <p>
- * Direct implementation of NoteMap merger without using {@link TreeWalk} and
- * {@link AbstractTreeIterator}
+ * Direct implementation of NoteMap merger without using
+ * {@link org.eclipse.jgit.treewalk.TreeWalk} and
+ * {@link org.eclipse.jgit.treewalk.AbstractTreeIterator}
  */
 public class NoteMapMerger {
 	private static final FanoutBucket EMPTY_FANOUT = new FanoutBucket(0);
@@ -83,8 +49,9 @@ public class NoteMapMerger {
 	private final MutableObjectId objectIdPrefix;
 
 	/**
-	 * Constructs a NoteMapMerger with custom {@link NoteMerger} and custom
-	 * {@link MergeStrategy}.
+	 * Constructs a NoteMapMerger with custom
+	 * {@link org.eclipse.jgit.notes.NoteMerger} and custom
+	 * {@link org.eclipse.jgit.merge.MergeStrategy}.
 	 *
 	 * @param db
 	 *            Git repository
@@ -104,9 +71,10 @@ public class NoteMapMerger {
 	}
 
 	/**
-	 * Constructs a NoteMapMerger with {@link DefaultNoteMerger} as the merger
-	 * for notes and the {@link MergeStrategy#RESOLVE} as the strategy for
-	 * resolving conflicts on non-notes
+	 * Constructs a NoteMapMerger with
+	 * {@link org.eclipse.jgit.notes.DefaultNoteMerger} as the merger for notes
+	 * and the {@link org.eclipse.jgit.merge.MergeStrategy#RESOLVE} as the
+	 * strategy for resolving conflicts on non-notes
 	 *
 	 * @param db
 	 *            Git repository
@@ -125,7 +93,7 @@ public class NoteMapMerger {
 	 * @param theirs
 	 *            theirs version of the note tree
 	 * @return merge result as a new NoteMap
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 */
 	public NoteMap merge(NoteMap base, NoteMap ours, NoteMap theirs)
 			throws IOException {
@@ -294,22 +262,22 @@ public class NoteMapMerger {
 	private static boolean sameNote(Note a, Note b) {
 		if (a == null && b == null)
 			return true;
-		return a != null && b != null && AnyObjectId.equals(a, b);
+		return a != null && b != null && AnyObjectId.isEqual(a, b);
 	}
 
 	private static boolean sameContent(Note a, Note b) {
 		if (a == null && b == null)
 			return true;
 		return a != null && b != null
-				&& AnyObjectId.equals(a.getData(), b.getData());
+				&& AnyObjectId.isEqual(a.getData(), b.getData());
 	}
 
 	private static InMemoryNoteBucket addIfNotNull(InMemoryNoteBucket result,
 			Note note) {
-		if (note != null)
+		if (note != null) {
 			return result.append(note);
-		else
-			return result;
+		}
+		return result;
 	}
 
 	private NonNoteEntry mergeNonNotes(NonNoteEntry baseList,

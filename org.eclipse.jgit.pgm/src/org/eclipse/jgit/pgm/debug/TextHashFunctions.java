@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2010, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.pgm.debug;
@@ -138,9 +105,8 @@ class TextHashFunctions extends TextBuiltin {
 				Arrays.fill(buf16, (byte) 0);
 				System.arraycopy(raw, ptr, buf16, 0, end - ptr);
 				return rabin(buf16, 0);
-			} else {
-				return rabin(raw, ptr);
 			}
+			return rabin(raw, ptr);
 		}
 
 		private int rabin(byte[] raw, int ptr) {
@@ -250,23 +216,25 @@ class TextHashFunctions extends TextBuiltin {
 	//
 	//
 
-	@Option(name = "--hash", multiValued = true, metaVar = "NAME", usage = "Enable hash function(s)")
-	List<String> hashFunctions = new ArrayList<String>();
+	@Option(name = "--hash", metaVar = "NAME", usage = "Enable hash function(s)")
+	List<String> hashFunctions = new ArrayList<>();
 
-	@Option(name = "--fold", multiValued = true, metaVar = "NAME", usage = "Enable fold function(s)")
-	List<String> foldFunctions = new ArrayList<String>();
+	@Option(name = "--fold", metaVar = "NAME", usage = "Enable fold function(s)")
+	List<String> foldFunctions = new ArrayList<>();
 
 	@Option(name = "--text-limit", metaVar = "LIMIT", usage = "Maximum size in KiB to scan")
 	int textLimit = 15 * 1024; // 15 MiB as later we do * 1024.
 
-	@Option(name = "--repository", aliases = { "-r" }, multiValued = true, metaVar = "GIT_DIR", usage = "Repository to scan")
-	List<File> gitDirs = new ArrayList<File>();
+	@Option(name = "--repository", aliases = { "-r" }, metaVar = "GIT_DIR", usage = "Repository to scan")
+	List<File> gitDirs = new ArrayList<>();
 
+	/** {@inheritDoc} */
 	@Override
 	protected boolean requiresRepository() {
 		return false;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	protected void run() throws Exception {
 		if (gitDirs.isEmpty()) {
@@ -286,25 +254,22 @@ class TextHashFunctions extends TextBuiltin {
 			else
 				rb.findGitDir(dir);
 
-			Repository db = rb.build();
-			try {
-				run(db);
-			} finally {
-				db.close();
+			try (Repository repo = rb.build()) {
+				run(repo);
 			}
 		}
 	}
 
-	private void run(Repository db) throws Exception {
+	private void run(Repository repo) throws Exception {
 		List<Function> all = init();
 
 		long fileCnt = 0;
 		long lineCnt = 0;
-		try (ObjectReader or = db.newObjectReader();
+		try (ObjectReader or = repo.newObjectReader();
 			RevWalk rw = new RevWalk(or);
 			TreeWalk tw = new TreeWalk(or)) {
 			final MutableObjectId id = new MutableObjectId();
-			tw.reset(rw.parseTree(db.resolve(Constants.HEAD)));
+			tw.reset(rw.parseTree(repo.resolve(Constants.HEAD)));
 			tw.setRecursive(true);
 
 			while (tw.next()) {
@@ -321,13 +286,13 @@ class TextHashFunctions extends TextBuiltin {
 					continue;
 				}
 
-				if (RawText.isBinary(raw))
+				if (RawText.isBinary(raw, raw.length, true))
 					continue;
 
 				RawText txt = new RawText(raw);
 				int[] lines = new int[txt.size()];
 				int cnt = 0;
-				HashSet<Line> u = new HashSet<Line>();
+				HashSet<Line> u = new HashSet<>();
 				for (int i = 0; i < txt.size(); i++) {
 					if (u.add(new Line(txt, i)))
 						lines[cnt++] = i;
@@ -341,7 +306,7 @@ class TextHashFunctions extends TextBuiltin {
 			}
 		}
 
-		File directory = db.getDirectory();
+		File directory = repo.getDirectory();
 		if (directory != null) {
 			String name = directory.getName();
 			File parent = directory.getParentFile();
@@ -349,10 +314,10 @@ class TextHashFunctions extends TextBuiltin {
 				name = parent.getName();
 			outw.println(name + ":"); //$NON-NLS-1$
 		}
-		outw.format("  %6d files; %5d avg. unique lines/file\n", //
+		outw.format("  %6d files; %5d avg. unique lines/file\n", //$NON-NLS-1$
 				valueOf(fileCnt), //
 				valueOf(lineCnt / fileCnt));
-		outw.format("%-20s %-15s %9s\n", "Hash", "Fold", "Max Len");
+		outw.format("%-20s %-15s %9s\n", "Hash", "Fold", "Max Len"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
 		outw.println("-----------------------------------------------"); //$NON-NLS-1$
 		String lastHashName = null;
 		for (Function fun : all) {
@@ -386,8 +351,8 @@ class TextHashFunctions extends TextBuiltin {
 	}
 
 	private List<Function> init() {
-		List<Hash> hashes = new ArrayList<Hash>();
-		List<Fold> folds = new ArrayList<Fold>();
+		List<Hash> hashes = new ArrayList<>();
+		List<Fold> folds = new ArrayList<>();
 
 		try {
 			for (Field f : TextHashFunctions.class.getDeclaredFields()) {
@@ -404,13 +369,11 @@ class TextHashFunctions extends TextBuiltin {
 					folds.add(fold);
 				}
 			}
-		} catch (IllegalArgumentException e) {
-			throw new RuntimeException("Cannot determine names", e);
-		} catch (IllegalAccessException e) {
-			throw new RuntimeException("Cannot determine names", e);
+		} catch (IllegalArgumentException | IllegalAccessException e) {
+			throw new RuntimeException("Cannot determine names", e); //$NON-NLS-1$
 		}
 
-		List<Function> all = new ArrayList<Function>();
+		List<Function> all = new ArrayList<>();
 		for (Hash cmp : hashes) {
 			if (include(cmp.name, hashFunctions)) {
 				for (Fold f : folds) {
@@ -447,7 +410,7 @@ class TextHashFunctions extends TextBuiltin {
 	}
 
 	/** Base class for any hashCode function to be tested. */
-	private static abstract class Hash extends RawTextComparator {
+	private abstract static class Hash extends RawTextComparator {
 		String name;
 
 		@Override
@@ -457,7 +420,7 @@ class TextHashFunctions extends TextBuiltin {
 	}
 
 	/** Base class for any hashCode folding function to be tested. */
-	private static abstract class Fold {
+	private abstract static class Fold {
 		String name;
 
 		/**
@@ -475,7 +438,7 @@ class TextHashFunctions extends TextBuiltin {
 	}
 
 	/** Utility to help us identify unique lines in a file. */
-	private class Line {
+	private static class Line {
 		private final RawText txt;
 
 		private final int pos;
@@ -500,7 +463,7 @@ class TextHashFunctions extends TextBuiltin {
 		}
 	}
 
-	private static int tableBits(final int sz) {
+	private static int tableBits(int sz) {
 		int bits = 31 - Integer.numberOfLeadingZeros(sz);
 		if (bits == 0)
 			bits = 1;

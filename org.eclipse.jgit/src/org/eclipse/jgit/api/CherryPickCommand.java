@@ -1,51 +1,21 @@
 /*
- * Copyright (C) 2010, Christian Halstrick <christian.halstrick@sap.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, 2021 Christian Halstrick <christian.halstrick@sap.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 package org.eclipse.jgit.api;
+
+import static org.eclipse.jgit.lib.Constants.OBJECT_ID_ABBREV_STRING_LENGTH;
 
 import java.io.IOException;
 import java.text.MessageFormat;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.jgit.api.errors.ConcurrentRefUpdateException;
 import org.eclipse.jgit.api.errors.GitAPIException;
@@ -57,17 +27,24 @@ import org.eclipse.jgit.api.errors.UnmergedPathsException;
 import org.eclipse.jgit.api.errors.WrongRepositoryStateException;
 import org.eclipse.jgit.dircache.DirCacheCheckout;
 import org.eclipse.jgit.errors.MissingObjectException;
+import org.eclipse.jgit.events.WorkingTreeModifiedEvent;
 import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.lib.AnyObjectId;
+import org.eclipse.jgit.lib.CommitConfig;
 import org.eclipse.jgit.lib.Constants;
+import org.eclipse.jgit.lib.NullProgressMonitor;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectIdRef;
+import org.eclipse.jgit.lib.ProgressMonitor;
 import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.lib.Ref.Storage;
 import org.eclipse.jgit.lib.Repository;
+import org.eclipse.jgit.merge.ContentMergeStrategy;
 import org.eclipse.jgit.merge.MergeMessageFormatter;
 import org.eclipse.jgit.merge.MergeStrategy;
+import org.eclipse.jgit.merge.Merger;
 import org.eclipse.jgit.merge.ResolveMerger;
+import org.eclipse.jgit.merge.ResolveMerger.MergeFailureReason;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.revwalk.RevWalk;
 import org.eclipse.jgit.treewalk.FileTreeIterator;
@@ -85,51 +62,54 @@ import org.eclipse.jgit.treewalk.FileTreeIterator;
 public class CherryPickCommand extends GitCommand<CherryPickResult> {
 	private String reflogPrefix = "cherry-pick:"; //$NON-NLS-1$
 
-	private List<Ref> commits = new LinkedList<Ref>();
+	private List<Ref> commits = new LinkedList<>();
 
 	private String ourCommitName = null;
 
 	private MergeStrategy strategy = MergeStrategy.RECURSIVE;
 
+	private ContentMergeStrategy contentStrategy;
+
 	private Integer mainlineParentNumber;
 
 	private boolean noCommit = false;
 
+	private ProgressMonitor monitor = NullProgressMonitor.INSTANCE;
+
 	/**
+	 * Constructor for CherryPickCommand
+	 *
 	 * @param repo
+	 *            the {@link org.eclipse.jgit.lib.Repository}
 	 */
 	protected CherryPickCommand(Repository repo) {
 		super(repo);
 	}
 
 	/**
+	 * {@inheritDoc}
+	 * <p>
 	 * Executes the {@code Cherry-Pick} command with all the options and
 	 * parameters collected by the setter methods (e.g. {@link #include(Ref)} of
 	 * this class. Each instance of this class should only be used for one
 	 * invocation of the command. Don't call this method twice on an instance.
-	 *
-	 * @return the result of the cherry-pick
-	 * @throws GitAPIException
-	 * @throws WrongRepositoryStateException
-	 * @throws ConcurrentRefUpdateException
-	 * @throws UnmergedPathsException
-	 * @throws NoMessageException
-	 * @throws NoHeadException
 	 */
+	@Override
 	public CherryPickResult call() throws GitAPIException, NoMessageException,
 			UnmergedPathsException, ConcurrentRefUpdateException,
 			WrongRepositoryStateException, NoHeadException {
 		RevCommit newHead = null;
-		List<Ref> cherryPickedRefs = new LinkedList<Ref>();
+		List<Ref> cherryPickedRefs = new LinkedList<>();
 		checkCallable();
 
 		try (RevWalk revWalk = new RevWalk(repo)) {
 
 			// get the head commit
-			Ref headRef = repo.getRef(Constants.HEAD);
-			if (headRef == null)
+			Ref headRef = repo.exactRef(Constants.HEAD);
+			if (headRef == null) {
 				throw new NoHeadException(
 						JGitText.get().commitOnRepoWithoutHEADCurrentlyNotSupported);
+			}
 
 			newHead = revWalk.parseCommit(headRef.getObjectId());
 
@@ -138,51 +118,88 @@ public class CherryPickCommand extends GitCommand<CherryPickResult> {
 				// get the commit to be cherry-picked
 				// handle annotated tags
 				ObjectId srcObjectId = src.getPeeledObjectId();
-				if (srcObjectId == null)
+				if (srcObjectId == null) {
 					srcObjectId = src.getObjectId();
+				}
 				RevCommit srcCommit = revWalk.parseCommit(srcObjectId);
 
 				// get the parent of the commit to cherry-pick
 				final RevCommit srcParent = getParentCommit(srcCommit, revWalk);
 
 				String ourName = calculateOurName(headRef);
-				String cherryPickName = srcCommit.getId().abbreviate(7).name()
+				String cherryPickName = srcCommit.getId().abbreviate(OBJECT_ID_ABBREV_STRING_LENGTH).name()
 						+ " " + srcCommit.getShortMessage(); //$NON-NLS-1$
 
-				ResolveMerger merger = (ResolveMerger) strategy.newMerger(repo);
-				merger.setWorkingTreeIterator(new FileTreeIterator(repo));
-				merger.setBase(srcParent.getTree());
-				merger.setCommitNames(new String[] { "BASE", ourName, //$NON-NLS-1$
-						cherryPickName });
-				if (merger.merge(newHead, srcCommit)) {
-					if (AnyObjectId.equals(newHead.getTree().getId(), merger
-							.getResultTreeId()))
+				Merger merger = strategy.newMerger(repo);
+				merger.setProgressMonitor(monitor);
+				boolean noProblems;
+				Map<String, MergeFailureReason> failingPaths = null;
+				List<String> unmergedPaths = null;
+				if (merger instanceof ResolveMerger) {
+					ResolveMerger resolveMerger = (ResolveMerger) merger;
+					resolveMerger.setContentMergeStrategy(contentStrategy);
+					resolveMerger.setCommitNames(
+							new String[] { "BASE", ourName, cherryPickName }); //$NON-NLS-1$
+					resolveMerger
+							.setWorkingTreeIterator(new FileTreeIterator(repo));
+					if (srcParent != null) {
+						resolveMerger.setBase(srcParent.getTree());
+					}
+					noProblems = merger.merge(newHead, srcCommit);
+					failingPaths = resolveMerger.getFailingPaths();
+					unmergedPaths = resolveMerger.getUnmergedPaths();
+					if (!resolveMerger.getModifiedFiles().isEmpty()) {
+						repo.fireEvent(new WorkingTreeModifiedEvent(
+								resolveMerger.getModifiedFiles(), null));
+					}
+				} else {
+					noProblems = merger.merge(newHead, srcCommit);
+				}
+				if (noProblems) {
+					if (AnyObjectId.isEqual(newHead.getTree().getId(),
+							merger.getResultTreeId())) {
 						continue;
+					}
 					DirCacheCheckout dco = new DirCacheCheckout(repo,
 							newHead.getTree(), repo.lockDirCache(),
 							merger.getResultTreeId());
 					dco.setFailOnConflict(true);
+					dco.setProgressMonitor(monitor);
 					dco.checkout();
-					if (!noCommit)
-						newHead = new Git(getRepository()).commit()
-								.setMessage(srcCommit.getFullMessage())
-								.setReflogComment(reflogPrefix + " " //$NON-NLS-1$
-										+ srcCommit.getShortMessage())
-								.setAuthor(srcCommit.getAuthorIdent())
-								.setNoVerify(true).call();
+					if (!noCommit) {
+						try (Git git = new Git(getRepository())) {
+							newHead = git.commit()
+									.setMessage(srcCommit.getFullMessage())
+									.setReflogComment(reflogPrefix + " " //$NON-NLS-1$
+											+ srcCommit.getShortMessage())
+									.setAuthor(srcCommit.getAuthorIdent())
+									.setNoVerify(true).call();
+						}
+					}
 					cherryPickedRefs.add(src);
 				} else {
-					if (merger.failed())
-						return new CherryPickResult(merger.getFailingPaths());
+					if (failingPaths != null && !failingPaths.isEmpty()) {
+						return new CherryPickResult(failingPaths);
+					}
 
 					// there are merge conflicts
 
-					String message = new MergeMessageFormatter()
-							.formatWithConflicts(srcCommit.getFullMessage(),
-									merger.getUnmergedPaths());
+					String message;
+					if (unmergedPaths != null) {
+						CommitConfig cfg = repo.getConfig()
+								.get(CommitConfig.KEY);
+						message = srcCommit.getFullMessage();
+						char commentChar = cfg.getCommentChar(message);
+						message = new MergeMessageFormatter()
+								.formatWithConflicts(message, unmergedPaths,
+										commentChar);
+					} else {
+						message = srcCommit.getFullMessage();
+					}
 
-					if (!noCommit)
+					if (!noCommit) {
 						repo.writeCherryPickHead(srcCommit.getId());
+					}
 					repo.writeMergeCommitMsg(message);
 
 					return CherryPickResult.CONFLICT;
@@ -202,18 +219,23 @@ public class CherryPickCommand extends GitCommand<CherryPickResult> {
 			IOException {
 		final RevCommit srcParent;
 		if (mainlineParentNumber == null) {
-			if (srcCommit.getParentCount() != 1)
+			int nOfParents = srcCommit.getParentCount();
+			if (nOfParents == 0) {
+				return null;
+			} else if (nOfParents != 1) {
 				throw new MultipleParentsNotAllowedException(
 						MessageFormat.format(
 								JGitText.get().canOnlyCherryPickCommitsWithOneParent,
 								srcCommit.name(),
 								Integer.valueOf(srcCommit.getParentCount())));
+			}
 			srcParent = srcCommit.getParent(0);
 		} else {
-			if (mainlineParentNumber.intValue() > srcCommit.getParentCount())
+			if (mainlineParentNumber.intValue() > srcCommit.getParentCount()) {
 				throw new JGitInternalException(MessageFormat.format(
 						JGitText.get().commitDoesNotHaveGivenParent, srcCommit,
 						mainlineParentNumber));
+			}
 			srcParent = srcCommit
 					.getParent(mainlineParentNumber.intValue() - 1);
 		}
@@ -223,6 +245,8 @@ public class CherryPickCommand extends GitCommand<CherryPickResult> {
 	}
 
 	/**
+	 * Include a reference to a commit
+	 *
 	 * @param commit
 	 *            a reference to a commit which is cherry-picked to the current
 	 *            head
@@ -235,6 +259,8 @@ public class CherryPickCommand extends GitCommand<CherryPickResult> {
 	}
 
 	/**
+	 * Include a commit
+	 *
 	 * @param commit
 	 *            the Id of a commit which is cherry-picked to the current head
 	 * @return {@code this}
@@ -244,6 +270,8 @@ public class CherryPickCommand extends GitCommand<CherryPickResult> {
 	}
 
 	/**
+	 * Include a commit
+	 *
 	 * @param name
 	 *            a name given to the commit
 	 * @param commit
@@ -256,6 +284,8 @@ public class CherryPickCommand extends GitCommand<CherryPickResult> {
 	}
 
 	/**
+	 * Set the name that should be used in the "OURS" place for conflict markers
+	 *
 	 * @param ourCommitName
 	 *            the name that should be used in the "OURS" place for conflict
 	 *            markers
@@ -277,12 +307,14 @@ public class CherryPickCommand extends GitCommand<CherryPickResult> {
 	 * @return {@code this}
 	 * @since 3.1
 	 */
-	public CherryPickCommand setReflogPrefix(final String prefix) {
+	public CherryPickCommand setReflogPrefix(String prefix) {
 		this.reflogPrefix = prefix;
 		return this;
 	}
 
 	/**
+	 * Set the {@code MergeStrategy}
+	 *
 	 * @param strategy
 	 *            The merge strategy to use during this Cherry-pick.
 	 * @return {@code this}
@@ -294,6 +326,24 @@ public class CherryPickCommand extends GitCommand<CherryPickResult> {
 	}
 
 	/**
+	 * Sets the content merge strategy to use if the
+	 * {@link #setStrategy(MergeStrategy) merge strategy} is "resolve" or
+	 * "recursive".
+	 *
+	 * @param strategy
+	 *            the {@link ContentMergeStrategy} to be used
+	 * @return {@code this}
+	 * @since 5.12
+	 */
+	public CherryPickCommand setContentMergeStrategy(
+			ContentMergeStrategy strategy) {
+		this.contentStrategy = strategy;
+		return this;
+	}
+
+	/**
+	 * Set the (1-based) parent number to diff against
+	 *
 	 * @param mainlineParentNumber
 	 *            the (1-based) parent number to diff against. This allows
 	 *            cherry-picking of merges.
@@ -322,6 +372,24 @@ public class CherryPickCommand extends GitCommand<CherryPickResult> {
 		return this;
 	}
 
+	/**
+	 * The progress monitor associated with the cherry-pick operation. By
+	 * default, this is set to <code>NullProgressMonitor</code>
+	 *
+	 * @see NullProgressMonitor
+	 * @param monitor
+	 *            a {@link org.eclipse.jgit.lib.ProgressMonitor}
+	 * @return {@code this}
+	 * @since 4.11
+	 */
+	public CherryPickCommand setProgressMonitor(ProgressMonitor monitor) {
+		if (monitor == null) {
+			monitor = NullProgressMonitor.INSTANCE;
+		}
+		this.monitor = monitor;
+		return this;
+	}
+
 	private String calculateOurName(Ref headRef) {
 		if (ourCommitName != null)
 			return ourCommitName;
@@ -330,4 +398,16 @@ public class CherryPickCommand extends GitCommand<CherryPickResult> {
 		String headName = Repository.shortenRefName(targetRefName);
 		return headName;
 	}
+
+	/** {@inheritDoc} */
+	@SuppressWarnings("nls")
+	@Override
+	public String toString() {
+		return "CherryPickCommand [repo=" + repo + ",\ncommits=" + commits
+				+ ",\nmainlineParentNumber=" + mainlineParentNumber
+				+ ", noCommit=" + noCommit + ", ourCommitName=" + ourCommitName
+				+ ", reflogPrefix=" + reflogPrefix + ", strategy=" + strategy
+				+ "]";
+	}
+
 }

@@ -1,52 +1,21 @@
 /*
- * Copyright (C) 2008, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.util;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import org.eclipse.jgit.util.IntList.IntComparator;
 import org.junit.Test;
 
 public class IntListTest {
@@ -71,6 +40,15 @@ public class IntListTest {
 			fail("Accepted 0 index on empty list");
 		} catch (ArrayIndexOutOfBoundsException e) {
 			assertTrue(true);
+		}
+	}
+
+	@Test
+	public void testFilledWithRange() {
+		IntList list = IntList.filledWithRange(-2, 13);
+		assertEquals(15, list.size());
+		for (int i = 0; i < list.size(); i++) {
+			assertEquals(i - 2, list.get(i));
 		}
 	}
 
@@ -186,6 +164,32 @@ public class IntListTest {
 	}
 
 	@Test
+	public void testContains() {
+		IntList i = new IntList();
+		i.add(1);
+		i.add(4);
+		assertTrue(i.contains(1));
+		assertTrue(i.contains(4));
+		assertFalse(i.contains(2));
+	}
+
+	@Test
+	public void testSort_byAbs() {
+		IntList list = new IntList();
+		list.add(-3);
+		list.add(-2);
+		list.add(0);
+		list.add(1);
+		list.add(4);
+		list.add(1);
+		list.sort(new AbsIntComparator());
+		int[] expected = { 0, 1, 1, -2, -3, 4 };
+		for (int i = 0; i < list.size(); i++) {
+			assertEquals(expected[i], list.get(i));
+		}
+	}
+
+	@Test
 	public void testToString() {
 		final IntList i = new IntList();
 		i.add(1);
@@ -195,4 +199,13 @@ public class IntListTest {
 		assertEquals("[1, 13, 5]", i.toString());
 	}
 
+	private static class AbsIntComparator implements IntComparator {
+		private AbsIntComparator() {
+		}
+
+		@Override
+		public int compare(int a, int b) {
+			return Math.abs(a) - Math.abs(b);
+		}
+	}
 }

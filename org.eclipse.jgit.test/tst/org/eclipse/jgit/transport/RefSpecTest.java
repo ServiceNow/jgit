@@ -1,46 +1,13 @@
 /*
  * Copyright (C) 2008, Robin Rosenberg <robin.rosenberg@dewire.com>
  * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org>
- * Copyright (C) 2013, Robin Stocker <robin@nibor.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2013, Robin Stocker <robin@nibor.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.transport;
@@ -55,6 +22,7 @@ import static org.junit.Assert.assertTrue;
 
 import org.eclipse.jgit.lib.ObjectIdRef;
 import org.eclipse.jgit.lib.Ref;
+import org.eclipse.jgit.transport.RefSpec.WildcardMode;
 import org.junit.Test;
 
 public class RefSpecTest {
@@ -341,6 +309,41 @@ public class RefSpecTest {
 	}
 
 	@Test
+	public void testWildcardAfterText1() {
+		RefSpec a = new RefSpec("refs/heads/*/for-linus:refs/remotes/mine/*-blah");
+		assertTrue(a.isWildcard());
+		assertTrue(a.matchDestination("refs/remotes/mine/x-blah"));
+		assertTrue(a.matchDestination("refs/remotes/mine/foo-blah"));
+		assertTrue(a.matchDestination("refs/remotes/mine/foo/x-blah"));
+		assertFalse(a.matchDestination("refs/remotes/origin/foo/x-blah"));
+
+		RefSpec b = a.expandFromSource("refs/heads/foo/for-linus");
+		assertEquals("refs/remotes/mine/foo-blah", b.getDestination());
+		RefSpec c = a.expandFromDestination("refs/remotes/mine/foo-blah");
+		assertEquals("refs/heads/foo/for-linus", c.getSource());
+	}
+
+	@Test
+	public void testWildcardAfterText2() {
+		RefSpec a = new RefSpec("refs/heads*/for-linus:refs/remotes/mine/*");
+		assertTrue(a.isWildcard());
+		assertTrue(a.matchSource("refs/headsx/for-linus"));
+		assertTrue(a.matchSource("refs/headsfoo/for-linus"));
+		assertTrue(a.matchSource("refs/headsx/foo/for-linus"));
+		assertFalse(a.matchSource("refs/headx/for-linus"));
+
+		RefSpec b = a.expandFromSource("refs/headsx/for-linus");
+		assertEquals("refs/remotes/mine/x", b.getDestination());
+		RefSpec c = a.expandFromDestination("refs/remotes/mine/x");
+		assertEquals("refs/headsx/for-linus", c.getSource());
+
+		RefSpec d = a.expandFromSource("refs/headsx/foo/for-linus");
+		assertEquals("refs/remotes/mine/x/foo", d.getDestination());
+		RefSpec e = a.expandFromDestination("refs/remotes/mine/x/foo");
+		assertEquals("refs/headsx/foo/for-linus", e.getSource());
+	}
+
+	@Test
 	public void testWildcardMirror() {
 		RefSpec a = new RefSpec("*:*");
 		assertTrue(a.isWildcard());
@@ -374,6 +377,16 @@ public class RefSpecTest {
 	}
 
 	@Test(expected = IllegalArgumentException.class)
+	public void invalidWhenSourceEndsWithSlash() {
+		assertNotNull(new RefSpec("refs/heads/"));
+	}
+
+	@Test(expected = IllegalArgumentException.class)
+	public void invalidWhenDestinationEndsWithSlash() {
+		assertNotNull(new RefSpec("refs/heads/master:refs/heads/"));
+	}
+
+	@Test(expected = IllegalArgumentException.class)
 	public void invalidWhenSourceOnlyAndWildcard() {
 		assertNotNull(new RefSpec("refs/heads/*"));
 	}
@@ -404,21 +417,6 @@ public class RefSpecTest {
 	}
 
 	@Test(expected = IllegalArgumentException.class)
-	public void invalidWhenWildcardAfterText() {
-		assertNotNull(new RefSpec("refs/heads/wrong*:refs/heads/right/*"));
-	}
-
-	@Test(expected = IllegalArgumentException.class)
-	public void invalidWhenWildcardBeforeText() {
-		assertNotNull(new RefSpec("*wrong:right/*"));
-	}
-
-	@Test(expected = IllegalArgumentException.class)
-	public void invalidWhenWildcardBeforeTextAtEnd() {
-		assertNotNull(new RefSpec("refs/heads/*wrong:right/*"));
-	}
-
-	@Test(expected = IllegalArgumentException.class)
 	public void invalidSourceDoubleSlashes() {
 		assertNotNull(new RefSpec("refs/heads//wrong"));
 	}
@@ -443,5 +441,91 @@ public class RefSpecTest {
 	public void invalidSetDestination() {
 		RefSpec a = new RefSpec("refs/heads/*:refs/remotes/origin/*");
 		a.setDestination("refs/remotes/origin/*/*");
+	}
+
+	@Test(expected = IllegalArgumentException.class)
+	public void invalidNegativeAndForce() {
+		assertNotNull(new RefSpec("^+refs/heads/master"));
+	}
+
+	@Test(expected = IllegalArgumentException.class)
+	public void invalidForceAndNegative() {
+		assertNotNull(new RefSpec("+^refs/heads/master"));
+	}
+
+	@Test(expected = IllegalArgumentException.class)
+	public void invalidNegativeNoSrcDest() {
+		assertNotNull(new RefSpec("^"));
+	}
+
+	@Test(expected = IllegalArgumentException.class)
+	public void invalidNegativeBothSrcDest() {
+		assertNotNull(new RefSpec("^refs/heads/*:refs/heads/*"));
+	}
+
+	@Test
+	public void sourceOnlywithWildcard() {
+		RefSpec a = new RefSpec("refs/heads/*",
+				WildcardMode.ALLOW_MISMATCH);
+		assertTrue(a.matchSource("refs/heads/master"));
+		assertNull(a.getDestination());
+	}
+
+	@Test
+	public void destinationWithWildcard() {
+		RefSpec a = new RefSpec("refs/heads/master:refs/heads/*",
+				WildcardMode.ALLOW_MISMATCH);
+		assertTrue(a.matchSource("refs/heads/master"));
+		assertTrue(a.matchDestination("refs/heads/master"));
+		assertTrue(a.matchDestination("refs/heads/foo"));
+	}
+
+	@Test
+	public void onlyWildCard() {
+		RefSpec a = new RefSpec("*", WildcardMode.ALLOW_MISMATCH);
+		assertTrue(a.matchSource("refs/heads/master"));
+		assertNull(a.getDestination());
+	}
+
+	@Test
+	public void matching() {
+		RefSpec a = new RefSpec(":");
+		assertTrue(a.isMatching());
+		assertFalse(a.isForceUpdate());
+	}
+
+	@Test
+	public void matchingForced() {
+		RefSpec a = new RefSpec("+:");
+		assertTrue(a.isMatching());
+		assertTrue(a.isForceUpdate());
+	}
+
+	@Test
+	public void negativeRefSpecWithDest() {
+		RefSpec a = new RefSpec("^:refs/readonly/*");
+		assertTrue(a.isNegative());
+		assertNull(a.getSource());
+		assertEquals(a.getDestination(), "refs/readonly/*");
+	}
+
+	// Because of some of the API's existing behavior, without a colon at the
+	// end of the refspec, dest will be null.
+	@Test
+	public void negativeRefSpecWithSrcAndNullDest() {
+		RefSpec a = new RefSpec("^refs/testdata/*");
+		assertTrue(a.isNegative());
+		assertNull(a.getDestination());
+		assertEquals(a.getSource(), "refs/testdata/*");
+	}
+
+	// Because of some of the API's existing behavior, with a colon at the end
+	// of the refspec, dest will be empty.
+	@Test
+	public void negativeRefSpecWithSrcAndEmptyDest() {
+		RefSpec a = new RefSpec("^refs/testdata/*:");
+		assertTrue(a.isNegative());
+		assertTrue(a.getDestination().isEmpty());
+		assertEquals(a.getSource(), "refs/testdata/*");
 	}
 }

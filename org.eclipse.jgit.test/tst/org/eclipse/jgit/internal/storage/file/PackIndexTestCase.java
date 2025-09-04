@@ -1,60 +1,31 @@
 /*
- * Copyright (C) 2008, Marek Zawirski <marek.zawirski@gmail.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, Marek Zawirski <marek.zawirski@gmail.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.internal.storage.file;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.fail;
 
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 
 import org.eclipse.jgit.errors.MissingObjectException;
-import org.eclipse.jgit.internal.storage.file.PackIndex;
+import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.internal.storage.file.PackIndex.MutableEntry;
 import org.eclipse.jgit.junit.RepositoryTestCase;
+import org.eclipse.jgit.lib.ObjectId;
 import org.junit.Test;
 
 public abstract class PackIndexTestCase extends RepositoryTestCase {
@@ -63,6 +34,7 @@ public abstract class PackIndexTestCase extends RepositoryTestCase {
 
 	PackIndex denseIdx;
 
+	@Override
 	public void setUp() throws Exception {
 		super.setUp();
 		smallIdx = PackIndex.open(getFileForPack34be9032());
@@ -82,6 +54,13 @@ public abstract class PackIndexTestCase extends RepositoryTestCase {
 	 * @return file with index
 	 */
 	public abstract File getFileForPackdf2982f28();
+
+	/**
+	 * Return file with appropriate index version for bad fanout table test.
+	 *
+	 * @return file with index
+	 */
+	public abstract File getFileForBadFanoutTable();
 
 	/**
 	 * Verify CRC32 support.
@@ -144,6 +123,37 @@ public abstract class PackIndexTestCase extends RepositoryTestCase {
 		assertFalse(iter.hasNext());
 	}
 
+	@Test
+	public void testEntriesPositionsRamdomAccess() {
+		assertEquals(4, smallIdx.findPosition(ObjectId
+				.fromString("82c6b885ff600be425b4ea96dee75dca255b69e7")));
+		assertEquals(7, smallIdx.findPosition(ObjectId
+				.fromString("c59759f143fb1fe21c197981df75a7ee00290799")));
+		assertEquals(0, smallIdx.findPosition(ObjectId
+				.fromString("4b825dc642cb6eb9a060e54bf8d69288fbee4904")));
+	}
+
+	@Test
+	public void testEntriesPositionsWithIteratorOrder() {
+		int i = 0;
+		for (MutableEntry me : smallIdx) {
+			assertEquals(smallIdx.findPosition(me.toObjectId()), i);
+			i++;
+		}
+		i = 0;
+		for (MutableEntry me : denseIdx) {
+			assertEquals(denseIdx.findPosition(me.toObjectId()), i);
+			i++;
+		}
+	}
+
+	@Test
+	public void testEntriesPositionsObjectNotInPack() {
+		assertEquals(-1, smallIdx.findPosition(ObjectId.zeroId()));
+		assertEquals(-1, smallIdx.findPosition(ObjectId
+				.fromString("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")));
+	}
+
 	/**
 	 * Compare offset from iterator entries with output of findOffset() method.
 	 */
@@ -155,6 +165,13 @@ public abstract class PackIndexTestCase extends RepositoryTestCase {
 		for (MutableEntry me : denseIdx) {
 			assertEquals(denseIdx.findOffset(me.toObjectId()), me.getOffset());
 		}
+	}
+
+	@Test
+	public void testEntriesOffsetsObjectNotInPack() {
+		assertEquals(-1, smallIdx.findOffset(ObjectId.zeroId()));
+		assertEquals(-1, smallIdx.findOffset(ObjectId
+				.fromString("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")));
 	}
 
 	/**
@@ -191,4 +208,15 @@ public abstract class PackIndexTestCase extends RepositoryTestCase {
 				.name());
 	}
 
+	@Test
+	public void testBadFanoutTable() {
+		IOException ex = assertThrows(IOException.class, () -> {
+			try (FileInputStream fis = new FileInputStream(
+					getFileForBadFanoutTable())) {
+				PackIndex.read(fis);
+			}
+		});
+		assertEquals(JGitText.get().indexFileIsTooLargeForJgit,
+				ex.getMessage());
+	}
 }

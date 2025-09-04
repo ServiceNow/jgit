@@ -54,7 +54,9 @@ public class NetRCCredentialsProvider extends CredentialsProvider {
 
 	NetRC netrc = new NetRC();
 
-	/** */
+	/**
+	 * <p>Constructor for NetRCCredentialsProvider.</p>
+	 */
 	public NetRCCredentialsProvider() {
 	}
 
@@ -65,6 +67,7 @@ public class NetRCCredentialsProvider extends CredentialsProvider {
 		CredentialsProvider.setDefault(new NetRCCredentialsProvider());
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public boolean supports(CredentialItem... items) {
 		for (CredentialItem i : items) {
@@ -78,6 +81,7 @@ public class NetRCCredentialsProvider extends CredentialsProvider {
 		return true;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public boolean get(URIish uri, CredentialItem... items)
 			throws UnsupportedCredentialItem {
@@ -105,12 +109,12 @@ public class NetRCCredentialsProvider extends CredentialsProvider {
 			throw new UnsupportedCredentialItem(uri, i.getClass().getName()
 					+ ":" + i.getPromptText()); //$NON-NLS-1$
 		}
-		return true;
+		return !isAnyNull(items);
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public boolean isInteractive() {
 		return false;
 	}
-
 }

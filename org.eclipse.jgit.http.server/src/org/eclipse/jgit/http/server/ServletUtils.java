@@ -1,49 +1,18 @@
 /*
- * Copyright (C) 2009-2010, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2009-2010, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.http.server;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.eclipse.jgit.util.HttpSupport.ENCODING_GZIP;
+import static org.eclipse.jgit.util.HttpSupport.ENCODING_X_GZIP;
 import static org.eclipse.jgit.util.HttpSupport.HDR_ACCEPT_ENCODING;
 import static org.eclipse.jgit.util.HttpSupport.HDR_CONTENT_ENCODING;
 import static org.eclipse.jgit.util.HttpSupport.HDR_ETAG;
@@ -62,12 +31,13 @@ import javax.servlet.ServletRequest;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
-import org.eclipse.jgit.internal.storage.dfs.DfsRepository;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.Repository;
 
-/** Common utility functions for servlets. */
+/**
+ * Common utility functions for servlets.
+ */
 public final class ServletUtils {
 	/** Request attribute which stores the {@link Repository} instance. */
 	public static final String ATTRIBUTE_REPOSITORY = "org.eclipse.jgit.Repository";
@@ -87,7 +57,7 @@ public final class ServletUtils {
 	 *             the filter runs before the servlet.
 	 * @see #ATTRIBUTE_REPOSITORY
 	 */
-	public static Repository getRepository(final ServletRequest req) {
+	public static Repository getRepository(ServletRequest req) {
 		Repository db = (Repository) req.getAttribute(ATTRIBUTE_REPOSITORY);
 		if (db == null)
 			throw new IllegalStateException(HttpServerText.get().expectedRepositoryAttribute);
@@ -107,11 +77,11 @@ public final class ServletUtils {
 	 * @throws IOException
 	 *             if an input or output exception occurred.
 	 */
-	public static InputStream getInputStream(final HttpServletRequest req)
+	public static InputStream getInputStream(HttpServletRequest req)
 			throws IOException {
 		InputStream in = req.getInputStream();
 		final String enc = req.getHeader(HDR_CONTENT_ENCODING);
-		if (ENCODING_GZIP.equals(enc) || "x-gzip".equals(enc)) //$NON-NLS-1$
+		if (ENCODING_GZIP.equals(enc) || ENCODING_X_GZIP.equals(enc))
 			in = new GZIPInputStream(in);
 		else if (enc != null)
 			throw new IOException(MessageFormat.format(HttpServerText.get().encodingNotSupportedByThisLibrary
@@ -188,9 +158,9 @@ public final class ServletUtils {
 	public static void sendPlainText(final String content,
 			final HttpServletRequest req, final HttpServletResponse rsp)
 			throws IOException {
-		final byte[] raw = content.getBytes(Constants.CHARACTER_ENCODING);
+		final byte[] raw = content.getBytes(UTF_8);
 		rsp.setContentType(TEXT_PLAIN);
-		rsp.setCharacterEncoding(Constants.CHARACTER_ENCODING);
+		rsp.setCharacterEncoding(UTF_8.name());
 		send(raw, req, rsp);
 	}
 
@@ -217,12 +187,9 @@ public final class ServletUtils {
 	public static void send(byte[] content, final HttpServletRequest req,
 			final HttpServletResponse rsp) throws IOException {
 		content = sendInit(content, req, rsp);
-		final OutputStream out = rsp.getOutputStream();
-		try {
+		try (OutputStream out = rsp.getOutputStream()) {
 			out.write(content);
 			out.flush();
-		} finally {
-			out.close();
 		}
 	}
 
@@ -238,7 +205,7 @@ public final class ServletUtils {
 		return content;
 	}
 
-	static boolean acceptsGzipEncoding(final HttpServletRequest req) {
+	static boolean acceptsGzipEncoding(HttpServletRequest req) {
 		return acceptsGzipEncoding(req.getHeader(HDR_ACCEPT_ENCODING));
 	}
 
@@ -258,7 +225,7 @@ public final class ServletUtils {
 		return false;
 	}
 
-	private static byte[] compress(final byte[] raw) throws IOException {
+	private static byte[] compress(byte[] raw) throws IOException {
 		final int maxLen = raw.length + 32;
 		final ByteArrayOutputStream out = new ByteArrayOutputStream(maxLen);
 		final GZIPOutputStream gz = new GZIPOutputStream(out);
@@ -268,19 +235,18 @@ public final class ServletUtils {
 		return out.toByteArray();
 	}
 
-	private static String etag(final byte[] content) {
+	private static String etag(byte[] content) {
 		final MessageDigest md = Constants.newMessageDigest();
 		md.update(content);
 		return ObjectId.fromRaw(md.digest()).getName();
 	}
 
 	static String identify(Repository git) {
-		if (git instanceof DfsRepository) {
-			return ((DfsRepository) git).getDescription().getRepositoryName();
-		} else if (git.getDirectory() != null) {
-			return git.getDirectory().getPath();
+		String identifier = git.getIdentifier();
+		if (identifier == null) {
+			return "unknown";
 		}
-		return "unknown";
+		return identifier;
 	}
 
 	private ServletUtils() {

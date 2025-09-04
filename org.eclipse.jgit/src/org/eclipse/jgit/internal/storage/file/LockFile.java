@@ -1,48 +1,17 @@
 /*
  * Copyright (C) 2007, Robin Rosenberg <robin.rosenberg@dewire.com>
- * Copyright (C) 2006-2008, Shawn O. Pearce <spearce@spearce.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2006-2021, Shawn O. Pearce <spearce@spearce.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.internal.storage.file;
+
+import static org.eclipse.jgit.lib.Constants.LOCK_SUFFIX;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -54,14 +23,21 @@ import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.FileTime;
 import java.text.MessageFormat;
+import java.time.Instant;
+import java.util.concurrent.TimeUnit;
 
-import org.eclipse.jgit.errors.LockFailedException;
 import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.util.FS;
+import org.eclipse.jgit.util.FS.LockToken;
 import org.eclipse.jgit.util.FileUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Git style file locking and replacement.
@@ -74,19 +50,21 @@ import org.eclipse.jgit.util.FileUtils;
  * name.
  */
 public class LockFile {
-	static final String SUFFIX = ".lock"; //$NON-NLS-1$
+	private static final Logger LOG = LoggerFactory.getLogger(LockFile.class);
 
 	/**
 	 * Unlock the given file.
 	 * <p>
 	 * This method can be used for recovering from a thrown
-	 * {@link LockFailedException} . This method does not validate that the lock
-	 * is or is not currently held before attempting to unlock it.
+	 * {@link org.eclipse.jgit.errors.LockFailedException} . This method does
+	 * not validate that the lock is or is not currently held before attempting
+	 * to unlock it.
 	 *
 	 * @param file
+	 *            a {@link java.io.File} object.
 	 * @return true if unlocked, false if unlocking failed
 	 */
-	public static boolean unlock(final File file) {
+	public static boolean unlock(File file) {
 		final File lockFile = getLockFile(file);
 		final int flags = FileUtils.RETRY | FileUtils.SKIP_MISSING;
 		try {
@@ -104,15 +82,13 @@ public class LockFile {
 	 * @return lock file
 	 */
 	static File getLockFile(File file) {
-		return new File(file.getParentFile(), file.getName() + SUFFIX);
+		return new File(file.getParentFile(),
+				file.getName() + LOCK_SUFFIX);
 	}
 
 	/** Filter to skip over active lock files when listing a directory. */
-	static final FilenameFilter FILTER = new FilenameFilter() {
-		public boolean accept(File dir, String name) {
-			return !name.endsWith(SUFFIX);
-		}
-	};
+	static final FilenameFilter FILTER = (File dir,
+			String name) -> !name.endsWith(LOCK_SUFFIX);
 
 	private final File ref;
 
@@ -120,29 +96,31 @@ public class LockFile {
 
 	private boolean haveLck;
 
-	FileOutputStream os;
+	private FileOutputStream os;
 
 	private boolean needSnapshot;
 
-	boolean fsync;
+	private boolean fsync;
+
+	private boolean isAppend;
+
+	private boolean written;
+
+	private boolean snapshotNoConfig;
 
 	private FileSnapshot commitSnapshot;
 
-	private final FS fs;
+	private LockToken token;
 
 	/**
 	 * Create a new lock for any file.
 	 *
 	 * @param f
 	 *            the file that will be locked.
-	 * @param fs
-	 *            the file system abstraction which will be necessary to perform
-	 *            certain file system operations.
 	 */
-	public LockFile(final File f, final FS fs) {
+	public LockFile(File f) {
 		ref = f;
 		lck = getLockFile(ref);
-		this.fs = fs;
 	}
 
 	/**
@@ -150,22 +128,31 @@ public class LockFile {
 	 *
 	 * @return true if the lock is now held by the caller; false if it is held
 	 *         by someone else.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the temporary output file could not be created. The caller
 	 *             does not hold the lock.
 	 */
 	public boolean lock() throws IOException {
-		FileUtils.mkdirs(lck.getParentFile(), true);
-		if (lck.createNewFile()) {
-			haveLck = true;
-			try {
-				os = new FileOutputStream(lck);
-			} catch (IOException ioe) {
-				unlock();
-				throw ioe;
-			}
+		if (haveLck) {
+			throw new IllegalStateException(
+					MessageFormat.format(JGitText.get().lockAlreadyHeld, ref));
 		}
-		return haveLck;
+		FileUtils.mkdirs(lck.getParentFile(), true);
+		try {
+			token = FS.DETECTED.createNewFileAtomic(lck);
+		} catch (IOException e) {
+			LOG.error(JGitText.get().failedCreateLockFile, lck, e);
+			throw e;
+		}
+		boolean obtainedLock = token.isCreated();
+		if (obtainedLock) {
+			haveLck = true;
+			isAppend = false;
+			written = false;
+		} else {
+			closeToken();
+		}
+		return obtainedLock;
 	}
 
 	/**
@@ -173,15 +160,27 @@ public class LockFile {
 	 *
 	 * @return true if the lock is now held by the caller; false if it is held
 	 *         by someone else.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the temporary output file could not be created. The caller
 	 *             does not hold the lock.
 	 */
 	public boolean lockForAppend() throws IOException {
-		if (!lock())
+		if (!lock()) {
 			return false;
+		}
 		copyCurrentContent();
+		isAppend = true;
+		written = false;
 		return true;
+	}
+
+	// For tests only
+	boolean isLocked() {
+		return haveLck;
+	}
+
+	private FileOutputStream getStream() throws IOException {
+		return new FileOutputStream(lck, isAppend);
 	}
 
 	/**
@@ -194,53 +193,43 @@ public class LockFile {
 	 * This method does nothing if the current file does not exist, or exists
 	 * but is empty.
 	 *
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the temporary file could not be written, or a read error
 	 *             occurred while reading from the current file. The lock is
 	 *             released before throwing the underlying IO exception to the
 	 *             caller.
-	 * @throws RuntimeException
+	 * @throws java.lang.RuntimeException
 	 *             the temporary file could not be written. The lock is released
 	 *             before throwing the underlying exception to the caller.
 	 */
 	public void copyCurrentContent() throws IOException {
 		requireLock();
-		try {
-			final FileInputStream fis = new FileInputStream(ref);
-			try {
+		try (FileOutputStream out = getStream()) {
+			try (FileInputStream fis = new FileInputStream(ref)) {
 				if (fsync) {
 					FileChannel in = fis.getChannel();
 					long pos = 0;
 					long cnt = in.size();
 					while (0 < cnt) {
-						long r = os.getChannel().transferFrom(in, pos, cnt);
+						long r = out.getChannel().transferFrom(in, pos, cnt);
 						pos += r;
 						cnt -= r;
 					}
 				} else {
 					final byte[] buf = new byte[2048];
 					int r;
-					while ((r = fis.read(buf)) >= 0)
-						os.write(buf, 0, r);
+					while ((r = fis.read(buf)) >= 0) {
+						out.write(buf, 0, r);
+					}
 				}
-			} finally {
-				fis.close();
+			} catch (FileNotFoundException fnfe) {
+				if (ref.exists()) {
+					throw fnfe;
+				}
+				// Don't worry about a file that doesn't exist yet, it
+				// conceptually has no current content to copy.
 			}
-		} catch (FileNotFoundException fnfe) {
-			if (ref.exists()) {
-				unlock();
-				throw fnfe;
-			}
-			// Don't worry about a file that doesn't exist yet, it
-			// conceptually has no current content to copy.
-			//
-		} catch (IOException ioe) {
-			unlock();
-			throw ioe;
-		} catch (RuntimeException ioe) {
-			unlock();
-			throw ioe;
-		} catch (Error ioe) {
+		} catch (IOException | RuntimeException | Error ioe) {
 			unlock();
 			throw ioe;
 		}
@@ -252,14 +241,14 @@ public class LockFile {
 	 * @param id
 	 *            the id to store in the file. The id will be written in hex,
 	 *            followed by a sole LF.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the temporary file could not be written. The lock is released
 	 *             before throwing the underlying IO exception to the caller.
-	 * @throws RuntimeException
+	 * @throws java.lang.RuntimeException
 	 *             the temporary file could not be written. The lock is released
 	 *             before throwing the underlying exception to the caller.
 	 */
-	public void write(final ObjectId id) throws IOException {
+	public void write(ObjectId id) throws IOException {
 		byte[] buf = new byte[Constants.OBJECT_ID_STRING_LENGTH + 1];
 		id.copyTo(buf, 0);
 		buf[Constants.OBJECT_ID_STRING_LENGTH] = '\n';
@@ -273,34 +262,32 @@ public class LockFile {
 	 *            the bytes to store in the temporary file. No additional bytes
 	 *            are added, so if the file must end with an LF it must appear
 	 *            at the end of the byte array.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the temporary file could not be written. The lock is released
 	 *             before throwing the underlying IO exception to the caller.
-	 * @throws RuntimeException
+	 * @throws java.lang.RuntimeException
 	 *             the temporary file could not be written. The lock is released
 	 *             before throwing the underlying exception to the caller.
 	 */
-	public void write(final byte[] content) throws IOException {
+	public void write(byte[] content) throws IOException {
 		requireLock();
-		try {
+		try (FileOutputStream out = getStream()) {
+			if (written) {
+				throw new IOException(MessageFormat
+						.format(JGitText.get().lockStreamClosed, ref));
+			}
 			if (fsync) {
-				FileChannel fc = os.getChannel();
+				FileChannel fc = out.getChannel();
 				ByteBuffer buf = ByteBuffer.wrap(content);
-				while (0 < buf.remaining())
+				while (0 < buf.remaining()) {
 					fc.write(buf);
+				}
 				fc.force(true);
 			} else {
-				os.write(content);
+				out.write(content);
 			}
-			os.close();
-			os = null;
-		} catch (IOException ioe) {
-			unlock();
-			throw ioe;
-		} catch (RuntimeException ioe) {
-			unlock();
-			throw ioe;
-		} catch (Error ioe) {
+			written = true;
+		} catch (IOException | RuntimeException | Error ioe) {
 			unlock();
 			throw ioe;
 		}
@@ -318,43 +305,68 @@ public class LockFile {
 	public OutputStream getOutputStream() {
 		requireLock();
 
-		final OutputStream out;
-		if (fsync)
-			out = Channels.newOutputStream(os.getChannel());
-		else
-			out = os;
+		if (written || os != null) {
+			throw new IllegalStateException(MessageFormat
+					.format(JGitText.get().lockStreamMultiple, ref));
+		}
 
 		return new OutputStream() {
-			@Override
-			public void write(final byte[] b, final int o, final int n)
-					throws IOException {
-				out.write(b, o, n);
+
+			private OutputStream out;
+
+			private boolean closed;
+
+			private OutputStream get() throws IOException {
+				if (written) {
+					throw new IOException(MessageFormat
+							.format(JGitText.get().lockStreamMultiple, ref));
+				}
+				if (out == null) {
+					os = getStream();
+					if (fsync) {
+						out = Channels.newOutputStream(os.getChannel());
+					} else {
+						out = os;
+					}
+				}
+				return out;
 			}
 
 			@Override
-			public void write(final byte[] b) throws IOException {
-				out.write(b);
+			public void write(byte[] b, int o, int n) throws IOException {
+				get().write(b, o, n);
 			}
 
 			@Override
-			public void write(final int b) throws IOException {
-				out.write(b);
+			public void write(byte[] b) throws IOException {
+				get().write(b);
+			}
+
+			@Override
+			public void write(int b) throws IOException {
+				get().write(b);
 			}
 
 			@Override
 			public void close() throws IOException {
+				if (closed) {
+					return;
+				}
+				closed = true;
 				try {
-					if (fsync)
-						os.getChannel().force(true);
-					out.close();
-					os = null;
-				} catch (IOException ioe) {
-					unlock();
-					throw ioe;
-				} catch (RuntimeException ioe) {
-					unlock();
-					throw ioe;
-				} catch (Error ioe) {
+					if (written) {
+						throw new IOException(MessageFormat
+								.format(JGitText.get().lockStreamClosed, ref));
+					}
+					if (out != null) {
+						if (fsync) {
+							os.getChannel().force(true);
+						}
+						out.close();
+						os = null;
+					}
+					written = true;
+				} catch (IOException | RuntimeException | Error ioe) {
 					unlock();
 					throw ioe;
 				}
@@ -362,8 +374,8 @@ public class LockFile {
 		};
 	}
 
-	private void requireLock() {
-		if (os == null) {
+	void requireLock() {
+		if (!haveLck) {
 			unlock();
 			throw new IllegalStateException(MessageFormat.format(JGitText.get().lockOnNotHeld, ref));
 		}
@@ -377,18 +389,34 @@ public class LockFile {
 	 * @param on
 	 *            true if the commit method must remember the modification time.
 	 */
-	public void setNeedStatInformation(final boolean on) {
+	public void setNeedStatInformation(boolean on) {
 		setNeedSnapshot(on);
 	}
 
 	/**
-	 * Request that {@link #commit()} remember the {@link FileSnapshot}.
+	 * Request that {@link #commit()} remember the
+	 * {@link org.eclipse.jgit.internal.storage.file.FileSnapshot}.
 	 *
 	 * @param on
 	 *            true if the commit method must remember the FileSnapshot.
 	 */
-	public void setNeedSnapshot(final boolean on) {
+	public void setNeedSnapshot(boolean on) {
 		needSnapshot = on;
+	}
+
+	/**
+	 * Request that {@link #commit()} remember the
+	 * {@link org.eclipse.jgit.internal.storage.file.FileSnapshot} without using
+	 * config file to get filesystem timestamp resolution.
+	 * This method should be invoked before the file is accessed.
+	 * It is used by FileBasedConfig to avoid endless recursion.
+	 *
+	 * @param on
+	 *            true if the commit method must remember the FileSnapshot.
+	 */
+	public void setNeedSnapshotNoConfig(boolean on) {
+		needSnapshot = on;
+		snapshotNoConfig = on;
 	}
 
 	/**
@@ -397,7 +425,7 @@ public class LockFile {
 	 * @param on
 	 *            true if dirty data should be forced to the drive.
 	 */
-	public void setFSync(final boolean on) {
+	public void setFSync(boolean on) {
 		fsync = on;
 	}
 
@@ -408,7 +436,7 @@ public class LockFile {
 	 * method sleeps until it can force the new lock file's modification date to
 	 * be later than the target file.
 	 *
-	 * @throws InterruptedException
+	 * @throws java.lang.InterruptedException
 	 *             the thread was interrupted before the last modified date of
 	 *             the lock file was different from the last modified date of
 	 *             the target file.
@@ -416,9 +444,16 @@ public class LockFile {
 	public void waitForStatChange() throws InterruptedException {
 		FileSnapshot o = FileSnapshot.save(ref);
 		FileSnapshot n = FileSnapshot.save(lck);
+		long fsTimeResolution = FS.getFileStoreAttributes(lck.toPath())
+				.getFsTimestampResolution().toNanos();
 		while (o.equals(n)) {
-			Thread.sleep(25 /* milliseconds */);
-			lck.setLastModified(System.currentTimeMillis());
+			TimeUnit.NANOSECONDS.sleep(fsTimeResolution);
+			try {
+				Files.setLastModifiedTime(lck.toPath(),
+						FileTime.from(Instant.now()));
+			} catch (IOException e) {
+				n.waitUntilNotRacy();
+			}
 			n = FileSnapshot.save(lck);
 		}
 	}
@@ -431,7 +466,7 @@ public class LockFile {
 	 * @return true if the commit was successful and the file contains the new
 	 *         data; false if the commit failed and the file remains with the
 	 *         old data.
-	 * @throws IllegalStateException
+	 * @throws java.lang.IllegalStateException
 	 *             the lock is not held.
 	 */
 	public boolean commit() {
@@ -441,61 +476,44 @@ public class LockFile {
 		}
 
 		saveStatInformation();
-		if (lck.renameTo(ref)) {
+		try {
+			FileUtils.rename(lck, ref, StandardCopyOption.ATOMIC_MOVE);
 			haveLck = false;
+			isAppend = false;
+			written = false;
+			closeToken();
 			return true;
+		} catch (IOException e) {
+			unlock();
+			return false;
 		}
-		if (!ref.exists() || deleteRef()) {
-			if (renameLock()) {
-				haveLck = false;
-				return true;
-			}
-		}
-		unlock();
-		return false;
 	}
 
-	private boolean deleteRef() {
-		if (!fs.retryFailedLockFileCommit())
-			return ref.delete();
-
-		// File deletion fails on windows if another thread is
-		// concurrently reading the same file. So try a few times.
-		//
-		for (int attempts = 0; attempts < 10; attempts++) {
-			if (ref.delete())
-				return true;
-			try {
-				Thread.sleep(100);
-			} catch (InterruptedException e) {
-				return false;
-			}
+	private void closeToken() {
+		if (token != null) {
+			token.close();
+			token = null;
 		}
-		return false;
-	}
-
-	private boolean renameLock() {
-		if (!fs.retryFailedLockFileCommit())
-			return lck.renameTo(ref);
-
-		// File renaming fails on windows if another thread is
-		// concurrently reading the same file. So try a few times.
-		//
-		for (int attempts = 0; attempts < 10; attempts++) {
-			if (lck.renameTo(ref))
-				return true;
-			try {
-				Thread.sleep(100);
-			} catch (InterruptedException e) {
-				return false;
-			}
-		}
-		return false;
 	}
 
 	private void saveStatInformation() {
-		if (needSnapshot)
-			commitSnapshot = FileSnapshot.save(lck);
+		if (needSnapshot) {
+			commitSnapshot = snapshotNoConfig ?
+				// don't use config in this snapshot to avoid endless recursion
+				FileSnapshot.saveNoConfig(lck)
+				: FileSnapshot.save(lck);
+		}
+	}
+
+	/**
+	 * Get the modification time of the output file when it was committed.
+	 *
+	 * @return modification time of the lock file right before we committed it.
+	 * @deprecated use {@link #getCommitLastModifiedInstant()} instead
+	 */
+	@Deprecated
+	public long getCommitLastModified() {
+		return commitSnapshot.lastModified();
 	}
 
 	/**
@@ -503,11 +521,15 @@ public class LockFile {
 	 *
 	 * @return modification time of the lock file right before we committed it.
 	 */
-	public long getCommitLastModified() {
-		return commitSnapshot.lastModified();
+	public Instant getCommitLastModifiedInstant() {
+		return commitSnapshot.lastModifiedInstant();
 	}
 
-	/** @return get the {@link FileSnapshot} just before commit. */
+	/**
+	 * Get the {@link FileSnapshot} just before commit.
+	 *
+	 * @return get the {@link FileSnapshot} just before commit.
+	 */
 	public FileSnapshot getCommitSnapshot() {
 		return commitSnapshot;
 	}
@@ -531,8 +553,9 @@ public class LockFile {
 		if (os != null) {
 			try {
 				os.close();
-			} catch (IOException ioe) {
-				// Ignore this
+			} catch (IOException e) {
+				LOG.error(MessageFormat
+						.format(JGitText.get().unlockLockFileFailed, lck), e);
 			}
 			os = null;
 		}
@@ -542,11 +565,17 @@ public class LockFile {
 			try {
 				FileUtils.delete(lck, FileUtils.RETRY);
 			} catch (IOException e) {
-				// couldn't delete the file even after retry.
+				LOG.error(MessageFormat
+						.format(JGitText.get().unlockLockFileFailed, lck), e);
+			} finally {
+				closeToken();
 			}
 		}
+		isAppend = false;
+		written = false;
 	}
 
+	/** {@inheritDoc} */
 	@SuppressWarnings("nls")
 	@Override
 	public String toString() {

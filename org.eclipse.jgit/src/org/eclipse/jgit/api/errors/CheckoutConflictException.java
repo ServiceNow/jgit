@@ -53,7 +53,6 @@ public class CheckoutConflictException extends GitAPIException {
 	 *
 	 * @param conflictingPaths
 	 *            list of conflicting paths
-	 *
 	 * @param e
 	 *            a {@link org.eclipse.jgit.errors.CheckoutConflictException}
 	 *            exception
@@ -82,7 +81,11 @@ public class CheckoutConflictException extends GitAPIException {
 		this.conflictingPaths = conflictingPaths;
 	}
 
-	/** @return all the paths where unresolved conflicts have been detected */
+	/**
+	 * Get conflicting paths
+	 *
+	 * @return all the paths where unresolved conflicts have been detected
+	 */
 	public List<String> getConflictingPaths() {
 		return conflictingPaths;
 	}
@@ -95,7 +98,7 @@ public class CheckoutConflictException extends GitAPIException {
 	 */
 	CheckoutConflictException addConflictingPath(String conflictingPath) {
 		if (conflictingPaths == null)
-			conflictingPaths = new LinkedList<String>();
+			conflictingPaths = new LinkedList<>();
 		conflictingPaths.add(conflictingPath);
 		return this;
 	}

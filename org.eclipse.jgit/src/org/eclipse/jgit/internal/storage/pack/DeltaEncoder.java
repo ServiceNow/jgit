@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2010, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.internal.storage.pack;
@@ -48,7 +15,10 @@ import java.io.OutputStream;
 
 import org.eclipse.jgit.lib.Constants;
 
-/** Encodes an instruction stream for {@link BinaryDelta}. */
+/**
+ * Encodes an instruction stream for
+ * {@link org.eclipse.jgit.internal.storage.pack.BinaryDelta}.
+ */
 public class DeltaEncoder {
 	/**
 	 * Maximum number of bytes to be copied in pack v2 format.
@@ -70,7 +40,7 @@ public class DeltaEncoder {
 	/** Maximum number of bytes used by a copy instruction. */
 	private static final int MAX_COPY_CMD_SIZE = 8;
 
-	/** Maximum length that an an insert command can encode at once. */
+	/** Maximum length that an insert command can encode at once. */
 	private static final int MAX_INSERT_DATA_SIZE = 127;
 
 	private final OutputStream out;
@@ -91,7 +61,7 @@ public class DeltaEncoder {
 	 * @param resultSize
 	 *            size of the resulting object, after applying this instruction
 	 *            stream to the base object, in bytes.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the output buffer cannot store the instruction stream's
 	 *             header with the size fields.
 	 */
@@ -114,7 +84,7 @@ public class DeltaEncoder {
 	 *            maximum number of bytes to write to the out buffer declaring
 	 *            the stream is over limit and should be discarded. May be 0 to
 	 *            specify an infinite limit.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the output buffer cannot store the instruction stream's
 	 *             header with the size fields.
 	 */
@@ -138,7 +108,11 @@ public class DeltaEncoder {
 			out.write(buf, 0, p);
 	}
 
-	/** @return current size of the delta stream, in bytes. */
+	/**
+	 * Get current size of the delta stream, in bytes.
+	 *
+	 * @return current size of the delta stream, in bytes.
+	 */
 	public int getSize() {
 		return size;
 	}
@@ -150,7 +124,7 @@ public class DeltaEncoder {
 	 *            the string to insert.
 	 * @return true if the insert fits within the limit; false if the insert
 	 *         would cause the instruction stream to exceed the limit.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the instruction buffer can't store the instructions.
 	 */
 	public boolean insert(String text) throws IOException {
@@ -164,7 +138,7 @@ public class DeltaEncoder {
 	 *            the binary to insert.
 	 * @return true if the insert fits within the limit; false if the insert
 	 *         would cause the instruction stream to exceed the limit.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the instruction buffer can't store the instructions.
 	 */
 	public boolean insert(byte[] text) throws IOException {
@@ -182,7 +156,7 @@ public class DeltaEncoder {
 	 *            number of bytes to insert.
 	 * @return true if the insert fits within the limit; false if the insert
 	 *         would cause the instruction stream to exceed the limit.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the instruction buffer can't store the instructions.
 	 */
 	public boolean insert(byte[] text, int off, int cnt)
@@ -217,7 +191,7 @@ public class DeltaEncoder {
 	 *            number of bytes to copy.
 	 * @return true if the copy fits within the limit; false if the copy
 	 *         would cause the instruction stream to exceed the limit.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the instruction buffer cannot store the instructions.
 	 */
 	public boolean copy(long offset, int cnt) throws IOException {

@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2011, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2011, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.lib;
@@ -48,10 +15,12 @@ import java.util.Iterator;
 import java.util.NoSuchElementException;
 
 /**
- * Fast, efficient map for {@link ObjectId} subclasses in only one map.
+ * Fast, efficient map for {@link org.eclipse.jgit.lib.ObjectId} subclasses in
+ * only one map.
  * <p>
  * To use this map type, applications must have their entry value type extend
- * from {@link ObjectIdOwnerMap.Entry}, which itself extends from ObjectId.
+ * from {@link org.eclipse.jgit.lib.ObjectIdOwnerMap.Entry}, which itself
+ * extends from ObjectId.
  * <p>
  * Object instances may only be stored in <b>ONE</b> ObjectIdOwnerMap. This
  * restriction exists because the map stores internal map state within each
@@ -59,16 +28,17 @@ import java.util.NoSuchElementException;
  * could corrupt one or both map's internal state.
  * <p>
  * If an object instance must be in more than one map, applications may use
- * ObjectIdOwnerMap for one of the maps, and {@link ObjectIdSubclassMap} for the
- * other map(s). It is encouraged to use ObjectIdOwnerMap for the map that is
- * accessed most often, as this implementation runs faster than the more general
- * ObjectIdSubclassMap implementation.
+ * ObjectIdOwnerMap for one of the maps, and
+ * {@link org.eclipse.jgit.lib.ObjectIdSubclassMap} for the other map(s). It is
+ * encouraged to use ObjectIdOwnerMap for the map that is accessed most often,
+ * as this implementation runs faster than the more general ObjectIdSubclassMap
+ * implementation.
  *
  * @param <V>
  *            type of subclass of ObjectId that will be stored in the map.
  */
-public class ObjectIdOwnerMap<V extends ObjectIdOwnerMap.Entry> implements
-		Iterable<V> {
+public class ObjectIdOwnerMap<V extends ObjectIdOwnerMap.Entry>
+		implements Iterable<V>, ObjectIdSet {
 	/** Size of the initial directory, will grow as necessary. */
 	private static final int INITIAL_DIRECTORY = 1024;
 
@@ -97,7 +67,9 @@ public class ObjectIdOwnerMap<V extends ObjectIdOwnerMap.Entry> implements
 	/** Low bit mask to index into {@link #directory}, {@code 2^bits-1}. */
 	private int mask;
 
-	/** Create an empty map. */
+	/**
+	 * Create an empty map.
+	 */
 	@SuppressWarnings("unchecked")
 	public ObjectIdOwnerMap() {
 		bits = 0;
@@ -108,7 +80,9 @@ public class ObjectIdOwnerMap<V extends ObjectIdOwnerMap.Entry> implements
 		directory[0] = newSegment();
 	}
 
-	/** Remove all entries from this map. */
+	/**
+	 * Remove all entries from this map.
+	 */
 	public void clear() {
 		size = 0;
 
@@ -127,7 +101,10 @@ public class ObjectIdOwnerMap<V extends ObjectIdOwnerMap.Entry> implements
 	 * @return the instance mapped to toFind, or null if no mapping exists.
 	 */
 	@SuppressWarnings("unchecked")
-	public V get(final AnyObjectId toFind) {
+	public V get(AnyObjectId toFind) {
+		if (toFind == null) {
+			return null;
+		}
 		int h = toFind.w1;
 		V obj = directory[h & mask][h >>> SEGMENT_SHIFT];
 		for (; obj != null; obj = (V) obj.next)
@@ -137,13 +114,12 @@ public class ObjectIdOwnerMap<V extends ObjectIdOwnerMap.Entry> implements
 	}
 
 	/**
+	 * {@inheritDoc}
+	 * <p>
 	 * Returns true if this map contains the specified object.
-	 *
-	 * @param toFind
-	 *            object to find.
-	 * @return true if the mapping exists for this object; false otherwise.
 	 */
-	public boolean contains(final AnyObjectId toFind) {
+	@Override
+	public boolean contains(AnyObjectId toFind) {
 		return get(toFind) != null;
 	}
 
@@ -156,10 +132,8 @@ public class ObjectIdOwnerMap<V extends ObjectIdOwnerMap.Entry> implements
 	 *
 	 * @param newValue
 	 *            the object to store.
-	 * @param <Q>
-	 *            type of instance to store.
 	 */
-	public <Q extends V> void add(final Q newValue) {
+	public <Q extends V> void add(Q newValue) {
 		if (++size == grow)
 			grow();
 
@@ -188,11 +162,9 @@ public class ObjectIdOwnerMap<V extends ObjectIdOwnerMap.Entry> implements
 	 * @return {@code newValue} if stored, or the prior value already stored and
 	 *         that would have been returned had the caller used
 	 *         {@code get(newValue)} first.
-	 * @param <Q>
-	 *            type of instance to store.
 	 */
 	@SuppressWarnings("unchecked")
-	public <Q extends V> V addIfAbsent(final Q newValue) {
+	public <Q extends V> V addIfAbsent(Q newValue) {
 		int h = newValue.w1;
 		V[] table = directory[h & mask];
 		h >>>= SEGMENT_SHIFT;
@@ -209,30 +181,39 @@ public class ObjectIdOwnerMap<V extends ObjectIdOwnerMap.Entry> implements
 		return newValue;
 	}
 
-	/** @return number of objects in this map. */
+	/**
+	 * Get number of objects in this map.
+	 *
+	 * @return number of objects in this map.
+	 */
 	public int size() {
 		return size;
 	}
 
-	/** @return true if {@link #size()} is 0. */
+	/**
+	 * Whether this map is empty
+	 *
+	 * @return true if {@link #size()} is 0.
+	 */
 	public boolean isEmpty() {
 		return size == 0;
 	}
 
+	/** {@inheritDoc} */
+	@Override
 	public Iterator<V> iterator() {
-		return new Iterator<V>() {
+		return new Iterator<>() {
 			private int found;
-
 			private int dirIdx;
-
 			private int tblIdx;
-
 			private V next;
 
+			@Override
 			public boolean hasNext() {
 				return found < size;
 			}
 
+			@Override
 			public V next() {
 				if (next != null)
 					return found(next);
@@ -261,6 +242,7 @@ public class ObjectIdOwnerMap<V extends ObjectIdOwnerMap.Entry> implements
 				return v;
 			}
 
+			@Override
 			public void remove() {
 				throw new UnsupportedOperationException();
 			}
@@ -340,8 +322,8 @@ public class ObjectIdOwnerMap<V extends ObjectIdOwnerMap.Entry> implements
 	}
 
 	/** Type of entry stored in the {@link ObjectIdOwnerMap}. */
-	public static abstract class Entry extends ObjectId {
-		Entry next;
+	public abstract static class Entry extends ObjectId {
+		transient Entry next;
 
 		/**
 		 * Initialize this entry with a specific ObjectId.

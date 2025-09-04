@@ -1,46 +1,13 @@
 /*
  * Copyright (C) 2008-2011, Google Inc.
  * Copyright (C) 2007-2008, Robin Rosenberg <robin.rosenberg@dewire.com>
- * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.internal.storage.file;
@@ -50,6 +17,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.RandomAccessFile;
+import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.text.MessageFormat;
 import java.util.Arrays;
@@ -59,22 +27,25 @@ import java.util.zip.Deflater;
 
 import org.eclipse.jgit.errors.LockFailedException;
 import org.eclipse.jgit.internal.JGitText;
+import org.eclipse.jgit.internal.storage.pack.PackExt;
 import org.eclipse.jgit.lib.AnyObjectId;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.CoreConfig;
 import org.eclipse.jgit.lib.ObjectId;
-import org.eclipse.jgit.lib.ObjectInserter;
 import org.eclipse.jgit.lib.ProgressMonitor;
+import org.eclipse.jgit.storage.pack.PackConfig;
+import org.eclipse.jgit.transport.PackLock;
 import org.eclipse.jgit.transport.PackParser;
 import org.eclipse.jgit.transport.PackedObjectInfo;
 import org.eclipse.jgit.util.FileUtils;
 import org.eclipse.jgit.util.NB;
 
 /**
- * Consumes a pack stream and stores as a pack file in {@link ObjectDirectory}.
+ * Consumes a pack stream and stores as a pack file in
+ * {@link org.eclipse.jgit.internal.storage.file.ObjectDirectory}.
  * <p>
  * To obtain an instance of a parser, applications should use
- * {@link ObjectInserter#newPackParser(InputStream)}.
+ * {@link org.eclipse.jgit.lib.ObjectInserter#newPackParser(InputStream)}.
  */
 public class ObjectDirectoryPackParser extends PackParser {
 	private final FileObjectDatabase db;
@@ -119,11 +90,14 @@ public class ObjectDirectoryPackParser extends PackParser {
 	private Deflater def;
 
 	/** The pack that was created, if parsing was successful. */
-	private PackFile newPack;
+	private Pack newPack;
+
+	private PackConfig pconfig;
 
 	ObjectDirectoryPackParser(FileObjectDatabase odb, InputStream src) {
 		super(odb, src);
 		this.db = odb;
+		this.pconfig = new PackConfig(odb.getConfig());
 		this.crc = new CRC32();
 		this.tailDigest = Constants.newMessageDigest();
 
@@ -152,22 +126,23 @@ public class ObjectDirectoryPackParser extends PackParser {
 	 * @param empty
 	 *            true to enable keeping an empty pack.
 	 */
-	public void setKeepEmpty(final boolean empty) {
+	public void setKeepEmpty(boolean empty) {
 		keepEmpty = empty;
 	}
 
 	/**
-	 * Get the imported {@link PackFile}.
+	 * Get the imported {@link org.eclipse.jgit.internal.storage.file.Pack}.
 	 * <p>
 	 * This method is supplied only to support testing; applications shouldn't
 	 * be using it directly to access the imported data.
 	 *
 	 * @return the imported PackFile, if parsing was successful.
 	 */
-	public PackFile getPackFile() {
+	public Pack getPack() {
 		return newPack;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public long getPackSize() {
 		if (newPack == null)
@@ -178,11 +153,12 @@ public class ObjectDirectoryPackParser extends PackParser {
 		String p = pack.getAbsolutePath();
 		String i = p.substring(0, p.length() - ".pack".length()) + ".idx"; //$NON-NLS-1$ //$NON-NLS-2$
 		File idx = new File(i);
-		if (idx.exists() && idx.isFile())
+		if (idx.isFile())
 			size += idx.length();
 		return size;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public PackLock parse(ProgressMonitor receiving, ProgressMonitor resolving)
 			throws IOException {
@@ -217,34 +193,40 @@ public class ObjectDirectoryPackParser extends PackParser {
 		}
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	protected void onPackHeader(long objectCount) throws IOException {
 		// Ignored, the count is not required.
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	protected void onBeginWholeObject(long streamPosition, int type,
 			long inflatedSize) throws IOException {
 		crc.reset();
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	protected void onEndWholeObject(PackedObjectInfo info) throws IOException {
 		info.setCRC((int) crc.getValue());
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	protected void onBeginOfsDelta(long streamPosition,
 			long baseStreamPosition, long inflatedSize) throws IOException {
 		crc.reset();
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	protected void onBeginRefDelta(long streamPosition, AnyObjectId baseId,
 			long inflatedSize) throws IOException {
 		crc.reset();
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	protected UnresolvedDelta onEndDelta() throws IOException {
 		UnresolvedDelta delta = new UnresolvedDelta();
@@ -252,30 +234,35 @@ public class ObjectDirectoryPackParser extends PackParser {
 		return delta;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	protected void onInflatedObjectData(PackedObjectInfo obj, int typeCode,
 			byte[] data) throws IOException {
 		// ObjectDirectory ignores this event.
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	protected void onObjectHeader(Source src, byte[] raw, int pos, int len)
 			throws IOException {
 		crc.update(raw, pos, len);
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	protected void onObjectData(Source src, byte[] raw, int pos, int len)
 			throws IOException {
 		crc.update(raw, pos, len);
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	protected void onStoreStream(byte[] raw, int pos, int len)
 			throws IOException {
 		out.write(raw, pos, len);
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	protected void onPackFooter(byte[] hash) throws IOException {
 		packEnd = out.getFilePointer();
@@ -284,6 +271,7 @@ public class ObjectDirectoryPackParser extends PackParser {
 		packHash = hash;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	protected ObjectTypeAndSize seekDatabase(UnresolvedDelta delta,
 			ObjectTypeAndSize info) throws IOException {
@@ -292,6 +280,7 @@ public class ObjectDirectoryPackParser extends PackParser {
 		return readObjectHeader(info);
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	protected ObjectTypeAndSize seekDatabase(PackedObjectInfo obj,
 			ObjectTypeAndSize info) throws IOException {
@@ -300,11 +289,13 @@ public class ObjectDirectoryPackParser extends PackParser {
 		return readObjectHeader(info);
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	protected int readDatabase(byte[] dst, int pos, int cnt) throws IOException {
 		return out.read(dst, pos, cnt);
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	protected boolean checkCRC(int oldCRC) {
 		return oldCRC == (int) crc.getValue();
@@ -322,6 +313,7 @@ public class ObjectDirectoryPackParser extends PackParser {
 			tmpPack.deleteOnExit();
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	protected boolean onAppendBase(final int typeCode, final byte[] data,
 			final PackedObjectInfo info) throws IOException {
@@ -330,10 +322,10 @@ public class ObjectDirectoryPackParser extends PackParser {
 		final byte[] buf = buffer();
 		int sz = data.length;
 		int len = 0;
-		buf[len++] = (byte) ((typeCode << 4) | sz & 15);
+		buf[len++] = (byte) ((typeCode << 4) | (sz & 15));
 		sz >>>= 4;
 		while (sz > 0) {
-			buf[len - 1] |= 0x80;
+			buf[len - 1] |= (byte) 0x80;
 			buf[len++] = (byte) (sz & 0x7f);
 			sz >>>= 7;
 		}
@@ -364,6 +356,7 @@ public class ObjectDirectoryPackParser extends PackParser {
 		return true;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	protected void onEndThinPack() throws IOException {
 		final byte[] buf = buffer();
@@ -409,8 +402,7 @@ public class ObjectDirectoryPackParser extends PackParser {
 
 	private void writeIdx() throws IOException {
 		List<PackedObjectInfo> list = getSortedObjectList(null /* by ObjectId */);
-		final FileOutputStream os = new FileOutputStream(tmpIdx);
-		try {
+		try (FileOutputStream os = new FileOutputStream(tmpIdx)) {
 			final PackIndexWriter iw;
 			if (indexVersion <= 0)
 				iw = PackIndexWriter.createOldestPossible(os, list);
@@ -418,12 +410,10 @@ public class ObjectDirectoryPackParser extends PackParser {
 				iw = PackIndexWriter.createVersion(os, indexVersion);
 			iw.write(list, packHash);
 			os.getChannel().force(true);
-		} finally {
-			os.close();
 		}
 	}
 
-	private PackLock renameAndOpenPack(final String lockMessage)
+	private PackLock renameAndOpenPack(String lockMessage)
 			throws IOException {
 		if (!keepEmpty && getObjectCount() == 0) {
 			cleanupTemporaryFiles();
@@ -438,11 +428,11 @@ public class ObjectDirectoryPackParser extends PackParser {
 			d.update(oeBytes);
 		}
 
-		final String name = ObjectId.fromRaw(d.digest()).name();
-		final File packDir = new File(db.getDirectory(), "pack"); //$NON-NLS-1$
-		final File finalPack = new File(packDir, "pack-" + name + ".pack"); //$NON-NLS-1$ //$NON-NLS-2$
-		final File finalIdx = new File(packDir, "pack-" + name + ".idx"); //$NON-NLS-1$ //$NON-NLS-2$
-		final PackLock keep = new PackLock(finalPack, db.getFS());
+		ObjectId id = ObjectId.fromRaw(d.digest());
+		File packDir = new File(db.getDirectory(), "pack"); //$NON-NLS-1$
+		PackFile finalPack = new PackFile(packDir, id, PackExt.PACK);
+		PackFile finalIdx = finalPack.create(PackExt.INDEX);
+		final PackLockImpl keep = new PackLockImpl(finalPack, db.getFS());
 
 		if (!packDir.exists() && !packDir.mkdir() && !packDir.exists()) {
 			// The objects/pack directory isn't present, and we are unable
@@ -476,22 +466,36 @@ public class ObjectDirectoryPackParser extends PackParser {
 			}
 		}
 
-		if (!tmpPack.renameTo(finalPack)) {
+		try {
+			FileUtils.rename(tmpPack, finalPack,
+					StandardCopyOption.ATOMIC_MOVE);
+		} catch (IOException e) {
 			cleanupTemporaryFiles();
 			keep.unlock();
 			throw new IOException(MessageFormat.format(
-					JGitText.get().cannotMovePackTo, finalPack));
+					JGitText.get().cannotMovePackTo, finalPack), e);
 		}
 
-		if (!tmpIdx.renameTo(finalIdx)) {
+		try {
+			FileUtils.rename(tmpIdx, finalIdx, StandardCopyOption.ATOMIC_MOVE);
+		} catch (IOException e) {
 			cleanupTemporaryFiles();
 			keep.unlock();
 			if (!finalPack.delete())
 				finalPack.deleteOnExit();
 			throw new IOException(MessageFormat.format(
-					JGitText.get().cannotMoveIndexTo, finalIdx));
+					JGitText.get().cannotMoveIndexTo, finalIdx), e);
 		}
 
+		boolean interrupted = false;
+		try {
+			FileSnapshot snapshot = FileSnapshot.save(finalPack);
+			if (pconfig.doWaitPreventRacyPack(snapshot.size())) {
+				snapshot.waitUntilNotRacy();
+			}
+		} catch (InterruptedException e) {
+			interrupted = true;
+		}
 		try {
 			newPack = db.openPack(finalPack);
 		} catch (IOException err) {
@@ -501,6 +505,11 @@ public class ObjectDirectoryPackParser extends PackParser {
 			if (finalIdx.exists())
 				FileUtils.delete(finalIdx);
 			throw err;
+		} finally {
+			if (interrupted) {
+				// Re-set interrupted flag
+				Thread.currentThread().interrupt();
+			}
 		}
 
 		return lockMessage != null ? keep : null;

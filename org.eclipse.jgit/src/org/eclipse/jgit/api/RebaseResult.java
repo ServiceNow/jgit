@@ -1,56 +1,22 @@
 /*
- * Copyright (C) 2010, 2013, Mathias Kinzler <mathias.kinzler@sap.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, 2013, Mathias Kinzler <mathias.kinzler@sap.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 package org.eclipse.jgit.api;
 
 import java.util.List;
 import java.util.Map;
 
-import org.eclipse.jgit.merge.ResolveMerger;
 import org.eclipse.jgit.merge.ResolveMerger.MergeFailureReason;
 import org.eclipse.jgit.revwalk.RevCommit;
 
 /**
- * The result of a {@link RebaseCommand} execution
+ * The result of a {@link org.eclipse.jgit.api.RebaseCommand} execution
  */
 public class RebaseResult {
 	/**
@@ -279,6 +245,8 @@ public class RebaseResult {
 	}
 
 	/**
+	 * Get the status
+	 *
 	 * @return the overall status
 	 */
 	public Status getStatus() {
@@ -286,33 +254,46 @@ public class RebaseResult {
 	}
 
 	/**
-	 * @return the current commit if status is {@link Status#STOPPED}, otherwise
-	 *         <code>null</code>
+	 * Get the current commit if status is
+	 * {@link org.eclipse.jgit.api.RebaseResult.Status#STOPPED}, otherwise
+	 * <code>null</code>
+	 *
+	 * @return the current commit if status is
+	 *         {@link org.eclipse.jgit.api.RebaseResult.Status#STOPPED},
+	 *         otherwise <code>null</code>
 	 */
 	public RevCommit getCurrentCommit() {
 		return currentCommit;
 	}
 
 	/**
+	 * Get the list of paths causing this rebase to fail
+	 *
 	 * @return the list of paths causing this rebase to fail (see
-	 *         {@link ResolveMerger#getFailingPaths()} for details) if status is
-	 *         {@link Status#FAILED}, otherwise <code>null</code>
+	 *         {@link org.eclipse.jgit.merge.ResolveMerger#getFailingPaths()}
+	 *         for details) if status is
+	 *         {@link org.eclipse.jgit.api.RebaseResult.Status#FAILED},
+	 *         otherwise <code>null</code>
 	 */
 	public Map<String, MergeFailureReason> getFailingPaths() {
 		return failingPaths;
 	}
 
 	/**
-	 * @return the list of conflicts if status is {@link Status#CONFLICTS}
+	 * Get the list of conflicts
+	 *
+	 * @return the list of conflicts if status is
+	 *         {@link org.eclipse.jgit.api.RebaseResult.Status#CONFLICTS}
 	 */
 	public List<String> getConflicts() {
 		return conflicts;
 	}
 
 	/**
-	 * @return the list of uncommitted changes if status is
-	 *         {@link Status#UNCOMMITTED_CHANGES}
+	 * <p>Getter for the field <code>uncommittedChanges</code>.</p>
 	 *
+	 * @return the list of uncommitted changes if status is
+	 *         {@link org.eclipse.jgit.api.RebaseResult.Status#UNCOMMITTED_CHANGES}
 	 * @since 3.2
 	 */
 	public List<String> getUncommittedChanges() {

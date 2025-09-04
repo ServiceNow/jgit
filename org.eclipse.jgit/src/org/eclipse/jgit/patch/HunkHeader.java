@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2008-2009, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008-2009, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.patch;
@@ -57,7 +24,9 @@ import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.lib.AbbreviatedObjectId;
 import org.eclipse.jgit.util.MutableInteger;
 
-/** Hunk header describing the layout of a single block of lines */
+/**
+ * Hunk header describing the layout of a single block of lines
+ */
 public class HunkHeader {
 	/** Details about an old image of the file. */
 	public abstract static class OldImage {
@@ -118,7 +87,7 @@ public class HunkHeader {
 
 	private EditList editList;
 
-	HunkHeader(final FileHeader fh, final int offset) {
+	HunkHeader(FileHeader fh, int offset) {
 		this(fh, offset, new OldImage() {
 			@Override
 			public AbbreviatedObjectId getId() {
@@ -127,13 +96,13 @@ public class HunkHeader {
 		});
 	}
 
-	HunkHeader(final FileHeader fh, final int offset, final OldImage oi) {
+	HunkHeader(FileHeader fh, int offset, OldImage oi) {
 		file = fh;
 		startOffset = offset;
 		old = oi;
 	}
 
-	HunkHeader(final FileHeader fh, final EditList editList) {
+	HunkHeader(FileHeader fh, EditList editList) {
 		this(fh, fh.buf.length);
 		this.editList = editList;
 		endOffset = startOffset;
@@ -148,47 +117,83 @@ public class HunkHeader {
 		}
 	}
 
-	/** @return header for the file this hunk applies to */
+	/**
+	 * Get header for the file this hunk applies to.
+	 *
+	 * @return header for the file this hunk applies to.
+	 */
 	public FileHeader getFileHeader() {
 		return file;
 	}
 
-	/** @return the byte array holding this hunk's patch script. */
+	/**
+	 * Get the byte array holding this hunk's patch script.
+	 *
+	 * @return the byte array holding this hunk's patch script.
+	 */
 	public byte[] getBuffer() {
 		return file.buf;
 	}
 
-	/** @return offset the start of this hunk in {@link #getBuffer()}. */
+	/**
+	 * Get offset of the start of this hunk in {@link #getBuffer()}.
+	 *
+	 * @return offset of the start of this hunk in {@link #getBuffer()}.
+	 */
 	public int getStartOffset() {
 		return startOffset;
 	}
 
-	/** @return offset one past the end of the hunk in {@link #getBuffer()}. */
+	/**
+	 * Get offset one past the end of the hunk in {@link #getBuffer()}.
+	 *
+	 * @return offset one past the end of the hunk in {@link #getBuffer()}.
+	 */
 	public int getEndOffset() {
 		return endOffset;
 	}
 
-	/** @return information about the old image mentioned in this hunk. */
+	/**
+	 * Get information about the old image mentioned in this hunk.
+	 *
+	 * @return information about the old image mentioned in this hunk.
+	 */
 	public OldImage getOldImage() {
 		return old;
 	}
 
-	/** @return first line number in the post-image file where the hunk starts */
+	/**
+	 * Get first line number in the post-image file where the hunk starts.
+	 *
+	 * @return first line number in the post-image file where the hunk starts.
+	 */
 	public int getNewStartLine() {
 		return newStartLine;
 	}
 
-	/** @return Total number of post-image lines this hunk covers */
+	/**
+	 * Get total number of post-image lines this hunk covers.
+	 *
+	 * @return total number of post-image lines this hunk covers.
+	 */
 	public int getNewLineCount() {
 		return newLineCount;
 	}
 
-	/** @return total number of lines of context appearing in this hunk */
+	/**
+	 * Get total number of lines of context appearing in this hunk.
+	 *
+	 * @return total number of lines of context appearing in this hunk.
+	 */
 	public int getLinesContext() {
 		return nContext;
 	}
 
-	/** @return a list describing the content edits performed within the hunk. */
+	/**
+	 * Convert to a list describing the content edits performed within the hunk.
+	 *
+	 * @return a list describing the content edits performed within the hunk.
+	 */
 	public EditList toEditList() {
 		if (editList == null) {
 			editList = new EditList();
@@ -255,7 +260,7 @@ public class HunkHeader {
 			newLineCount = 1;
 	}
 
-	int parseBody(final Patch script, final int end) {
+	int parseBody(Patch script, int end) {
 		final byte[] buf = file.buf;
 		int c = nextLF(buf, startOffset), last = c;
 
@@ -321,7 +326,7 @@ public class HunkHeader {
 		return c;
 	}
 
-	void extractFileLines(final OutputStream[] out) throws IOException {
+	void extractFileLines(OutputStream[] out) throws IOException {
 		final byte[] buf = file.buf;
 		int ptr = startOffset;
 		int eol = nextLF(buf, ptr);
@@ -404,6 +409,7 @@ public class HunkHeader {
 		offsets[fileIdx] = end < 0 ? s.length() : end + 1;
 	}
 
+	/** {@inheritDoc} */
 	@SuppressWarnings("nls")
 	@Override
 	public String toString() {

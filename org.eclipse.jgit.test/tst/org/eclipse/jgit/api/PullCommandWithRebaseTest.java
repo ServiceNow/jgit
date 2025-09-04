@@ -1,47 +1,15 @@
 /*
- * Copyright (C) 2011, Mathias Kinzler <mathias.kinzler@sap.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2011, Mathias Kinzler <mathias.kinzler@sap.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 package org.eclipse.jgit.api;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -61,6 +29,7 @@ import org.eclipse.jgit.junit.RepositoryTestCase;
 import org.eclipse.jgit.lib.ConfigConstants;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.ObjectId;
+import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.lib.RepositoryState;
 import org.eclipse.jgit.lib.StoredConfig;
@@ -145,6 +114,57 @@ public class PullCommandWithRebaseTest extends RepositoryTestCase {
 				.setStrategy(MergeStrategy.RESOLVE).call();
 		assertEquals(MergeStatus.MERGED, result.getMergeStatus());
 
+	}
+
+	@Test
+	public void testPullFastForwardDetachedHead() throws Exception {
+		Repository repository = source.getRepository();
+		writeToFile(sourceFile, "2nd commit");
+		source.add().addFilepattern("SomeFile.txt").call();
+		source.commit().setMessage("2nd commit").call();
+
+		try (RevWalk revWalk = new RevWalk(repository)) {
+			// git checkout HEAD^
+			String initialBranch = repository.getBranch();
+			Ref initialRef = repository.findRef(Constants.HEAD);
+			RevCommit initialCommit = revWalk
+					.parseCommit(initialRef.getObjectId());
+			assertEquals("this test need linear history", 1,
+					initialCommit.getParentCount());
+			source.checkout().setName(initialCommit.getParent(0).getName())
+					.call();
+			assertFalse("expected detached HEAD",
+					repository.getFullBranch().startsWith(Constants.R_HEADS));
+
+			// change and commit another file
+			File otherFile = new File(sourceFile.getParentFile(),
+					System.currentTimeMillis() + ".tst");
+			writeToFile(otherFile, "other 2nd commit");
+			source.add().addFilepattern(otherFile.getName()).call();
+			RevCommit newCommit = source.commit().setMessage("other 2nd commit")
+					.call();
+
+			// git pull --rebase initialBranch
+			source.pull().setRebase(true).setRemote(".")
+					.setRemoteBranchName(initialBranch)
+					.call();
+
+			assertEquals(RepositoryState.SAFE,
+					source.getRepository().getRepositoryState());
+			Ref head = source.getRepository().findRef(Constants.HEAD);
+			RevCommit headCommit = revWalk.parseCommit(head.getObjectId());
+
+			// HEAD^ == initialCommit, no merge commit
+			assertEquals(1, headCommit.getParentCount());
+			assertEquals(initialCommit, headCommit.getParent(0));
+
+			// both contributions for both commits are available
+			assertFileContentsEqual(sourceFile, "2nd commit");
+			assertFileContentsEqual(otherFile, "other 2nd commit");
+			// HEAD has same message as rebased commit
+			assertEquals(newCommit.getShortMessage(),
+					headCommit.getShortMessage());
+		}
 	}
 
 	@Test
@@ -273,26 +293,27 @@ public class PullCommandWithRebaseTest extends RepositoryTestCase {
 
 		// Get the HEAD and HEAD~1 commits
 		Repository targetRepo = target.getRepository();
-		RevWalk revWalk = new RevWalk(targetRepo);
-		ObjectId headId = targetRepo.resolve(Constants.HEAD);
-		RevCommit root = revWalk.parseCommit(headId);
-		revWalk.markStart(root);
-		// HEAD
-		RevCommit head = revWalk.next();
-		// HEAD~1
-		RevCommit beforeHead = revWalk.next();
+		try (RevWalk revWalk = new RevWalk(targetRepo)) {
+			ObjectId headId = targetRepo.resolve(Constants.HEAD);
+			RevCommit root = revWalk.parseCommit(headId);
+			revWalk.markStart(root);
+			// HEAD
+			RevCommit head = revWalk.next();
+			// HEAD~1
+			RevCommit beforeHead = revWalk.next();
 
-		// verify the commit message on the HEAD commit
-		assertEquals(TARGET_COMMIT_MESSAGE, head.getFullMessage());
-		// verify the commit just before HEAD
-		assertEquals(SOURCE_COMMIT_MESSAGE, beforeHead.getFullMessage());
+			// verify the commit message on the HEAD commit
+			assertEquals(TARGET_COMMIT_MESSAGE, head.getFullMessage());
+			// verify the commit just before HEAD
+			assertEquals(SOURCE_COMMIT_MESSAGE, beforeHead.getFullMessage());
 
-		// verify file states
-		assertFileContentsEqual(sourceFile, SOURCE_FILE_CONTENTS);
-		assertFileContentsEqual(newFile, NEW_FILE_CONTENTS);
-		// verify repository state
-		assertEquals(RepositoryState.SAFE, target
-			.getRepository().getRepositoryState());
+			// verify file states
+			assertFileContentsEqual(sourceFile, SOURCE_FILE_CONTENTS);
+			assertFileContentsEqual(newFile, NEW_FILE_CONTENTS);
+			// verify repository state
+			assertEquals(RepositoryState.SAFE, target
+				.getRepository().getRepositoryState());
+		}
 	}
 
 	@Override
@@ -302,6 +323,7 @@ public class PullCommandWithRebaseTest extends RepositoryTestCase {
 		dbTarget = createWorkRepository();
 		source = new Git(db);
 		target = new Git(dbTarget);
+		addRepoToClose(dbTarget);
 
 		// put some file in the source repo
 		sourceFile = new File(db.getWorkTree(), "SomeFile.txt");
@@ -341,34 +363,23 @@ public class PullCommandWithRebaseTest extends RepositoryTestCase {
 
 	private static void writeToFile(File actFile, String string)
 			throws IOException {
-		FileOutputStream fos = null;
-		try {
-			fos = new FileOutputStream(actFile);
-			fos.write(string.getBytes("UTF-8"));
-			fos.close();
-		} finally {
-			if (fos != null)
-				fos.close();
+		try (FileOutputStream fos = new FileOutputStream(actFile)) {
+			fos.write(string.getBytes(UTF_8));
 		}
 	}
 
 	private static void assertFileContentsEqual(File actFile, String string)
 			throws IOException {
 		ByteArrayOutputStream bos = new ByteArrayOutputStream();
-		FileInputStream fis = null;
 		byte[] buffer = new byte[100];
-		try {
-			fis = new FileInputStream(actFile);
+		try (FileInputStream fis = new FileInputStream(actFile)) {
 			int read = fis.read(buffer);
 			while (read > 0) {
 				bos.write(buffer, 0, read);
 				read = fis.read(buffer);
 			}
-			String content = new String(bos.toByteArray(), "UTF-8");
+			String content = new String(bos.toByteArray(), UTF_8);
 			assertEquals(string, content);
-		} finally {
-			if (fis != null)
-				fis.close();
 		}
 	}
 }

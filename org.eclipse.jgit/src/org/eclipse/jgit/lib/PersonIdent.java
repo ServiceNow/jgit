@@ -1,58 +1,28 @@
 /*
  * Copyright (C) 2007, Dave Watson <dwatson@mimvista.com>
  * Copyright (C) 2007, Robin Rosenberg <robin.rosenberg@dewire.com>
- * Copyright (C) 2006-2008, Shawn O. Pearce <spearce@spearce.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2006-2008, Shawn O. Pearce <spearce@spearce.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.lib;
 
 import java.io.Serializable;
 import java.text.SimpleDateFormat;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.util.Date;
 import java.util.Locale;
 import java.util.TimeZone;
 
 import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.util.SystemReader;
+import org.eclipse.jgit.util.time.ProposedTimestamp;
 
 /**
  * A combination of a person identity and time in Git.
@@ -64,6 +34,8 @@ public class PersonIdent implements Serializable {
 	private static final long serialVersionUID = 1L;
 
 	/**
+	 * Get timezone object for the given offset.
+	 *
 	 * @param tzOffset
 	 *            timezone offset as in {@link #getTimeZoneOffset()}.
 	 * @return time zone object for the given offset.
@@ -111,6 +83,44 @@ public class PersonIdent implements Serializable {
 		r.append(offsetMins);
 	}
 
+	/**
+	 * Sanitize the given string for use in an identity and append to output.
+	 * <p>
+	 * Trims whitespace from both ends and special characters {@code \n < >} that
+	 * interfere with parsing; appends all other characters to the output.
+	 * Analogous to the C git function {@code strbuf_addstr_without_crud}.
+	 *
+	 * @param r
+	 *            string builder to append to.
+	 * @param str
+	 *            input string.
+	 * @since 4.4
+	 */
+	public static void appendSanitized(StringBuilder r, String str) {
+		// Trim any whitespace less than \u0020 as in String#trim().
+		int i = 0;
+		while (i < str.length() && str.charAt(i) <= ' ') {
+			i++;
+		}
+		int end = str.length();
+		while (end > i && str.charAt(end - 1) <= ' ') {
+			end--;
+		}
+
+		for (; i < end; i++) {
+			char c = str.charAt(i);
+			switch (c) {
+				case '\n':
+				case '<':
+				case '>':
+					continue;
+				default:
+					r.append(c);
+					break;
+			}
+		}
+	}
+
 	private final String name;
 
 	private final String emailAddress;
@@ -124,63 +134,98 @@ public class PersonIdent implements Serializable {
 	 * This new PersonIdent gets the info from the default committer as available
 	 * from the configuration.
 	 *
-	 * @param repo
+	 * @param repo a {@link org.eclipse.jgit.lib.Repository} object.
 	 */
-	public PersonIdent(final Repository repo) {
+	public PersonIdent(Repository repo) {
 		this(repo.getConfig().get(UserConfig.KEY));
 	}
 
 	/**
-	 * Copy a {@link PersonIdent}.
+	 * Copy a {@link org.eclipse.jgit.lib.PersonIdent}.
 	 *
 	 * @param pi
-	 *            Original {@link PersonIdent}
+	 *            Original {@link org.eclipse.jgit.lib.PersonIdent}
 	 */
-	public PersonIdent(final PersonIdent pi) {
+	public PersonIdent(PersonIdent pi) {
 		this(pi.getName(), pi.getEmailAddress());
 	}
 
 	/**
-	 * Construct a new {@link PersonIdent} with current time.
+	 * Construct a new {@link org.eclipse.jgit.lib.PersonIdent} with current
+	 * time.
 	 *
 	 * @param aName
+	 *            a {@link java.lang.String} object.
 	 * @param aEmailAddress
+	 *            a {@link java.lang.String} object.
 	 */
-	public PersonIdent(final String aName, final String aEmailAddress) {
+	public PersonIdent(String aName, String aEmailAddress) {
 		this(aName, aEmailAddress, SystemReader.getInstance().getCurrentTime());
+	}
+
+	/**
+	 * Construct a new {@link org.eclipse.jgit.lib.PersonIdent} with current
+	 * time.
+	 *
+	 * @param aName
+	 *            a {@link java.lang.String} object.
+	 * @param aEmailAddress
+	 *            a {@link java.lang.String} object.
+	 * @param when
+	 *            a {@link org.eclipse.jgit.util.time.ProposedTimestamp} object.
+	 * @since 4.6
+	 */
+	public PersonIdent(String aName, String aEmailAddress,
+			ProposedTimestamp when) {
+		this(aName, aEmailAddress, when.millis());
 	}
 
 	/**
 	 * Copy a PersonIdent, but alter the clone's time stamp
 	 *
 	 * @param pi
-	 *            original {@link PersonIdent}
+	 *            original {@link org.eclipse.jgit.lib.PersonIdent}
 	 * @param when
 	 *            local time
 	 * @param tz
 	 *            time zone
 	 */
-	public PersonIdent(final PersonIdent pi, final Date when, final TimeZone tz) {
+	public PersonIdent(PersonIdent pi, Date when, TimeZone tz) {
 		this(pi.getName(), pi.getEmailAddress(), when, tz);
 	}
 
 	/**
-	 * Copy a {@link PersonIdent}, but alter the clone's time stamp
+	 * Copy a {@link org.eclipse.jgit.lib.PersonIdent}, but alter the clone's
+	 * time stamp
 	 *
 	 * @param pi
-	 *            original {@link PersonIdent}
+	 *            original {@link org.eclipse.jgit.lib.PersonIdent}
 	 * @param aWhen
 	 *            local time
 	 */
-	public PersonIdent(final PersonIdent pi, final Date aWhen) {
+	public PersonIdent(PersonIdent pi, Date aWhen) {
 		this(pi.getName(), pi.getEmailAddress(), aWhen.getTime(), pi.tzOffset);
+	}
+
+	/**
+	 * Copy a {@link org.eclipse.jgit.lib.PersonIdent}, but alter the clone's
+	 * time stamp
+	 *
+	 * @param pi
+	 *            original {@link org.eclipse.jgit.lib.PersonIdent}
+	 * @param aWhen
+	 *            local time as Instant
+	 * @since 6.1
+	 */
+	public PersonIdent(PersonIdent pi, Instant aWhen) {
+		this(pi.getName(), pi.getEmailAddress(), aWhen.toEpochMilli(), pi.tzOffset);
 	}
 
 	/**
 	 * Construct a PersonIdent from simple data
 	 *
-	 * @param aName
-	 * @param aEmailAddress
+	 * @param aName a {@link java.lang.String} object.
+	 * @param aEmailAddress a {@link java.lang.String} object.
 	 * @param aWhen
 	 *            local time stamp
 	 * @param aTZ
@@ -193,16 +238,37 @@ public class PersonIdent implements Serializable {
 	}
 
 	/**
+	 * Construct a PersonIdent from simple data
+	 *
+	 * @param aName
+	 *            a {@link java.lang.String} object.
+	 * @param aEmailAddress
+	 *            a {@link java.lang.String} object.
+	 * @param aWhen
+	 *            local time stamp
+	 * @param zoneId
+	 *            time zone id
+	 * @since 6.1
+	 */
+	public PersonIdent(final String aName, String aEmailAddress, Instant aWhen,
+			ZoneId zoneId) {
+		this(aName, aEmailAddress, aWhen.toEpochMilli(),
+				TimeZone.getTimeZone(zoneId)
+						.getOffset(aWhen
+				.toEpochMilli()) / (60 * 1000));
+	}
+
+	/**
 	 * Copy a PersonIdent, but alter the clone's time stamp
 	 *
 	 * @param pi
-	 *            original {@link PersonIdent}
+	 *            original {@link org.eclipse.jgit.lib.PersonIdent}
 	 * @param aWhen
 	 *            local time stamp
 	 * @param aTZ
 	 *            time zone
 	 */
-	public PersonIdent(final PersonIdent pi, final long aWhen, final int aTZ) {
+	public PersonIdent(PersonIdent pi, long aWhen, int aTZ) {
 		this(pi.getName(), pi.getEmailAddress(), aWhen, aTZ);
 	}
 
@@ -212,15 +278,22 @@ public class PersonIdent implements Serializable {
 				.getTimezone(when));
 	}
 
-	private PersonIdent(final UserConfig config) {
+	private PersonIdent(UserConfig config) {
 		this(config.getCommitterName(), config.getCommitterEmail());
 	}
 
 	/**
-	 * Construct a {@link PersonIdent}
+	 * Construct a {@link org.eclipse.jgit.lib.PersonIdent}.
+	 * <p>
+	 * Whitespace in the name and email is preserved for the lifetime of this
+	 * object, but are trimmed by {@link #toExternalString()}. This means that
+	 * parsing the result of {@link #toExternalString()} may not return an
+	 * equivalent instance.
 	 *
 	 * @param aName
+	 *            a {@link java.lang.String} object.
 	 * @param aEmailAddress
+	 *            a {@link java.lang.String} object.
 	 * @param aWhen
 	 *            local time stamp
 	 * @param aTZ
@@ -241,6 +314,8 @@ public class PersonIdent implements Serializable {
 	}
 
 	/**
+	 * Get name of person
+	 *
 	 * @return Name of person
 	 */
 	public String getName() {
@@ -248,6 +323,8 @@ public class PersonIdent implements Serializable {
 	}
 
 	/**
+	 * Get email address of person
+	 *
 	 * @return email address of person
 	 */
 	public String getEmailAddress() {
@@ -255,6 +332,8 @@ public class PersonIdent implements Serializable {
 	}
 
 	/**
+	 * Get timestamp
+	 *
 	 * @return timestamp
 	 */
 	public Date getWhen() {
@@ -262,6 +341,18 @@ public class PersonIdent implements Serializable {
 	}
 
 	/**
+	 * Get when attribute as instant
+	 *
+	 * @return timestamp
+	 * @since 6.1
+	 */
+	public Instant getWhenAsInstant() {
+		return Instant.ofEpochMilli(when);
+	}
+
+	/**
+	 * Get this person's declared time zone
+	 *
 	 * @return this person's declared time zone; null if time zone is unknown.
 	 */
 	public TimeZone getTimeZone() {
@@ -269,6 +360,18 @@ public class PersonIdent implements Serializable {
 	}
 
 	/**
+	 * Get the time zone id
+	 *
+	 * @return the time zone id
+	 * @since 6.1
+	 */
+	public ZoneId getZoneId() {
+		return getTimeZone().toZoneId();
+	}
+
+	/**
+	 * Get this person's declared time zone as minutes east of UTC.
+	 *
 	 * @return this person's declared time zone as minutes east of UTC. If the
 	 *         timezone is to the west of UTC it is negative.
 	 */
@@ -276,6 +379,12 @@ public class PersonIdent implements Serializable {
 		return tzOffset;
 	}
 
+	/**
+	 * {@inheritDoc}
+	 * <p>
+	 * Hashcode is based only on the email address and timestamp.
+	 */
+	@Override
 	public int hashCode() {
 		int hc = getEmailAddress().hashCode();
 		hc *= 31;
@@ -283,7 +392,9 @@ public class PersonIdent implements Serializable {
 		return hc;
 	}
 
-	public boolean equals(final Object o) {
+	/** {@inheritDoc} */
+	@Override
+	public boolean equals(Object o) {
 		if (o instanceof PersonIdent) {
 			final PersonIdent p = (PersonIdent) o;
 			return getName().equals(p.getName())
@@ -300,9 +411,9 @@ public class PersonIdent implements Serializable {
 	 */
 	public String toExternalString() {
 		final StringBuilder r = new StringBuilder();
-		r.append(getName().trim());
+		appendSanitized(r, getName());
 		r.append(" <"); //$NON-NLS-1$
-		r.append(getEmailAddress().trim());
+		appendSanitized(r, getEmailAddress());
 		r.append("> "); //$NON-NLS-1$
 		r.append(when / 1000);
 		r.append(' ');
@@ -310,6 +421,8 @@ public class PersonIdent implements Serializable {
 		return r.toString();
 	}
 
+	/** {@inheritDoc} */
+	@Override
 	@SuppressWarnings("nls")
 	public String toString() {
 		final StringBuilder r = new StringBuilder();
@@ -328,3 +441,4 @@ public class PersonIdent implements Serializable {
 		return r.toString();
 	}
 }
+

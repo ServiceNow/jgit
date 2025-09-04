@@ -1,49 +1,19 @@
 /*
- * Copyright (C) 2014, Sven Selberg <sven.selberg@sonymobile.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2014, Sven Selberg <sven.selberg@sonymobile.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 package org.eclipse.jgit.revwalk;
 
 import static org.junit.Assert.assertTrue;
 
+import java.util.List;
+import java.util.stream.Collectors;
+import org.eclipse.jgit.lib.Ref;
 import org.junit.Test;
 
 public class RevWalkMergedIntoTest extends RevWalkTestCase {
@@ -76,5 +46,102 @@ public class RevWalkMergedIntoTest extends RevWalkTestCase {
 		final RevCommit n = commit(commit(commit(commit(commit(f)))));
 		final RevCommit t = commit(n, o);
 		assertTrue(rw.isMergedInto(b, t));
+	}
+
+	@Test
+	public void testGetMergedInto() throws Exception {
+		/*
+		 *          i
+		 *         / \
+		 *        A   o
+		 *       / \   \
+		 *      o1  o2  E
+		 *     / \ / \
+		 *    B   C   D
+		 */
+		String b = "refs/heads/b";
+		String c = "refs/heads/c";
+		String d = "refs/heads/d";
+		String e = "refs/heads/e";
+		final RevCommit i = commit();
+		final RevCommit a = commit(i);
+		final RevCommit o1 = commit(a);
+		final RevCommit o2 = commit(a);
+		createBranch(commit(o1), b);
+		createBranch(commit(o1, o2), c);
+		createBranch(commit(o2), d);
+		createBranch(commit(commit(i)), e);
+
+		List<String>  modifiedResult = rw.getMergedInto(a, getRefs())
+				.stream().map(Ref::getName).collect(Collectors.toList());
+
+		assertTrue(modifiedResult.size() == 3);
+		assertTrue(modifiedResult.contains(b));
+		assertTrue(modifiedResult.contains(c));
+		assertTrue(modifiedResult.contains(d));
+	}
+
+	@Test
+	public void testIsMergedIntoAny() throws Exception {
+		/*
+		 *          i
+		 *         / \
+		 *        A   o
+		 *       /     \
+		 *      o       C
+		 *     /
+		 *    B
+		 */
+		String b = "refs/heads/b";
+		String c = "refs/heads/c";
+		final RevCommit i = commit();
+		final RevCommit a = commit(i);
+		createBranch(commit(commit(a)), b);
+		createBranch(commit(commit(i)), c);
+
+		assertTrue(rw.isMergedIntoAny(a, getRefs()));
+	}
+
+	@Test
+	public void testIsMergedIntoAll() throws Exception {
+		/*
+		 *
+		 *        A
+		 *       / \
+		 *      o1  o2
+		 *     / \ / \
+		 *    B   C   D
+		 */
+
+		String b = "refs/heads/b";
+		String c = "refs/heads/c";
+		String d = "refs/heads/c";
+		final RevCommit a = commit();
+		final RevCommit o1 = commit(a);
+		final RevCommit o2 = commit(a);
+		createBranch(commit(o1), b);
+		createBranch(commit(o1, o2), c);
+		createBranch(commit(o2), d);
+
+		assertTrue(rw.isMergedIntoAll(a, getRefs()));
+	}
+
+	@Test
+	public void testMergeIntoAnnotatedTag() throws Exception {
+		/*
+		 *        a
+		 *        |
+		 *        b
+		 *       / \
+		 *      c  v1 (annotated tag)
+		 */
+		String c = "refs/heads/c";
+		String v1 = "refs/tags/v1";
+		final RevCommit a = commit();
+		final RevCommit b = commit(a);
+		createBranch(commit(b), c);
+		createBranch(tag("v1", b), v1);
+
+		assertTrue(rw.isMergedIntoAll(a, getRefs()));
 	}
 }

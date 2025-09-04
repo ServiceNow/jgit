@@ -1,62 +1,31 @@
 /*
- * Copyright (C) 2008-2010, Google Inc.
+ * Copyright (C) 2008, 2010, Google Inc.
  * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org>
- * Copyright (C) 2011, Matthias Sohn <matthias.sohn@sap.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2011, 2020, Matthias Sohn <matthias.sohn@sap.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.dircache;
 
+import static java.nio.charset.StandardCharsets.ISO_8859_1;
+
 import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.EOFException;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.io.UnsupportedEncodingException;
 import java.security.DigestOutputStream;
 import java.security.MessageDigest;
 import java.text.MessageFormat;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -71,7 +40,11 @@ import org.eclipse.jgit.events.IndexChangedListener;
 import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.internal.storage.file.FileSnapshot;
 import org.eclipse.jgit.internal.storage.file.LockFile;
+import org.eclipse.jgit.internal.storage.io.NullMessageDigest;
 import org.eclipse.jgit.lib.AnyObjectId;
+import org.eclipse.jgit.lib.Config;
+import org.eclipse.jgit.lib.Config.ConfigEnum;
+import org.eclipse.jgit.lib.ConfigConstants;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectInserter;
@@ -86,7 +59,7 @@ import org.eclipse.jgit.util.IO;
 import org.eclipse.jgit.util.MutableInteger;
 import org.eclipse.jgit.util.NB;
 import org.eclipse.jgit.util.TemporaryBuffer;
-import org.eclipse.jgit.util.io.SafeBufferedOutputStream;
+import org.eclipse.jgit.util.io.SilentFileInputStream;
 
 /**
  * Support for the Git dircache (aka index file).
@@ -110,20 +83,19 @@ public class DirCache {
 
 	private static final byte[] NO_CHECKSUM = {};
 
-	static final Comparator<DirCacheEntry> ENT_CMP = new Comparator<DirCacheEntry>() {
-		public int compare(final DirCacheEntry o1, final DirCacheEntry o2) {
-			final int cr = cmp(o1, o2);
-			if (cr != 0)
-				return cr;
-			return o1.getStage() - o2.getStage();
-		}
+	static final Comparator<DirCacheEntry> ENT_CMP = (DirCacheEntry o1,
+			DirCacheEntry o2) -> {
+		final int cr = cmp(o1, o2);
+		if (cr != 0)
+			return cr;
+		return o1.getStage() - o2.getStage();
 	};
 
-	static int cmp(final DirCacheEntry a, final DirCacheEntry b) {
+	static int cmp(DirCacheEntry a, DirCacheEntry b) {
 		return cmp(a.path, a.path.length, b);
 	}
 
-	static int cmp(final byte[] aPath, final int aLen, final DirCacheEntry b) {
+	static int cmp(byte[] aPath, int aLen, DirCacheEntry b) {
 		return cmp(aPath, aLen, b.path, b.path.length);
 	}
 
@@ -157,7 +129,7 @@ public class DirCache {
 	 *            tree to read. Must identify a tree, not a tree-ish.
 	 * @return a new cache which has no backing store file, but contains the
 	 *         contents of {@code treeId}.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             one or more trees not available from the ObjectReader.
 	 * @since 4.2
 	 */
@@ -181,13 +153,13 @@ public class DirCache {
 	 *            repository containing the index to read
 	 * @return a cache representing the contents of the specified index file (if
 	 *         it exists) or an empty cache if the file does not exist.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the index file is present but could not be read.
-	 * @throws CorruptObjectException
+	 * @throws org.eclipse.jgit.errors.CorruptObjectException
 	 *             the index file is using a format or extension that this
 	 *             library does not support.
 	 */
-	public static DirCache read(final Repository repository)
+	public static DirCache read(Repository repository)
 			throws CorruptObjectException, IOException {
 		final DirCache c = read(repository.getIndexFile(), repository.getFS());
 		c.repository = repository;
@@ -208,13 +180,13 @@ public class DirCache {
 	 *            certain file system operations.
 	 * @return a cache representing the contents of the specified index file (if
 	 *         it exists) or an empty cache if the file does not exist.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the index file is present but could not be read.
-	 * @throws CorruptObjectException
+	 * @throws org.eclipse.jgit.errors.CorruptObjectException
 	 *             the index file is using a format or extension that this
 	 *             library does not support.
 	 */
-	public static DirCache read(final File indexLocation, final FS fs)
+	public static DirCache read(File indexLocation, FS fs)
 			throws CorruptObjectException, IOException {
 		final DirCache c = new DirCache(indexLocation, fs);
 		c.read();
@@ -236,14 +208,14 @@ public class DirCache {
 	 *            certain file system operations.
 	 * @return a cache representing the contents of the specified index file (if
 	 *         it exists) or an empty cache if the file does not exist.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the index file is present but could not be read, or the lock
 	 *             could not be obtained.
-	 * @throws CorruptObjectException
+	 * @throws org.eclipse.jgit.errors.CorruptObjectException
 	 *             the index file is using a format or extension that this
 	 *             library does not support.
 	 */
-	public static DirCache lock(final File indexLocation, final FS fs)
+	public static DirCache lock(File indexLocation, FS fs)
 			throws CorruptObjectException, IOException {
 		final DirCache c = new DirCache(indexLocation, fs);
 		if (!c.lock())
@@ -251,13 +223,7 @@ public class DirCache {
 
 		try {
 			c.read();
-		} catch (IOException e) {
-			c.unlock();
-			throw e;
-		} catch (RuntimeException e) {
-			c.unlock();
-			throw e;
-		} catch (Error e) {
+		} catch (IOException | RuntimeException | Error e) {
 			c.unlock();
 			throw e;
 		}
@@ -279,10 +245,10 @@ public class DirCache {
 	 *            listener to be informed when DirCache is committed
 	 * @return a cache representing the contents of the specified index file (if
 	 *         it exists) or an empty cache if the file does not exist.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the index file is present but could not be read, or the lock
 	 *             could not be obtained.
-	 * @throws CorruptObjectException
+	 * @throws org.eclipse.jgit.errors.CorruptObjectException
 	 *             the index file is using a format or extension that this
 	 *             library does not support.
 	 * @since 2.0
@@ -313,10 +279,10 @@ public class DirCache {
 	 *            listener to be informed when DirCache is committed
 	 * @return a cache representing the contents of the specified index file (if
 	 *         it exists) or an empty cache if the file does not exist.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the index file is present but could not be read, or the lock
 	 *             could not be obtained.
-	 * @throws CorruptObjectException
+	 * @throws org.eclipse.jgit.errors.CorruptObjectException
 	 *             the index file is using a format or extension that this
 	 *             library does not support.
 	 */
@@ -344,9 +310,6 @@ public class DirCache {
 	/** Our active lock (if we hold it); null if we don't have it locked. */
 	private LockFile myLock;
 
-	/** file system abstraction **/
-	private final FS fs;
-
 	/** Keep track of whether the index has changed or not */
 	private FileSnapshot snapshot;
 
@@ -362,6 +325,12 @@ public class DirCache {
 	/** Repository containing this index */
 	private Repository repository;
 
+	/** If we read this index from disk, the original format. */
+	private DirCacheVersion version;
+
+	/** Whether to skip computing and checking the index checksum */
+	private boolean skipHash;
+
 	/**
 	 * Create a new in-core index representation.
 	 * <p>
@@ -374,9 +343,8 @@ public class DirCache {
 	 *            the file system abstraction which will be necessary to perform
 	 *            certain file system operations.
 	 */
-	public DirCache(final File indexLocation, final FS fs) {
+	public DirCache(File indexLocation, FS fs) {
 		liveFile = indexLocation;
-		this.fs = fs;
 		clear();
 	}
 
@@ -384,7 +352,8 @@ public class DirCache {
 	 * Create a new builder to update this cache.
 	 * <p>
 	 * Callers should add all entries to the builder, then use
-	 * {@link DirCacheBuilder#finish()} to update this instance.
+	 * {@link org.eclipse.jgit.dircache.DirCacheBuilder#finish()} to update this
+	 * instance.
 	 *
 	 * @return a new builder instance for this cache.
 	 */
@@ -396,7 +365,8 @@ public class DirCache {
 	 * Create a new editor to recreate this cache.
 	 * <p>
 	 * Callers should add commands to the editor, then use
-	 * {@link DirCacheEditor#finish()} to update this instance.
+	 * {@link org.eclipse.jgit.dircache.DirCacheEditor#finish()} to update this
+	 * instance.
 	 *
 	 * @return a new builder instance for this cache.
 	 */
@@ -404,7 +374,11 @@ public class DirCache {
 		return new DirCacheEditor(this, entryCnt + 16);
 	}
 
-	void replace(final DirCacheEntry[] e, final int cnt) {
+	DirCacheVersion getVersion() {
+		return version;
+	}
+
+	void replace(DirCacheEntry[] e, int cnt) {
 		sortedEntries = e;
 		entryCnt = cnt;
 		tree = null;
@@ -417,10 +391,10 @@ public class DirCache {
 	 * the last time we consulted it. A missing index file will be treated as
 	 * though it were present but had no file entries in it.
 	 *
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the index file is present but could not be read. This
 	 *             DirCache instance may not be populated correctly.
-	 * @throws CorruptObjectException
+	 * @throws org.eclipse.jgit.errors.CorruptObjectException
 	 *             the index file is using a format or extension that this
 	 *             library does not support.
 	 */
@@ -430,18 +404,10 @@ public class DirCache {
 		if (!liveFile.exists())
 			clear();
 		else if (snapshot == null || snapshot.isModified(liveFile)) {
-			try {
-				final FileInputStream inStream = new FileInputStream(liveFile);
-				try {
-					clear();
-					readFrom(inStream);
-				} finally {
-					try {
-						inStream.close();
-					} catch (IOException err2) {
-						// Ignore any close failures.
-					}
-				}
+			try (SilentFileInputStream inStream = new SilentFileInputStream(
+					liveFile)) {
+				clear();
+				readFrom(inStream);
 			} catch (FileNotFoundException fnfe) {
 				if (liveFile.exists()) {
 					// Panic: the index file exists but we can't read it
@@ -459,8 +425,10 @@ public class DirCache {
 	}
 
 	/**
-	 * @return true if the memory state differs from the index file
-	 * @throws IOException
+	 * Whether the memory state differs from the index file
+	 *
+	 * @return {@code true} if the memory state differs from the index file
+	 * @throws java.io.IOException
 	 */
 	public boolean isOutdated() throws IOException {
 		if (liveFile == null || !liveFile.exists())
@@ -468,7 +436,9 @@ public class DirCache {
 		return snapshot == null || snapshot.isModified(liveFile);
 	}
 
-	/** Empty this index, removing all entries. */
+	/**
+	 * Empty this index, removing all entries.
+	 */
 	public void clear() {
 		snapshot = null;
 		sortedEntries = NO_ENTRIES;
@@ -477,10 +447,11 @@ public class DirCache {
 		readIndexChecksum = NO_CHECKSUM;
 	}
 
-	private void readFrom(final InputStream inStream) throws IOException,
+	private void readFrom(InputStream inStream) throws IOException,
 			CorruptObjectException {
 		final BufferedInputStream in = new BufferedInputStream(inStream);
-		final MessageDigest md = Constants.newMessageDigest();
+		readConfig();
+		MessageDigest md = newMessageDigest();
 
 		// Read the index header and verify we understand it.
 		//
@@ -489,20 +460,32 @@ public class DirCache {
 		md.update(hdr, 0, 12);
 		if (!is_DIRC(hdr))
 			throw new CorruptObjectException(JGitText.get().notADIRCFile);
-		final int ver = NB.decodeInt32(hdr, 4);
+		int versionCode = NB.decodeInt32(hdr, 4);
+		DirCacheVersion ver = DirCacheVersion.fromInt(versionCode);
+		if (ver == null) {
+			throw new CorruptObjectException(
+					MessageFormat.format(JGitText.get().unknownDIRCVersion,
+							Integer.valueOf(versionCode)));
+		}
 		boolean extended = false;
-		if (ver == 3)
+		switch (ver) {
+		case DIRC_VERSION_MINIMUM:
+			break;
+		case DIRC_VERSION_EXTENDED:
+		case DIRC_VERSION_PATHCOMPRESS:
 			extended = true;
-		else if (ver != 2)
-			throw new CorruptObjectException(MessageFormat.format(
-					JGitText.get().unknownDIRCVersion, Integer.valueOf(ver)));
+			break;
+		default:
+			throw new CorruptObjectException(MessageFormat
+					.format(JGitText.get().unknownDIRCVersion, ver));
+		}
+		version = ver;
 		entryCnt = NB.decodeInt32(hdr, 8);
 		if (entryCnt < 0)
 			throw new CorruptObjectException(JGitText.get().DIRCHasTooManyEntries);
 
 		snapshot = FileSnapshot.save(liveFile);
-		int smudge_s = (int) (snapshot.lastModified() / 1000);
-		int smudge_ns = ((int) (snapshot.lastModified() % 1000)) * 1000000;
+		Instant smudge = snapshot.lastModifiedInstant();
 
 		// Load the individual file entries.
 		//
@@ -511,8 +494,10 @@ public class DirCache {
 		sortedEntries = new DirCacheEntry[entryCnt];
 
 		final MutableInteger infoAt = new MutableInteger();
-		for (int i = 0; i < entryCnt; i++)
-			sortedEntries[i] = new DirCacheEntry(infos, infoAt, in, md, smudge_s, smudge_ns);
+		for (int i = 0; i < entryCnt; i++) {
+			sortedEntries[i] = new DirCacheEntry(infos, infoAt, in, md, smudge,
+					version, i == 0 ? null : sortedEntries[i - 1]);
+		}
 
 		// After the file entries are index extensions, and then a footer.
 		//
@@ -563,8 +548,12 @@ public class DirCache {
 		}
 
 		readIndexChecksum = md.digest();
-		if (!Arrays.equals(readIndexChecksum, hdr)) {
-			throw new CorruptObjectException(JGitText.get().DIRCChecksumMismatch);
+		if (!(skipHash
+				|| Arrays.equals(readIndexChecksum, hdr)
+				|| Arrays.equals(NullMessageDigest.getInstance().digest(),
+						hdr))) {
+			throw new CorruptObjectException(
+					JGitText.get().DIRCChecksumMismatch);
 		}
 	}
 
@@ -585,12 +574,11 @@ public class DirCache {
 		}
 	}
 
-	private static String formatExtensionName(final byte[] hdr)
-			throws UnsupportedEncodingException {
-		return "'" + new String(hdr, 0, 4, "ISO-8859-1") + "'"; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+	private static String formatExtensionName(byte[] hdr) {
+		return "'" + new String(hdr, 0, 4, ISO_8859_1) + "'"; //$NON-NLS-1$ //$NON-NLS-2$
 	}
 
-	private static boolean is_DIRC(final byte[] hdr) {
+	private static boolean is_DIRC(byte[] hdr) {
 		if (hdr.length < SIG_DIRC.length)
 			return false;
 		for (int i = 0; i < SIG_DIRC.length; i++)
@@ -604,14 +592,14 @@ public class DirCache {
 	 *
 	 * @return true if the lock is now held by the caller; false if it is held
 	 *         by someone else.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the output file could not be created. The caller does not
 	 *             hold the lock.
 	 */
 	public boolean lock() throws IOException {
 		if (liveFile == null)
 			throw new IOException(JGitText.get().dirCacheDoesNotHaveABackingFile);
-		final LockFile tmp = new LockFile(liveFile, fs);
+		final LockFile tmp = new LockFile(liveFile);
 		if (tmp.lock()) {
 			tmp.setNeedStatInformation(true);
 			myLock = tmp;
@@ -631,48 +619,48 @@ public class DirCache {
 	 * Once written the lock is closed and must be either committed with
 	 * {@link #commit()} or rolled back with {@link #unlock()}.
 	 *
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the output file could not be created. The caller no longer
 	 *             holds the lock.
 	 */
 	public void write() throws IOException {
 		final LockFile tmp = myLock;
 		requireLocked(tmp);
-		try {
-			writeTo(liveFile.getParentFile(),
-					new SafeBufferedOutputStream(tmp.getOutputStream()));
-		} catch (IOException err) {
-			tmp.unlock();
-			throw err;
-		} catch (RuntimeException err) {
-			tmp.unlock();
-			throw err;
-		} catch (Error err) {
+		try (OutputStream o = tmp.getOutputStream();
+				OutputStream bo = new BufferedOutputStream(o)) {
+			writeTo(liveFile.getParentFile(), bo);
+		} catch (IOException | RuntimeException | Error err) {
 			tmp.unlock();
 			throw err;
 		}
 	}
 
-	void writeTo(File dir, final OutputStream os) throws IOException {
-		final MessageDigest foot = Constants.newMessageDigest();
-		final DigestOutputStream dos = new DigestOutputStream(os, foot);
-
-		boolean extended = false;
-		for (int i = 0; i < entryCnt; i++)
-			extended |= sortedEntries[i].isExtended();
+	void writeTo(File dir, OutputStream os) throws IOException {
+		readConfig();
+		MessageDigest foot = newMessageDigest();
+		DigestOutputStream dos = new DigestOutputStream(os, foot);
+		if (version == null
+				|| version == DirCacheVersion.DIRC_VERSION_MINIMUM) {
+			version = DirCacheVersion.DIRC_VERSION_MINIMUM;
+			for (int i = 0; i < entryCnt; i++) {
+				if (sortedEntries[i].isExtended()) {
+					version = DirCacheVersion.DIRC_VERSION_EXTENDED;
+					break;
+				}
+			}
+		}
 
 		// Write the header.
 		//
 		final byte[] tmp = new byte[128];
 		System.arraycopy(SIG_DIRC, 0, tmp, 0, SIG_DIRC.length);
-		NB.encodeInt32(tmp, 4, extended ? 3 : 2);
+		NB.encodeInt32(tmp, 4, version.getVersionCode());
 		NB.encodeInt32(tmp, 8, entryCnt);
 		dos.write(tmp, 0, 12);
 
 		// Write the individual file entries.
 
-		final int smudge_s;
-		final int smudge_ns;
+		Instant smudge;
 		if (myLock != null) {
 			// For new files we need to smudge the index entry
 			// if they have been modified "now". Ideally we'd
@@ -680,12 +668,10 @@ public class DirCache {
 			// so we use the current timestamp as a approximation.
 			myLock.createCommitSnapshot();
 			snapshot = myLock.getCommitSnapshot();
-			smudge_s = (int) (snapshot.lastModified() / 1000);
-			smudge_ns = ((int) (snapshot.lastModified() % 1000)) * 1000000;
+			smudge = snapshot.lastModifiedInstant();
 		} else {
 			// Used in unit tests only
-			smudge_ns = 0;
-			smudge_s = 0;
+			smudge = Instant.EPOCH;
 		}
 
 		// Check if tree is non-null here since calling updateSmudgedEntries
@@ -697,12 +683,15 @@ public class DirCache {
 
 		for (int i = 0; i < entryCnt; i++) {
 			final DirCacheEntry e = sortedEntries[i];
-			if (e.mightBeRacilyClean(smudge_s, smudge_ns))
+			if (e.mightBeRacilyClean(smudge)) {
 				e.smudgeRacilyClean();
-			e.write(dos);
+			}
+			e.write(dos, version, i == 0 ? null : sortedEntries[i - 1]);
 		}
 
 		if (writeTree) {
+			@SuppressWarnings("resource") // Explicitly closed in try block, and
+											// destroyed in finally
 			TemporaryBuffer bb = new TemporaryBuffer.LocalFile(dir, 5 << 20);
 			try {
 				tree.write(tmp, bb);
@@ -721,6 +710,22 @@ public class DirCache {
 		os.close();
 	}
 
+	private void readConfig() {
+		if (version == null && this.repository != null) {
+			DirCacheConfig config = repository.getConfig()
+					.get(DirCacheConfig::new);
+			version = config.getIndexVersion();
+			skipHash = config.isSkipHash();
+		}
+	}
+
+	private MessageDigest newMessageDigest() {
+		if (skipHash) {
+			return NullMessageDigest.getInstance();
+		}
+		return Constants.newMessageDigest();
+	}
+
 	/**
 	 * Commit this change and release the lock.
 	 * <p>
@@ -729,23 +734,25 @@ public class DirCache {
 	 * @return true if the commit was successful and the file contains the new
 	 *         data; false if the commit failed and the file remains with the
 	 *         old data.
-	 * @throws IllegalStateException
+	 * @throws java.lang.IllegalStateException
 	 *             the lock is not held.
 	 */
 	public boolean commit() {
 		final LockFile tmp = myLock;
 		requireLocked(tmp);
 		myLock = null;
-		if (!tmp.commit())
+		if (!tmp.commit()) {
 			return false;
+		}
 		snapshot = tmp.getCommitSnapshot();
 		if (indexChangedListener != null
-				&& !Arrays.equals(readIndexChecksum, writeIndexChecksum))
-			indexChangedListener.onIndexChanged(new IndexChangedEvent());
+				&& !Arrays.equals(readIndexChecksum, writeIndexChecksum)) {
+			indexChangedListener.onIndexChanged(new IndexChangedEvent(true));
+		}
 		return true;
 	}
 
-	private void requireLocked(final LockFile tmp) {
+	private void requireLocked(LockFile tmp) {
 		if (liveFile == null)
 			throw new IllegalStateException(JGitText.get().dirCacheIsNotLocked);
 		if (tmp == null)
@@ -776,7 +783,7 @@ public class DirCache {
 	 *         the index; pass to {@link #getEntry(int)} to obtain the entry
 	 *         information. If &lt; 0 the entry does not exist in the index.
 	 */
-	public int findEntry(final String path) {
+	public int findEntry(String path) {
 		final byte[] p = Constants.encode(path);
 		return findEntry(p, p.length);
 	}
@@ -800,8 +807,11 @@ public class DirCache {
 	 *         information. If &lt; 0 the entry does not exist in the index.
 	 * @since 3.4
 	 */
-	public int findEntry(final byte[] p, final int pLen) {
-		int low = 0;
+	public int findEntry(byte[] p, int pLen) {
+		return findEntry(0, p, pLen);
+	}
+
+	int findEntry(int low, byte[] p, int pLen) {
 		int high = entryCnt;
 		while (low < high) {
 			int mid = (low + high) >>> 1;
@@ -829,7 +839,7 @@ public class DirCache {
 	 *            entry position of the path that should be skipped.
 	 * @return position of the next entry whose path is after the input.
 	 */
-	public int nextEntry(final int position) {
+	public int nextEntry(int position) {
 		DirCacheEntry last = sortedEntries[position];
 		int nextIdx = position + 1;
 		while (nextIdx < entryCnt) {
@@ -842,7 +852,7 @@ public class DirCache {
 		return nextIdx;
 	}
 
-	int nextEntry(final byte[] p, final int pLen, int nextIdx) {
+	int nextEntry(byte[] p, int pLen, int nextIdx) {
 		while (nextIdx < entryCnt) {
 			final DirCacheEntry next = sortedEntries[nextIdx];
 			if (!DirCacheTree.peq(p, next.path, pLen))
@@ -876,7 +886,7 @@ public class DirCache {
 	 *            position of the entry to get.
 	 * @return the entry at position <code>i</code>.
 	 */
-	public DirCacheEntry getEntry(final int i) {
+	public DirCacheEntry getEntry(int i) {
 		return sortedEntries[i];
 	}
 
@@ -887,7 +897,7 @@ public class DirCache {
 	 *            the path to search for.
 	 * @return the entry for the given <code>path</code>.
 	 */
-	public DirCacheEntry getEntry(final String path) {
+	public DirCacheEntry getEntry(String path) {
 		final int i = findEntry(path);
 		return i < 0 ? null : sortedEntries[i];
 	}
@@ -936,7 +946,7 @@ public class DirCache {
 	 * @return the cache tree; null if there is no current cache tree available
 	 *         and <code>build</code> was false.
 	 */
-	public DirCacheTree getCacheTree(final boolean build) {
+	public DirCacheTree getCacheTree(boolean build) {
 		if (build) {
 			if (tree == null)
 				tree = new DirCacheTree();
@@ -953,16 +963,16 @@ public class DirCache {
 	 *            responsible for flushing the inserter before trying to use the
 	 *            returned tree identity.
 	 * @return identity for the root tree.
-	 * @throws UnmergedPathException
+	 * @throws org.eclipse.jgit.errors.UnmergedPathException
 	 *             one or more paths contain higher-order stages (stage &gt; 0),
 	 *             which cannot be stored in a tree object.
-	 * @throws IllegalStateException
+	 * @throws java.lang.IllegalStateException
 	 *             one or more paths contain an invalid mode which should never
 	 *             appear in a tree object.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             an unexpected error occurred writing to the object store.
 	 */
-	public ObjectId writeTree(final ObjectInserter ow)
+	public ObjectId writeTree(ObjectInserter ow)
 			throws UnmergedPathException, IOException {
 		return getCacheTree(true).writeTree(sortedEntries, 0, 0, ow);
 	}
@@ -993,7 +1003,7 @@ public class DirCache {
 	 * @throws IOException
 	 */
 	private void updateSmudgedEntries() throws IOException {
-		List<String> paths = new ArrayList<String>(128);
+		List<String> paths = new ArrayList<>(128);
 		try (TreeWalk walk = new TreeWalk(repository)) {
 			walk.setOperationType(OperationType.CHECKIN_OP);
 			for (int i = 0; i < entryCnt; i++)
@@ -1019,9 +1029,88 @@ public class DirCache {
 				DirCacheEntry entry = iIter.getDirCacheEntry();
 				if (entry.isSmudged() && iIter.idEqual(fIter)) {
 					entry.setLength(fIter.getEntryLength());
-					entry.setLastModified(fIter.getEntryLastModified());
+					entry.setLastModified(fIter.getEntryLastModifiedInstant());
 				}
 			}
+		}
+	}
+
+	enum DirCacheVersion implements ConfigEnum {
+
+		/** Minimum index version on-disk format that we support. */
+		DIRC_VERSION_MINIMUM(2),
+		/** Version 3 supports extended flags. */
+		DIRC_VERSION_EXTENDED(3),
+		/**
+		 * Version 4 adds very simple "path compression": it strips out the
+		 * common prefix between the last entry written and the current entry.
+		 * Instead of writing two entries with paths "foo/bar/baz/a.txt" and
+		 * "foo/bar/baz/b.txt" it only writes "b.txt" for the second entry.
+		 * <p>
+		 * It is also <em>not</em> padded.
+		 * </p>
+		 */
+		DIRC_VERSION_PATHCOMPRESS(4);
+
+		private final int version;
+
+		private DirCacheVersion(int versionCode) {
+			this.version = versionCode;
+		}
+
+		public int getVersionCode() {
+			return version;
+		}
+
+		@Override
+		public String toConfigValue() {
+			return Integer.toString(version);
+		}
+
+		@Override
+		public boolean matchConfigValue(String in) {
+			try {
+				return version == Integer.parseInt(in);
+			} catch (NumberFormatException e) {
+				return false;
+			}
+		}
+
+		public static DirCacheVersion fromInt(int val) {
+			for (DirCacheVersion v : DirCacheVersion.values()) {
+				if (val == v.getVersionCode()) {
+					return v;
+				}
+			}
+			return null;
+		}
+	}
+
+	private static class DirCacheConfig {
+
+		private final DirCacheVersion indexVersion;
+
+		private final boolean skipHash;
+
+		public DirCacheConfig(Config cfg) {
+			boolean manyFiles = cfg.getBoolean(
+					ConfigConstants.CONFIG_FEATURE_SECTION,
+					ConfigConstants.CONFIG_KEY_MANYFILES, false);
+			indexVersion = cfg.getEnum(DirCacheVersion.values(),
+					ConfigConstants.CONFIG_INDEX_SECTION, null,
+					ConfigConstants.CONFIG_KEY_VERSION,
+					manyFiles ? DirCacheVersion.DIRC_VERSION_PATHCOMPRESS
+							: DirCacheVersion.DIRC_VERSION_EXTENDED);
+			skipHash = cfg.getBoolean(ConfigConstants.CONFIG_INDEX_SECTION,
+					ConfigConstants.CONFIG_KEY_SKIPHASH, false);
+		}
+
+		public DirCacheVersion getIndexVersion() {
+			return indexVersion;
+		}
+
+		public boolean isSkipHash() {
+			return skipHash;
 		}
 	}
 }

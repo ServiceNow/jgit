@@ -1,48 +1,18 @@
 /*
- * Copyright (C) 2008-2009, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008-2009, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.treewalk;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.eclipse.jgit.lib.FileMode.REGULAR_FILE;
+import static org.eclipse.jgit.lib.FileMode.SYMLINK;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertSame;
@@ -50,9 +20,11 @@ import static org.junit.Assert.assertTrue;
 
 import java.io.ByteArrayOutputStream;
 
+import org.eclipse.jgit.errors.CorruptObjectException;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.FileMode;
 import org.eclipse.jgit.lib.ObjectId;
+import org.eclipse.jgit.lib.TreeFormatter;
 import org.eclipse.jgit.util.RawParseUtils;
 import org.junit.Before;
 import org.junit.Test;
@@ -87,9 +59,9 @@ public class CanonicalTreeParserTest {
 				hash_sometree), entry(m644, "foo", hash_foo));
 	}
 
-	private static byte[] mktree(final byte[]... data) throws Exception {
+	private static byte[] mktree(byte[]... data) throws Exception {
 		final ByteArrayOutputStream out = new ByteArrayOutputStream();
-		for (final byte[] e : data)
+		for (byte[] e : data)
 			out.write(e);
 		return out.toByteArray();
 	}
@@ -106,7 +78,7 @@ public class CanonicalTreeParserTest {
 	}
 
 	private String path() {
-		return RawParseUtils.decode(Constants.CHARSET, ctp.path,
+		return RawParseUtils.decode(UTF_8, ctp.path,
 				ctp.pathOffset, ctp.pathLen);
 	}
 
@@ -366,7 +338,44 @@ public class CanonicalTreeParserTest {
 		final String name = b.toString();
 		ctp.reset(entry(m644, name, hash_a));
 		assertFalse(ctp.eof());
-		assertEquals(name, RawParseUtils.decode(Constants.CHARSET, ctp.path,
+		assertEquals(name, RawParseUtils.decode(UTF_8, ctp.path,
 				ctp.pathOffset, ctp.pathLen));
+	}
+
+	@Test
+	public void testFindAttributesWhenFirst() throws CorruptObjectException {
+		TreeFormatter tree = new TreeFormatter();
+		tree.append(".gitattributes", REGULAR_FILE, hash_a);
+		ctp.reset(tree.toByteArray());
+
+		assertTrue(ctp.findFile(".gitattributes"));
+		assertEquals(REGULAR_FILE.getBits(), ctp.getEntryRawMode());
+		assertEquals(".gitattributes", ctp.getEntryPathString());
+		assertEquals(hash_a, ctp.getEntryObjectId());
+	}
+
+	@Test
+	public void testFindAttributesWhenSecond() throws CorruptObjectException {
+		TreeFormatter tree = new TreeFormatter();
+		tree.append(".config", SYMLINK, hash_a);
+		tree.append(".gitattributes", REGULAR_FILE, hash_foo);
+		ctp.reset(tree.toByteArray());
+
+		assertTrue(ctp.findFile(".gitattributes"));
+		assertEquals(REGULAR_FILE.getBits(), ctp.getEntryRawMode());
+		assertEquals(".gitattributes", ctp.getEntryPathString());
+		assertEquals(hash_foo, ctp.getEntryObjectId());
+	}
+
+	@Test
+	public void testFindAttributesWhenMissing() throws CorruptObjectException {
+		TreeFormatter tree = new TreeFormatter();
+		tree.append("src", REGULAR_FILE, hash_a);
+		tree.append("zoo", REGULAR_FILE, hash_foo);
+		ctp.reset(tree.toByteArray());
+
+		assertFalse(ctp.findFile(".gitattributes"));
+		assertEquals(11, ctp.idOffset()); // Did not walk the entire tree.
+		assertEquals("src", ctp.getEntryPathString());
 	}
 }

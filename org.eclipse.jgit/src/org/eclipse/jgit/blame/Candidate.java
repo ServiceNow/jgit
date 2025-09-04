@@ -1,64 +1,36 @@
 /*
- * Copyright (C) 2011, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2011, 2019 Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.blame;
 
 import java.io.IOException;
+import java.util.List;
+import java.util.Objects;
 
 import org.eclipse.jgit.blame.ReverseWalk.ReverseCommit;
 import org.eclipse.jgit.diff.Edit;
 import org.eclipse.jgit.diff.EditList;
 import org.eclipse.jgit.diff.RawText;
 import org.eclipse.jgit.errors.MissingObjectException;
+import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectLoader;
 import org.eclipse.jgit.lib.ObjectReader;
 import org.eclipse.jgit.lib.PersonIdent;
+import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.revwalk.RevFlag;
 import org.eclipse.jgit.revwalk.RevWalk;
 import org.eclipse.jgit.treewalk.filter.PathFilter;
+import org.eclipse.jgit.util.LfsFactory;
 
 /**
  * A source that may have supplied some (or all) of the result file.
@@ -100,16 +72,20 @@ class Candidate {
 	/**
 	 * Score assigned to the rename to this candidate.
 	 * <p>
-	 * Consider the history "A<-B<-C". If the result file S in C was renamed to
-	 * R in B, the rename score for this rename will be held in this field by
-	 * the candidate object for B. By storing the score with B, the application
-	 * can see what the rename score was as it makes the transition from C/S to
-	 * B/R. This may seem backwards since it was C that performed the rename,
-	 * but the application doesn't learn about path R until B.
+	 * Consider the history "A&lt;-B&lt;-C". If the result file S in C was
+	 * renamed to R in B, the rename score for this rename will be held in this
+	 * field by the candidate object for B. By storing the score with B, the
+	 * application can see what the rename score was as it makes the transition
+	 * from C/S to B/R. This may seem backwards since it was C that performed
+	 * the rename, but the application doesn't learn about path R until B.
 	 */
 	int renameScore;
 
-	Candidate(RevCommit commit, PathFilter path) {
+	/** repository used for LFS blob handling */
+	private Repository sourceRepository;
+
+	Candidate(Repository repo, RevCommit commit, PathFilter path) {
+		sourceRepository = repo;
 		sourceCommit = commit;
 		sourcePath = path;
 	}
@@ -150,12 +126,12 @@ class Candidate {
 		return sourceCommit.getAuthorIdent();
 	}
 
-	Candidate create(RevCommit commit, PathFilter path) {
-		return new Candidate(commit, path);
+	Candidate create(Repository repo, RevCommit commit, PathFilter path) {
+		return new Candidate(repo, commit, path);
 	}
 
 	Candidate copy(RevCommit commit) {
-		Candidate r = create(commit, sourcePath);
+		Candidate r = create(sourceRepository, commit, sourcePath);
 		r.sourceBlob = sourceBlob;
 		r.sourceText = sourceText;
 		r.regionList = regionList;
@@ -164,7 +140,11 @@ class Candidate {
 	}
 
 	void loadText(ObjectReader reader) throws IOException {
-		ObjectLoader ldr = reader.open(sourceBlob, Constants.OBJ_BLOB);
+		ObjectLoader ldr = LfsFactory.getInstance().applySmudgeFilter(sourceRepository,
+				reader.open(sourceBlob, Constants.OBJ_BLOB),
+				LfsFactory.getAttributesForPath(sourceRepository,
+						sourcePath.getPath(), sourceCommit)
+						.get(Constants.ATTR_DIFF));
 		sourceText = new RawText(ldr.getCachedBytes(Integer.MAX_VALUE));
 	}
 
@@ -290,7 +270,7 @@ class Candidate {
 	}
 
 	boolean canMergeRegions(Candidate other) {
-		return sourceCommit == other.sourceCommit
+		return Objects.equals(sourceCommit, other.sourceCommit)
 				&& sourcePath.getPath().equals(other.sourcePath.getPath());
 	}
 
@@ -325,6 +305,7 @@ class Candidate {
 		}
 	}
 
+	/** {@inheritDoc} */
 	@SuppressWarnings("nls")
 	@Override
 	public String toString() {
@@ -348,8 +329,9 @@ class Candidate {
 	 * children pointers, allowing reverse navigation of history.
 	 */
 	static final class ReverseCandidate extends Candidate {
-		ReverseCandidate(ReverseCommit commit, PathFilter path) {
-			super(commit, path);
+		ReverseCandidate(Repository repo, ReverseCommit commit,
+				PathFilter path) {
+			super(repo, commit, path);
 		}
 
 		@Override
@@ -369,13 +351,73 @@ class Candidate {
 		}
 
 		@Override
-		Candidate create(RevCommit commit, PathFilter path) {
-			return new ReverseCandidate((ReverseCommit) commit, path);
+		Candidate create(Repository repo, RevCommit commit, PathFilter path) {
+			return new ReverseCandidate(repo, (ReverseCommit) commit, path);
 		}
 
 		@Override
 		public String toString() {
 			return "Reverse" + super.toString(); //$NON-NLS-1$
+		}
+	}
+
+	/**
+	 * A {@link Candidate} to blame a working tree file in conflict state.
+	 * <p>
+	 * Contrary to {@link BlobCandidate}, it expects to be given the parent
+	 * commits (typically HEAD and the MERGE_HEADs) and behaves like a merge
+	 * commit during blame. It does <em>not</em> consider a previously pushed
+	 * Candidate as its parent.
+	 * </p>
+	 */
+	static final class HeadCandidate extends Candidate {
+
+		private List<RevCommit> parents;
+
+		HeadCandidate(Repository repo, PathFilter path,
+				List<RevCommit> parents) {
+			super(repo, null, path);
+			this.parents = parents;
+		}
+
+		@Override
+		void beginResult(RevWalk rw) {
+			// Blob candidates have nothing to prepare.
+		}
+
+		@Override
+		int getParentCount() {
+			return parents.size();
+		}
+
+		@Override
+		RevCommit getParent(int idx) {
+			return parents.get(idx);
+		}
+
+		@Override
+		boolean has(RevFlag flag) {
+			return true; // Pretend flag was added; sourceCommit is null.
+		}
+
+		@Override
+		void add(RevFlag flag) {
+			// Do nothing, sourceCommit is null.
+		}
+
+		@Override
+		void remove(RevFlag flag) {
+			// Do nothing, sourceCommit is null.
+		}
+
+		@Override
+		int getTime() {
+			return Integer.MAX_VALUE;
+		}
+
+		@Override
+		PersonIdent getAuthor() {
+			return new PersonIdent(JGitText.get().blameNotCommittedYet, ""); //$NON-NLS-1$
 		}
 	}
 
@@ -399,8 +441,8 @@ class Candidate {
 		/** Author name to refer to this blob with. */
 		String description;
 
-		BlobCandidate(String name, PathFilter path) {
-			super(null, path);
+		BlobCandidate(Repository repo, String name, PathFilter path) {
+			super(repo, null, path);
 			description = name;
 		}
 

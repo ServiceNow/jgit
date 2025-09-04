@@ -1,46 +1,15 @@
 /*
- * Copyright (C) 2010, Christian Halstrick <christian.halstrick@sap.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, Christian Halstrick <christian.halstrick@sap.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 package org.eclipse.jgit.api;
+
+import static org.eclipse.jgit.lib.Constants.OBJECT_ID_ABBREV_STRING_LENGTH;
 
 import java.io.IOException;
 import java.text.MessageFormat;
@@ -58,11 +27,15 @@ import org.eclipse.jgit.api.errors.NoMessageException;
 import org.eclipse.jgit.api.errors.UnmergedPathsException;
 import org.eclipse.jgit.api.errors.WrongRepositoryStateException;
 import org.eclipse.jgit.dircache.DirCacheCheckout;
+import org.eclipse.jgit.events.WorkingTreeModifiedEvent;
 import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.lib.AnyObjectId;
+import org.eclipse.jgit.lib.CommitConfig;
 import org.eclipse.jgit.lib.Constants;
+import org.eclipse.jgit.lib.NullProgressMonitor;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectIdRef;
+import org.eclipse.jgit.lib.ProgressMonitor;
 import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.lib.Ref.Storage;
 import org.eclipse.jgit.lib.Repository;
@@ -85,11 +58,11 @@ import org.eclipse.jgit.treewalk.FileTreeIterator;
  *      >Git documentation about revert</a>
  */
 public class RevertCommand extends GitCommand<RevCommit> {
-	private List<Ref> commits = new LinkedList<Ref>();
+	private List<Ref> commits = new LinkedList<>();
 
 	private String ourCommitName = null;
 
-	private List<Ref> revertedRefs = new LinkedList<Ref>();
+	private List<Ref> revertedRefs = new LinkedList<>();
 
 	private MergeResult failingResult;
 
@@ -97,29 +70,29 @@ public class RevertCommand extends GitCommand<RevCommit> {
 
 	private MergeStrategy strategy = MergeStrategy.RECURSIVE;
 
+	private ProgressMonitor monitor = NullProgressMonitor.INSTANCE;
+
 	/**
+	 * <p>
+	 * Constructor for RevertCommand.
+	 * </p>
+	 *
 	 * @param repo
+	 *            the {@link org.eclipse.jgit.lib.Repository}
 	 */
 	protected RevertCommand(Repository repo) {
 		super(repo);
 	}
 
 	/**
+	 * {@inheritDoc}
+	 * <p>
 	 * Executes the {@code revert} command with all the options and parameters
 	 * collected by the setter methods (e.g. {@link #include(Ref)} of this
 	 * class. Each instance of this class should only be used for one invocation
 	 * of the command. Don't call this method twice on an instance.
-	 *
-	 * @return on success the {@link RevCommit} pointed to by the new HEAD is
-	 *         returned. If a failure occurred during revert <code>null</code>
-	 *         is returned. The list of successfully reverted {@link Ref}'s can
-	 *         be obtained by calling {@link #getRevertedRefs()}
-	 * @throws GitAPIException
-	 * @throws WrongRepositoryStateException
-	 * @throws ConcurrentRefUpdateException
-	 * @throws UnmergedPathsException
-	 * @throws NoMessageException
 	 */
+	@Override
 	public RevCommit call() throws NoMessageException, UnmergedPathsException,
 			ConcurrentRefUpdateException, WrongRepositoryStateException,
 			GitAPIException {
@@ -129,7 +102,7 @@ public class RevertCommand extends GitCommand<RevCommit> {
 		try (RevWalk revWalk = new RevWalk(repo)) {
 
 			// get the head commit
-			Ref headRef = repo.getRef(Constants.HEAD);
+			Ref headRef = repo.exactRef(Constants.HEAD);
 			if (headRef == null)
 				throw new NoHeadException(
 						JGitText.get().commitOnRepoWithoutHEADCurrentlyNotSupported);
@@ -158,8 +131,9 @@ public class RevertCommand extends GitCommand<RevCommit> {
 				revWalk.parseHeaders(srcParent);
 
 				String ourName = calculateOurName(headRef);
-				String revertName = srcCommit.getId().abbreviate(7).name()
-						+ " " + srcCommit.getShortMessage(); //$NON-NLS-1$
+				String revertName = srcCommit.getId()
+						.abbreviate(OBJECT_ID_ABBREV_STRING_LENGTH).name() + " " //$NON-NLS-1$
+						+ srcCommit.getShortMessage();
 
 				ResolveMerger merger = (ResolveMerger) strategy.newMerger(repo);
 				merger.setWorkingTreeIterator(new FileTreeIterator(repo));
@@ -173,13 +147,18 @@ public class RevertCommand extends GitCommand<RevCommit> {
 						+ "This reverts commit " + srcCommit.getId().getName() //$NON-NLS-1$
 						+ ".\n"; //$NON-NLS-1$
 				if (merger.merge(headCommit, srcParent)) {
-					if (AnyObjectId.equals(headCommit.getTree().getId(), merger
-							.getResultTreeId()))
+					if (!merger.getModifiedFiles().isEmpty()) {
+						repo.fireEvent(new WorkingTreeModifiedEvent(
+								merger.getModifiedFiles(), null));
+					}
+					if (AnyObjectId.isEqual(headCommit.getTree().getId(),
+							merger.getResultTreeId()))
 						continue;
 					DirCacheCheckout dco = new DirCacheCheckout(repo,
 							headCommit.getTree(), repo.lockDirCache(),
 							merger.getResultTreeId());
 					dco.setFailOnConflict(true);
+					dco.setProgressMonitor(monitor);
 					dco.checkout();
 					try (Git git = new Git(getRepository())) {
 						newHead = git.commit().setMessage(newMessage)
@@ -207,9 +186,12 @@ public class RevertCommand extends GitCommand<RevCommit> {
 								MergeStatus.CONFLICTING, strategy,
 								merger.getMergeResults(), failingPaths, null);
 					if (!merger.failed() && !unmergedPaths.isEmpty()) {
+						CommitConfig config = repo.getConfig()
+								.get(CommitConfig.KEY);
+						char commentChar = config.getCommentChar(newMessage);
 						String message = new MergeMessageFormatter()
-						.formatWithConflicts(newMessage,
-								merger.getUnmergedPaths());
+								.formatWithConflicts(newMessage,
+										merger.getUnmergedPaths(), commentChar);
 						repo.writeRevertHead(srcCommit.getId());
 						repo.writeMergeCommitMsg(message);
 					}
@@ -226,9 +208,10 @@ public class RevertCommand extends GitCommand<RevCommit> {
 	}
 
 	/**
+	 * Include a {@code Ref} to a commit to be reverted
+	 *
 	 * @param commit
-	 *            a reference to a commit which is reverted into the current
-	 *            head
+	 *            a reference to a commit to be reverted into the current head
 	 * @return {@code this}
 	 */
 	public RevertCommand include(Ref commit) {
@@ -238,8 +221,10 @@ public class RevertCommand extends GitCommand<RevCommit> {
 	}
 
 	/**
+	 * Include a commit to be reverted
+	 *
 	 * @param commit
-	 *            the Id of a commit which is reverted into the current head
+	 *            the Id of a commit to be reverted into the current head
 	 * @return {@code this}
 	 */
 	public RevertCommand include(AnyObjectId commit) {
@@ -247,8 +232,10 @@ public class RevertCommand extends GitCommand<RevCommit> {
 	}
 
 	/**
+	 * Include a commit to be reverted
+	 *
 	 * @param name
-	 *            a name given to the commit
+	 *            name of a {@code Ref} referring to the commit
 	 * @param commit
 	 *            the Id of a commit which is reverted into the current head
 	 * @return {@code this}
@@ -259,6 +246,8 @@ public class RevertCommand extends GitCommand<RevCommit> {
 	}
 
 	/**
+	 * Set the name to be used in the "OURS" place for conflict markers
+	 *
 	 * @param ourCommitName
 	 *            the name that should be used in the "OURS" place for conflict
 	 *            markers
@@ -279,16 +268,20 @@ public class RevertCommand extends GitCommand<RevCommit> {
 	}
 
 	/**
-	 * @return the list of successfully reverted {@link Ref}'s. Never
-	 *         <code>null</code> but maybe an empty list if no commit was
-	 *         successfully cherry-picked
+	 * Get the list of successfully reverted {@link org.eclipse.jgit.lib.Ref}'s.
+	 *
+	 * @return the list of successfully reverted
+	 *         {@link org.eclipse.jgit.lib.Ref}'s. Never <code>null</code> but
+	 *         maybe an empty list if no commit was successfully cherry-picked
 	 */
 	public List<Ref> getRevertedRefs() {
 		return revertedRefs;
 	}
 
 	/**
-	 * @return the result of the merge failure, <code>null</code> if no merge
+	 * Get the result of a merge failure
+	 *
+	 * @return the result of a merge failure, <code>null</code> if no merge
 	 *         failure occurred during the revert
 	 */
 	public MergeResult getFailingResult() {
@@ -296,6 +289,8 @@ public class RevertCommand extends GitCommand<RevCommit> {
 	}
 
 	/**
+	 * Get unmerged paths
+	 *
 	 * @return the unmerged paths, will be null if no merge conflicts
 	 */
 	public List<String> getUnmergedPaths() {
@@ -303,13 +298,33 @@ public class RevertCommand extends GitCommand<RevCommit> {
 	}
 
 	/**
+	 * Set the merge strategy to use for this revert command
+	 *
 	 * @param strategy
-	 *            The merge strategy to use during this revert command.
+	 *            The merge strategy to use for this revert command.
 	 * @return {@code this}
 	 * @since 3.4
 	 */
 	public RevertCommand setStrategy(MergeStrategy strategy) {
 		this.strategy = strategy;
+		return this;
+	}
+
+	/**
+	 * The progress monitor associated with the revert operation. By default,
+	 * this is set to <code>NullProgressMonitor</code>
+	 *
+	 * @see NullProgressMonitor
+	 * @param monitor
+	 *            a {@link org.eclipse.jgit.lib.ProgressMonitor}
+	 * @return {@code this}
+	 * @since 4.11
+	 */
+	public RevertCommand setProgressMonitor(ProgressMonitor monitor) {
+		if (monitor == null) {
+			monitor = NullProgressMonitor.INSTANCE;
+		}
+		this.monitor = monitor;
 		return this;
 	}
 }

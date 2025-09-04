@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2015, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2015, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.transport;
@@ -132,6 +99,8 @@ public class PushCertificate {
 	}
 
 	/**
+	 * Get the certificate version string.
+	 *
 	 * @return the certificate version string.
 	 * @since 4.1
 	 */
@@ -140,6 +109,8 @@ public class PushCertificate {
 	}
 
 	/**
+	 * Get the raw line that signed the cert, as a string.
+	 *
 	 * @return the raw line that signed the cert, as a string.
 	 * @since 4.0
 	 */
@@ -148,6 +119,8 @@ public class PushCertificate {
 	}
 
 	/**
+	 * Get identity of the pusher who signed the cert.
+	 *
 	 * @return identity of the pusher who signed the cert.
 	 * @since 4.1
 	 */
@@ -156,6 +129,8 @@ public class PushCertificate {
 	}
 
 	/**
+	 * Get URL of the repository the push was originally sent to.
+	 *
 	 * @return URL of the repository the push was originally sent to.
 	 * @since 4.0
 	 */
@@ -164,6 +139,8 @@ public class PushCertificate {
 	}
 
 	/**
+	 * Get the raw nonce value that was presented by the pusher.
+	 *
 	 * @return the raw nonce value that was presented by the pusher.
 	 * @since 4.1
 	 */
@@ -172,6 +149,8 @@ public class PushCertificate {
 	}
 
 	/**
+	 * Get verification status of the nonce embedded in the certificate.
+	 *
 	 * @return verification status of the nonce embedded in the certificate.
 	 * @since 4.0
 	 */
@@ -180,6 +159,9 @@ public class PushCertificate {
 	}
 
 	/**
+	 * Get the list of commands as one string to be feed into the signature
+	 * verifier.
+	 *
 	 * @return the list of commands as one string to be feed into the signature
 	 *         verifier.
 	 * @since 4.1
@@ -189,9 +171,11 @@ public class PushCertificate {
 	}
 
 	/**
+	 * Get the raw signature
+	 *
 	 * @return the raw signature, consisting of the lines received between the
-	 *     lines {@code "----BEGIN GPG SIGNATURE-----\n"} and
-	 *     {@code "----END GPG SIGNATURE-----\n}", inclusive.
+	 *         lines {@code "----BEGIN GPG SIGNATURE-----\n"} and
+	 *         {@code "----END GPG SIGNATURE-----\n}", inclusive.
 	 * @since 4.0
 	 */
 	public String getSignature() {
@@ -199,6 +183,8 @@ public class PushCertificate {
 	}
 
 	/**
+	 * Get text payload of the certificate for the signature verifier.
+	 *
 	 * @return text payload of the certificate for the signature verifier.
 	 * @since 4.1
 	 */
@@ -207,8 +193,11 @@ public class PushCertificate {
 	}
 
 	/**
+	 * Get original text payload plus signature
+	 *
 	 * @return original text payload plus signature; the final output will be
-	 *     valid as input to {@link PushCertificateParser#fromString(String)}.
+	 *         valid as input to
+	 *         {@link org.eclipse.jgit.transport.PushCertificateParser#fromString(String)}.
 	 * @since 4.1
 	 */
 	public String toTextWithSignature() {
@@ -233,11 +222,13 @@ public class PushCertificate {
 		return sb;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public int hashCode() {
 		return signature.hashCode();
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public boolean equals(Object o) {
 		if (!(o instanceof PushCertificate)) {
@@ -268,6 +259,7 @@ public class PushCertificate {
 		return true;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public String toString() {
 		return getClass().getSimpleName() + '['

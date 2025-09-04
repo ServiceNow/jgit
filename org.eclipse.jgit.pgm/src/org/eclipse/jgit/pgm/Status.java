@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2011, 2015 François Rey <eclipse.org_@_francois_._rey_._name>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2011, 2015 François Rey <eclipse.org_@_francois_._rey_._name> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.pgm;
@@ -54,22 +21,23 @@ import java.util.TreeSet;
 
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.StatusCommand;
+import org.eclipse.jgit.api.errors.GitAPIException;
+import org.eclipse.jgit.errors.NoWorkTreeException;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.IndexDiff.StageState;
 import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.pgm.internal.CLIText;
-import org.kohsuke.args4j.Option;
-
 import org.eclipse.jgit.pgm.opt.UntrackedFilesHandler;
+import org.kohsuke.args4j.Argument;
+import org.kohsuke.args4j.Option;
+import org.kohsuke.args4j.spi.RestOfArgumentsHandler;
 
 /**
  * Status command
  */
 @Command(usage = "usage_Status", common = true)
 class Status extends TextBuiltin {
-
-	protected final String lineFormat = CLIText.get().lineFormat;
 
 	protected final String statusFileListFormat = CLIText.get().statusFileListFormat;
 
@@ -83,18 +51,24 @@ class Status extends TextBuiltin {
 	@Option(name = "--untracked-files", aliases = { "-u", "-uno", "-uall" }, usage = "usage_untrackedFilesMode", handler = UntrackedFilesHandler.class)
 	protected String untrackedFilesMode = "all"; // default value //$NON-NLS-1$
 
-	@Option(name = "--", metaVar = "metaVar_path", multiValued = true)
+	@Argument(required = false, index = 0, metaVar = "metaVar_paths")
+	@Option(name = "--", metaVar = "metaVar_paths", handler = RestOfArgumentsHandler.class)
 	protected List<String> filterPaths;
 
+	/** {@inheritDoc} */
 	@Override
-	protected void run() throws Exception {
+	protected void run() {
 		try (Git git = new Git(db)) {
 			StatusCommand statusCommand = git.status();
-			if (filterPaths != null && filterPaths.size() > 0)
-				for (String path : filterPaths)
+			if (filterPaths != null) {
+				for (String path : filterPaths) {
 					statusCommand.addPath(path);
+				}
+			}
 			org.eclipse.jgit.api.Status status = statusCommand.call();
 			printStatus(status);
+		} catch (GitAPIException | NoWorkTreeException | IOException e) {
+			throw die(e.getMessage(), e);
 		}
 	}
 
@@ -117,7 +91,7 @@ class Status extends TextBuiltin {
 		Map<String, StageState> conflicting = status.getConflictingStageState();
 
 		// build a sorted list of all paths except untracked and ignored
-		TreeSet<String> sorted = new TreeSet<String>();
+		TreeSet<String> sorted = new TreeSet<>();
 		sorted.addAll(added);
 		sorted.addAll(changed);
 		sorted.addAll(removed);
@@ -185,7 +159,7 @@ class Status extends TextBuiltin {
 
 		// untracked are always at the end of the list
 		if ("all".equals(untrackedFilesMode)) { //$NON-NLS-1$
-			TreeSet<String> untracked = new TreeSet<String>(
+			TreeSet<String> untracked = new TreeSet<>(
 					status.getUntracked());
 			for (String path : untracked)
 				printPorcelainLine('?', '?', path);
@@ -202,7 +176,7 @@ class Status extends TextBuiltin {
 	private void printLongStatus(org.eclipse.jgit.api.Status status)
 			throws IOException {
 		// Print current branch name
-		final Ref head = db.getRef(Constants.HEAD);
+		final Ref head = db.exactRef(Constants.HEAD);
 		if (head != null && head.isSymbolic()) {
 			String branch = Repository.shortenRefName(head.getLeaf().getName());
 			outw.println(CLIText.formatLine(MessageFormat.format(
@@ -221,7 +195,7 @@ class Status extends TextBuiltin {
 		Collection<String> untracked = status.getUntracked();
 		Map<String, StageState> unmergedStates = status
 				.getConflictingStageState();
-		Collection<String> toBeCommitted = new ArrayList<String>(added);
+		Collection<String> toBeCommitted = new ArrayList<>(added);
 		toBeCommitted.addAll(changed);
 		toBeCommitted.addAll(removed);
 		int nbToBeCommitted = toBeCommitted.size();
@@ -232,7 +206,7 @@ class Status extends TextBuiltin {
 					toBeCommitted, added, changed, removed);
 			firstHeader = false;
 		}
-		Collection<String> notStagedForCommit = new ArrayList<String>(modified);
+		Collection<String> notStagedForCommit = new ArrayList<>(modified);
 		notStagedForCommit.addAll(missing);
 		int nbNotStagedForCommit = notStagedForCommit.size();
 		if (nbNotStagedForCommit > 0) {
@@ -261,20 +235,37 @@ class Status extends TextBuiltin {
 		}
 	}
 
+	/**
+	 * Print section header
+	 *
+	 * @param pattern
+	 *            a {@link java.lang.String} object.
+	 * @param arguments
+	 *            a {@link java.lang.Object} object.
+	 * @throws java.io.IOException
+	 */
 	protected void printSectionHeader(String pattern, Object... arguments)
 			throws IOException {
 		if (!porcelain) {
 			outw.println(CLIText.formatLine(MessageFormat.format(pattern,
 					arguments)));
-			if (!pattern.equals("")) //$NON-NLS-1$
+			if (!pattern.isEmpty())
 				outw.println(CLIText.formatLine("")); //$NON-NLS-1$
 			outw.flush();
 		}
 	}
 
+	/**
+	 * Print String list
+	 *
+	 * @param list
+	 *            a {@link java.util.Collection} object.
+	 * @return a int.
+	 * @throws java.io.IOException
+	 */
 	protected int printList(Collection<String> list) throws IOException {
 		if (!list.isEmpty()) {
-			List<String> sortedList = new ArrayList<String>(list);
+			List<String> sortedList = new ArrayList<>(list);
 			java.util.Collections.sort(sortedList);
 			for (String filename : sortedList) {
 				outw.println(CLIText.formatLine(String.format(
@@ -282,16 +273,36 @@ class Status extends TextBuiltin {
 			}
 			outw.flush();
 			return list.size();
-		} else
-			return 0;
+		}
+		return 0;
 	}
 
+	/**
+	 * Print String list
+	 *
+	 * @param status1
+	 *            a {@link java.lang.String} object.
+	 * @param status2
+	 *            a {@link java.lang.String} object.
+	 * @param status3
+	 *            a {@link java.lang.String} object.
+	 * @param list
+	 *            a {@link java.util.Collection} object.
+	 * @param set1
+	 *            a {@link java.util.Collection} object.
+	 * @param set2
+	 *            a {@link java.util.Collection} object.
+	 * @param set3
+	 *            a {@link java.util.Collection} object.
+	 * @return a int.
+	 * @throws java.io.IOException
+	 */
 	protected int printList(String status1, String status2, String status3,
 			Collection<String> list, Collection<String> set1,
 			Collection<String> set2,
-			@SuppressWarnings("unused") Collection<String> set3)
+			Collection<String> set3)
 			throws IOException {
-		List<String> sortedList = new ArrayList<String>(list);
+		List<String> sortedList = new ArrayList<>(list);
 		java.util.Collections.sort(sortedList);
 		for (String filename : sortedList) {
 			String prefix;
@@ -311,7 +322,7 @@ class Status extends TextBuiltin {
 
 	private void printUnmerged(Map<String, StageState> unmergedStates)
 			throws IOException {
-		List<String> paths = new ArrayList<String>(unmergedStates.keySet());
+		List<String> paths = new ArrayList<>(unmergedStates.keySet());
 		Collections.sort(paths);
 		for (String path : paths) {
 			StageState state = unmergedStates.get(path);

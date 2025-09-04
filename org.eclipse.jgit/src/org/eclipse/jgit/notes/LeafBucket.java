@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2010, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.notes;
@@ -119,20 +86,23 @@ class LeafBucket extends InMemoryNoteBucket {
 
 	@Override
 	Iterator<Note> iterator(AnyObjectId objId, ObjectReader reader) {
-		return new Iterator<Note>() {
+		return new Iterator<>() {
 			private int idx;
 
+			@Override
 			public boolean hasNext() {
 				return idx < cnt;
 			}
 
+			@Override
 			public Note next() {
-				if (hasNext())
+				if (hasNext()) {
 					return notes[idx++];
-				else
-					throw new NoSuchElementException();
+				}
+				throw new NoSuchElementException();
 			}
 
+			@Override
 			public void remove() {
 				throw new UnsupportedOperationException();
 			}
@@ -144,6 +114,7 @@ class LeafBucket extends InMemoryNoteBucket {
 		return cnt;
 	}
 
+	@Override
 	InMemoryNoteBucket set(AnyObjectId noteOn, AnyObjectId noteData,
 			ObjectReader or) throws IOException {
 		int p = search(noteOn);
@@ -152,25 +123,23 @@ class LeafBucket extends InMemoryNoteBucket {
 				notes[p].setData(noteData.copy());
 				return this;
 
-			} else {
-				System.arraycopy(notes, p + 1, notes, p, cnt - p - 1);
-				cnt--;
-				return 0 < cnt ? this : null;
 			}
+			System.arraycopy(notes, p + 1, notes, p, cnt - p - 1);
+			cnt--;
+			return 0 < cnt ? this : null;
 
 		} else if (noteData != null) {
 			if (shouldSplit()) {
 				return split().set(noteOn, noteData, or);
-
-			} else {
-				growIfFull();
-				p = -(p + 1);
-				if (p < cnt)
-					System.arraycopy(notes, p, notes, p + 1, cnt - p);
-				notes[p] = new Note(noteOn, noteData.copy());
-				cnt++;
-				return this;
 			}
+			growIfFull();
+			p = -(p + 1);
+			if (p < cnt) {
+				System.arraycopy(notes, p, notes, p + 1, cnt - p);
+			}
+			notes[p] = new Note(noteOn, noteData.copy());
+			cnt++;
+			return this;
 
 		} else {
 			return this;
@@ -214,7 +183,7 @@ class LeafBucket extends InMemoryNoteBucket {
 		return fmt;
 	}
 
-	private int treeSize(final int nameLen) {
+	private int treeSize(int nameLen) {
 		int sz = cnt * TreeFormatter.entrySize(REGULAR_FILE, nameLen);
 		for (NonNoteEntry e = nonNotes; e != null; e = e.next)
 			sz += e.treeEntrySize();
@@ -230,12 +199,10 @@ class LeafBucket extends InMemoryNoteBucket {
 	InMemoryNoteBucket append(Note note) {
 		if (shouldSplit()) {
 			return split().append(note);
-
-		} else {
-			growIfFull();
-			notes[cnt++] = note;
-			return this;
 		}
+		growIfFull();
+		notes[cnt++] = note;
+		return this;
 	}
 
 	private void growIfFull() {

@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.treewalk.filter;
@@ -67,7 +34,8 @@ import org.eclipse.jgit.treewalk.WorkingTreeIterator;
  * <p>
  * <b>Path filters:</b>
  * <ul>
- * <li>Matching pathname: {@link PathFilter}</li>
+ * <li>Matching pathname:
+ * {@link org.eclipse.jgit.treewalk.filter.PathFilter}</li>
  * </ul>
  *
  * <p>
@@ -79,9 +47,9 @@ import org.eclipse.jgit.treewalk.WorkingTreeIterator;
  * <p>
  * <b>Boolean modifiers:</b>
  * <ul>
- * <li>AND: {@link AndTreeFilter}</li>
- * <li>OR: {@link OrTreeFilter}</li>
- * <li>NOT: {@link NotTreeFilter}</li>
+ * <li>AND: {@link org.eclipse.jgit.treewalk.filter.AndTreeFilter}</li>
+ * <li>OR: {@link org.eclipse.jgit.treewalk.filter.OrTreeFilter}</li>
+ * <li>NOT: {@link org.eclipse.jgit.treewalk.filter.NotTreeFilter}</li>
  * </ul>
  */
 public abstract class TreeFilter {
@@ -90,7 +58,7 @@ public abstract class TreeFilter {
 
 	private static final class AllFilter extends TreeFilter {
 		@Override
-		public boolean include(final TreeWalk walker) {
+		public boolean include(TreeWalk walker) {
 			return true;
 		}
 
@@ -132,7 +100,7 @@ public abstract class TreeFilter {
 		private static final int baseTree = 0;
 
 		@Override
-		public boolean include(final TreeWalk walker) {
+		public boolean include(TreeWalk walker) {
 			final int n = walker.getTreeCount();
 			if (n == 1) // Assume they meant difference to empty tree.
 				return true;
@@ -173,30 +141,59 @@ public abstract class TreeFilter {
 	 * Determine if the current entry is interesting to report.
 	 * <p>
 	 * This method is consulted for subtree entries even if
-	 * {@link TreeWalk#isRecursive()} is enabled. The consultation allows the
-	 * filter to bypass subtree recursion on a case-by-case basis, even when
-	 * recursion is enabled at the application level.
+	 * {@link org.eclipse.jgit.treewalk.TreeWalk#isRecursive()} is enabled. The
+	 * consultation allows the filter to bypass subtree recursion on a
+	 * case-by-case basis, even when recursion is enabled at the application
+	 * level.
 	 *
 	 * @param walker
 	 *            the walker the filter needs to examine.
 	 * @return true if the current entry should be seen by the application;
 	 *         false to hide the entry.
-	 * @throws MissingObjectException
+	 * @throws org.eclipse.jgit.errors.MissingObjectException
 	 *             an object the filter needs to consult to determine its answer
 	 *             does not exist in the Git repository the walker is operating
 	 *             on. Filtering this current walker entry is impossible without
 	 *             the object.
-	 * @throws IncorrectObjectTypeException
+	 * @throws org.eclipse.jgit.errors.IncorrectObjectTypeException
 	 *             an object the filter needed to consult was not of the
 	 *             expected object type. This usually indicates a corrupt
 	 *             repository, as an object link is referencing the wrong type.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             a loose object or pack file could not be read to obtain data
 	 *             necessary for the filter to make its decision.
 	 */
 	public abstract boolean include(TreeWalk walker)
 			throws MissingObjectException, IncorrectObjectTypeException,
 			IOException;
+
+	/**
+	 * Determine if the current entry is a parent, a match, or no match.
+	 * <p>
+	 * This method extends the result returned by {@link #include(TreeWalk)}
+	 * with a third option (-1), splitting the value true. This gives the
+	 * application a possibility to distinguish between an exact match and the
+	 * case when a subtree to the current entry might be a match.
+	 *
+	 * @param walker
+	 *            the walker the filter needs to examine.
+	 * @return -1 if the current entry is a parent of the filter but no exact
+	 *         match has been made; 0 if the current entry should be seen by the
+	 *         application; 1 if it should be hidden.
+	 * @throws org.eclipse.jgit.errors.MissingObjectException
+	 *             as thrown by {@link #include(TreeWalk)}
+	 * @throws org.eclipse.jgit.errors.IncorrectObjectTypeException
+	 *             as thrown by {@link #include(TreeWalk)}
+	 * @throws java.io.IOException
+	 *             as thrown by {@link #include(TreeWalk)}
+	 * @since 4.7
+	 */
+	public int matchFilter(TreeWalk walker)
+			throws MissingObjectException, IncorrectObjectTypeException,
+			IOException
+	{
+		return include(walker) ? 0 : 1;
+	}
 
 	/**
 	 * Does this tree filter require a recursive walk to match everything?
@@ -213,15 +210,17 @@ public abstract class TreeFilter {
 	public abstract boolean shouldBeRecursive();
 
 	/**
+	 * {@inheritDoc}
+	 *
 	 * Clone this tree filter, including its parameters.
 	 * <p>
 	 * This is a deep clone. If this filter embeds objects or other filters it
 	 * must also clone those, to ensure the instances do not share mutable data.
-	 *
-	 * @return another copy of this filter, suitable for another thread.
 	 */
+	@Override
 	public abstract TreeFilter clone();
 
+	/** {@inheritDoc} */
 	@Override
 	public String toString() {
 		String n = getClass().getName();

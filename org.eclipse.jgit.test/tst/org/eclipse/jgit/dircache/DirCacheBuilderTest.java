@@ -1,45 +1,12 @@
 /*
  * Copyright (C) 2008-2009, Google Inc.
- * Copyright (C) 2011, Matthias Sohn <matthias.sohn@sap.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2011, Matthias Sohn <matthias.sohn@sap.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.dircache;
@@ -53,6 +20,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.File;
+import java.time.Instant;
 
 import org.eclipse.jgit.events.IndexChangedEvent;
 import org.eclipse.jgit.events.IndexChangedListener;
@@ -89,6 +57,7 @@ public class DirCacheBuilderTest extends RepositoryTestCase {
 		assertEquals(0, e.getRawMode());
 		try {
 			b.add(e);
+			fail("did not reject unset file mode");
 		} catch (IllegalArgumentException err) {
 			assertEquals("FileMode not set for path a", err.getMessage());
 		}
@@ -98,7 +67,7 @@ public class DirCacheBuilderTest extends RepositoryTestCase {
 	public void testBuildOneFile_FinishWriteCommit() throws Exception {
 		final String path = "a-file-path";
 		final FileMode mode = FileMode.REGULAR_FILE;
-		final long lastModified = 1218123387057L;
+		final Instant lastModified = Instant.ofEpochMilli(1218123387057L);
 		final int length = 1342;
 		final DirCacheEntry entOrig;
 		{
@@ -116,7 +85,7 @@ public class DirCacheBuilderTest extends RepositoryTestCase {
 			assertEquals(ObjectId.zeroId(), entOrig.getObjectId());
 			assertEquals(mode.getBits(), entOrig.getRawMode());
 			assertEquals(0, entOrig.getStage());
-			assertEquals(lastModified, entOrig.getLastModified());
+			assertEquals(lastModified, entOrig.getLastModifiedInstant());
 			assertEquals(length, entOrig.getLength());
 			assertFalse(entOrig.isAssumeValid());
 			b.add(entOrig);
@@ -138,7 +107,7 @@ public class DirCacheBuilderTest extends RepositoryTestCase {
 			assertEquals(ObjectId.zeroId(), entOrig.getObjectId());
 			assertEquals(mode.getBits(), entOrig.getRawMode());
 			assertEquals(0, entOrig.getStage());
-			assertEquals(lastModified, entOrig.getLastModified());
+			assertEquals(lastModified, entOrig.getLastModifiedInstant());
 			assertEquals(length, entOrig.getLength());
 			assertFalse(entOrig.isAssumeValid());
 		}
@@ -148,7 +117,7 @@ public class DirCacheBuilderTest extends RepositoryTestCase {
 	public void testBuildOneFile_Commit() throws Exception {
 		final String path = "a-file-path";
 		final FileMode mode = FileMode.REGULAR_FILE;
-		final long lastModified = 1218123387057L;
+		final Instant lastModified = Instant.ofEpochMilli(1218123387057L);
 		final int length = 1342;
 		final DirCacheEntry entOrig;
 		{
@@ -166,7 +135,7 @@ public class DirCacheBuilderTest extends RepositoryTestCase {
 			assertEquals(ObjectId.zeroId(), entOrig.getObjectId());
 			assertEquals(mode.getBits(), entOrig.getRawMode());
 			assertEquals(0, entOrig.getStage());
-			assertEquals(lastModified, entOrig.getLastModified());
+			assertEquals(lastModified, entOrig.getLastModifiedInstant());
 			assertEquals(length, entOrig.getLength());
 			assertFalse(entOrig.isAssumeValid());
 			b.add(entOrig);
@@ -186,7 +155,7 @@ public class DirCacheBuilderTest extends RepositoryTestCase {
 			assertEquals(ObjectId.zeroId(), entOrig.getObjectId());
 			assertEquals(mode.getBits(), entOrig.getRawMode());
 			assertEquals(0, entOrig.getStage());
-			assertEquals(lastModified, entOrig.getLastModified());
+			assertEquals(lastModified, entOrig.getLastModifiedInstant());
 			assertEquals(length, entOrig.getLength());
 			assertFalse(entOrig.isAssumeValid());
 		}
@@ -203,17 +172,14 @@ public class DirCacheBuilderTest extends RepositoryTestCase {
 		final String path = "a-file-path";
 		final FileMode mode = FileMode.REGULAR_FILE;
 		// "old" date in 2008
-		final long lastModified = 1218123387057L;
+		final Instant lastModified = Instant.ofEpochMilli(1218123387057L);
 		final int length = 1342;
 		DirCacheEntry entOrig;
 		boolean receivedEvent = false;
 
 		DirCache dc = db.lockDirCache();
-		IndexChangedListener listener = new IndexChangedListener() {
-
-			public void onIndexChanged(IndexChangedEvent event) {
-				throw new ReceivedEventMarkerException();
-			}
+		IndexChangedListener listener = (IndexChangedEvent event) -> {
+			throw new ReceivedEventMarkerException();
 		};
 
 		ListenerList l = db.getListenerList();
@@ -236,11 +202,8 @@ public class DirCacheBuilderTest extends RepositoryTestCase {
 		// do the same again, as this doesn't change index compared to first
 		// round we should get no event this time
 		dc = db.lockDirCache();
-		listener = new IndexChangedListener() {
-
-			public void onIndexChanged(IndexChangedEvent event) {
-				throw new ReceivedEventMarkerException();
-			}
+		listener = (IndexChangedEvent event) -> {
+			throw new ReceivedEventMarkerException();
 		};
 
 		l = db.getListenerList();
@@ -298,8 +261,9 @@ public class DirCacheBuilderTest extends RepositoryTestCase {
 		}
 
 		final DirCacheBuilder b = dc.builder();
-		for (int i = 0; i < ents.length; i++)
-			b.add(ents[i]);
+		for (DirCacheEntry ent : ents) {
+			b.add(ent);
+		}
 		b.finish();
 
 		assertEquals(paths.length, dc.getEntryCount());
@@ -348,8 +312,9 @@ public class DirCacheBuilderTest extends RepositoryTestCase {
 		}
 		{
 			final DirCacheBuilder b = dc.builder();
-			for (int i = 0; i < ents.length; i++)
-				b.add(ents[i]);
+			for (DirCacheEntry ent : ents) {
+				b.add(ent);
+			}
 			b.finish();
 		}
 		assertEquals(paths.length, dc.getEntryCount());

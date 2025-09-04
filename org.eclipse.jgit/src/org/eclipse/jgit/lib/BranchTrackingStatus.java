@@ -1,45 +1,12 @@
 /*
  * Copyright (C) 2011, Robin Stocker <robin@nibor.org>
- * Copyright (C) 2012, Matthias Sohn <matthias.sohn@sap.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2012, Matthias Sohn <matthias.sohn@sap.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.lib;
@@ -65,7 +32,7 @@ public class BranchTrackingStatus {
 	 * @param branchName
 	 *            the local branch
 	 * @return the tracking status, or null if it is not known
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 */
 	public static BranchTrackingStatus of(Repository repository, String branchName)
 			throws IOException {
@@ -79,30 +46,33 @@ public class BranchTrackingStatus {
 		if (trackingBranch == null)
 			return null;
 
-		Ref tracking = repository.getRef(trackingBranch);
+		Ref tracking = repository.exactRef(trackingBranch);
 		if (tracking == null)
 			return null;
 
-		Ref local = repository.getRef(fullBranchName);
+		Ref local = repository.exactRef(fullBranchName);
 		if (local == null)
 			return null;
 
-		RevWalk walk = new RevWalk(repository);
+		try (RevWalk walk = new RevWalk(repository)) {
 
-		RevCommit localCommit = walk.parseCommit(local.getObjectId());
-		RevCommit trackingCommit = walk.parseCommit(tracking.getObjectId());
+			RevCommit localCommit = walk.parseCommit(local.getObjectId());
+			RevCommit trackingCommit = walk.parseCommit(tracking.getObjectId());
 
-		walk.setRevFilter(RevFilter.MERGE_BASE);
-		walk.markStart(localCommit);
-		walk.markStart(trackingCommit);
-		RevCommit mergeBase = walk.next();
+			walk.setRevFilter(RevFilter.MERGE_BASE);
+			walk.markStart(localCommit);
+			walk.markStart(trackingCommit);
+			RevCommit mergeBase = walk.next();
 
-		walk.reset();
-		walk.setRevFilter(RevFilter.ALL);
-		int aheadCount = RevWalkUtils.count(walk, localCommit, mergeBase);
-		int behindCount = RevWalkUtils.count(walk, trackingCommit, mergeBase);
+			walk.reset();
+			walk.setRevFilter(RevFilter.ALL);
+			int aheadCount = RevWalkUtils.count(walk, localCommit, mergeBase);
+			int behindCount = RevWalkUtils.count(walk, trackingCommit,
+					mergeBase);
 
-		return new BranchTrackingStatus(trackingBranch, aheadCount, behindCount);
+			return new BranchTrackingStatus(trackingBranch, aheadCount,
+					behindCount);
+		}
 	}
 
 	private final String remoteTrackingBranch;
@@ -119,6 +89,8 @@ public class BranchTrackingStatus {
 	}
 
 	/**
+	 * Get full remote-tracking branch name
+	 *
 	 * @return full remote-tracking branch name
 	 */
 	public String getRemoteTrackingBranch() {
@@ -126,6 +98,9 @@ public class BranchTrackingStatus {
 	}
 
 	/**
+	 * Get number of commits that the local branch is ahead of the
+	 * remote-tracking branch
+	 *
 	 * @return number of commits that the local branch is ahead of the
 	 *         remote-tracking branch
 	 */
@@ -134,6 +109,9 @@ public class BranchTrackingStatus {
 	}
 
 	/**
+	 * Get number of commits that the local branch is behind of the
+	 * remote-tracking branch
+	 *
 	 * @return number of commits that the local branch is behind of the
 	 *         remote-tracking branch
 	 */

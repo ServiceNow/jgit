@@ -1,46 +1,13 @@
 /*
  * Copyright (C) 2009, Google Inc.
  * Copyright (C) 2008, Robin Rosenberg <robin.rosenberg@dewire.com>
- * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.transport;
@@ -49,10 +16,7 @@ import java.io.Serializable;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
 
 import org.eclipse.jgit.lib.Config;
 
@@ -87,10 +51,6 @@ public class RemoteConfig implements Serializable {
 
 	private static final String KEY_TIMEOUT = "timeout"; //$NON-NLS-1$
 
-	private static final String KEY_INSTEADOF = "insteadof"; //$NON-NLS-1$
-
-	private static final String KEY_PUSHINSTEADOF = "pushinsteadof"; //$NON-NLS-1$
-
 	private static final boolean DEFAULT_MIRROR = false;
 
 	/** Default value for {@link #getUploadPack()} if not specified. */
@@ -109,18 +69,18 @@ public class RemoteConfig implements Serializable {
 	 * @return all remotes configurations existing in provided repository
 	 *         configuration. Returned configurations are ordered
 	 *         lexicographically by names.
-	 * @throws URISyntaxException
+	 * @throws java.net.URISyntaxException
 	 *             one of the URIs within the remote's configuration is invalid.
 	 */
-	public static List<RemoteConfig> getAllRemoteConfigs(final Config rc)
+	public static List<RemoteConfig> getAllRemoteConfigs(Config rc)
 			throws URISyntaxException {
-		final List<String> names = new ArrayList<String>(rc
+		final List<String> names = new ArrayList<>(rc
 				.getSubsections(SECTION));
 		Collections.sort(names);
 
-		final List<RemoteConfig> result = new ArrayList<RemoteConfig>(names
+		final List<RemoteConfig> result = new ArrayList<>(names
 				.size());
-		for (final String name : names)
+		for (String name : names)
 			result.add(new RemoteConfig(rc, name));
 		return result;
 	}
@@ -157,10 +117,10 @@ public class RemoteConfig implements Serializable {
 	 *            The configuration must already be loaded into memory.
 	 * @param remoteName
 	 *            subsection key indicating the name of this remote.
-	 * @throws URISyntaxException
+	 * @throws java.net.URISyntaxException
 	 *             one of the URIs within the remote's configuration is invalid.
 	 */
-	public RemoteConfig(final Config rc, final String remoteName)
+	public RemoteConfig(Config rc, String remoteName)
 			throws URISyntaxException {
 		name = remoteName;
 
@@ -168,40 +128,49 @@ public class RemoteConfig implements Serializable {
 		String val;
 
 		vlst = rc.getStringList(SECTION, name, KEY_URL);
-		Map<String, String> insteadOf = getReplacements(rc, KEY_INSTEADOF);
-		uris = new ArrayList<URIish>(vlst.length);
-		for (final String s : vlst)
-			uris.add(new URIish(replaceUri(s, insteadOf)));
-
-		Map<String, String> pushInsteadOf = getReplacements(rc,
-				KEY_PUSHINSTEADOF);
-		vlst = rc.getStringList(SECTION, name, KEY_PUSHURL);
-		pushURIs = new ArrayList<URIish>(vlst.length);
-		for (final String s : vlst)
-			pushURIs.add(new URIish(replaceUri(s, pushInsteadOf)));
-
-		vlst = rc.getStringList(SECTION, name, KEY_FETCH);
-		fetch = new ArrayList<RefSpec>(vlst.length);
-		for (final String s : vlst)
-			fetch.add(new RefSpec(s));
-
-		vlst = rc.getStringList(SECTION, name, KEY_PUSH);
-		push = new ArrayList<RefSpec>(vlst.length);
-		for (final String s : vlst)
-			push.add(new RefSpec(s));
-
+		UrlConfig urls = new UrlConfig(rc);
+		uris = new ArrayList<>(vlst.length);
+		for (String s : vlst) {
+			uris.add(new URIish(urls.replace(s)));
+		}
+		String[] plst = rc.getStringList(SECTION, name, KEY_PUSHURL);
+		pushURIs = new ArrayList<>(plst.length);
+		for (String s : plst) {
+			pushURIs.add(new URIish(s));
+		}
+		if (pushURIs.isEmpty()) {
+			// Would default to the uris. If we have pushinsteadof, we must
+			// supply rewritten push uris.
+			if (urls.hasPushReplacements()) {
+				for (String s : vlst) {
+					String replaced = urls.replacePush(s);
+					if (!s.equals(replaced)) {
+						pushURIs.add(new URIish(replaced));
+					}
+				}
+			}
+		}
+		fetch = rc.getRefSpecs(SECTION, name, KEY_FETCH);
+		push = rc.getRefSpecs(SECTION, name, KEY_PUSH);
 		val = rc.getString(SECTION, name, KEY_UPLOADPACK);
-		if (val == null)
+		if (val == null) {
 			val = DEFAULT_UPLOAD_PACK;
+		}
 		uploadpack = val;
 
 		val = rc.getString(SECTION, name, KEY_RECEIVEPACK);
-		if (val == null)
+		if (val == null) {
 			val = DEFAULT_RECEIVE_PACK;
+		}
 		receivepack = val;
 
-		val = rc.getString(SECTION, name, KEY_TAGOPT);
-		tagopt = TagOpt.fromOption(val);
+		try {
+			val = rc.getString(SECTION, name, KEY_TAGOPT);
+			tagopt = TagOpt.fromOption(val);
+		} catch (IllegalArgumentException e) {
+			// C git silently ignores invalid tagopt values.
+			tagopt = TagOpt.AUTO_FOLLOW;
+		}
 		mirror = rc.getBoolean(SECTION, name, KEY_MIRROR, DEFAULT_MIRROR);
 		timeout = rc.getInt(SECTION, name, KEY_TIMEOUT, 0);
 	}
@@ -212,26 +181,26 @@ public class RemoteConfig implements Serializable {
 	 * @param rc
 	 *            the configuration file to store ourselves into.
 	 */
-	public void update(final Config rc) {
-		final List<String> vlst = new ArrayList<String>();
+	public void update(Config rc) {
+		final List<String> vlst = new ArrayList<>();
 
 		vlst.clear();
-		for (final URIish u : getURIs())
+		for (URIish u : getURIs())
 			vlst.add(u.toPrivateString());
 		rc.setStringList(SECTION, getName(), KEY_URL, vlst);
 
 		vlst.clear();
-		for (final URIish u : getPushURIs())
+		for (URIish u : getPushURIs())
 			vlst.add(u.toPrivateString());
 		rc.setStringList(SECTION, getName(), KEY_PUSHURL, vlst);
 
 		vlst.clear();
-		for (final RefSpec u : getFetchRefSpecs())
+		for (RefSpec u : getFetchRefSpecs())
 			vlst.add(u.toString());
 		rc.setStringList(SECTION, getName(), KEY_FETCH, vlst);
 
 		vlst.clear();
-		for (final RefSpec u : getPushRefSpecs())
+		for (RefSpec u : getPushRefSpecs())
 			vlst.add(u.toString());
 		rc.setStringList(SECTION, getName(), KEY_PUSH, vlst);
 
@@ -266,37 +235,8 @@ public class RemoteConfig implements Serializable {
 			rc.setInt(SECTION, getName(), key, currentValue);
 	}
 
-	private void unset(final Config rc, final String key) {
+	private void unset(Config rc, String key) {
 		rc.unset(SECTION, getName(), key);
-	}
-
-	private Map<String, String> getReplacements(final Config config,
-			final String keyName) {
-		final Map<String, String> replacements = new HashMap<String, String>();
-		for (String url : config.getSubsections(KEY_URL))
-			for (String insteadOf : config.getStringList(KEY_URL, url, keyName))
-				replacements.put(insteadOf, url);
-		return replacements;
-	}
-
-	private String replaceUri(final String uri,
-			final Map<String, String> replacements) {
-		if (replacements.isEmpty())
-			return uri;
-		Entry<String, String> match = null;
-		for (Entry<String, String> replacement : replacements.entrySet()) {
-			// Ignore current entry if not longer than previous match
-			if (match != null
-					&& match.getKey().length() > replacement.getKey().length())
-				continue;
-			if (!uri.startsWith(replacement.getKey()))
-				continue;
-			match = replacement;
-		}
-		if (match != null)
-			return match.getValue() + uri.substring(match.getKey().length());
-		else
-			return uri;
 	}
 
 	/**
@@ -324,7 +264,7 @@ public class RemoteConfig implements Serializable {
 	 *            the new URI to add to this remote.
 	 * @return true if the URI was added; false if it already exists.
 	 */
-	public boolean addURI(final URIish toAdd) {
+	public boolean addURI(URIish toAdd) {
 		if (uris.contains(toAdd))
 			return false;
 		return uris.add(toAdd);
@@ -337,7 +277,7 @@ public class RemoteConfig implements Serializable {
 	 *            the URI to remove from this remote.
 	 * @return true if the URI was added; false if it already exists.
 	 */
-	public boolean removeURI(final URIish toRemove) {
+	public boolean removeURI(URIish toRemove) {
 		return uris.remove(toRemove);
 	}
 
@@ -357,7 +297,7 @@ public class RemoteConfig implements Serializable {
 	 *            the new URI to add to this remote.
 	 * @return true if the URI was added; false if it already exists.
 	 */
-	public boolean addPushURI(final URIish toAdd) {
+	public boolean addPushURI(URIish toAdd) {
 		if (pushURIs.contains(toAdd))
 			return false;
 		return pushURIs.add(toAdd);
@@ -370,7 +310,7 @@ public class RemoteConfig implements Serializable {
 	 *            the URI to remove from this remote.
 	 * @return true if the URI was added; false if it already exists.
 	 */
-	public boolean removePushURI(final URIish toRemove) {
+	public boolean removePushURI(URIish toRemove) {
 		return pushURIs.remove(toRemove);
 	}
 
@@ -390,7 +330,7 @@ public class RemoteConfig implements Serializable {
 	 *            the new specification to add.
 	 * @return true if the specification was added; false if it already exists.
 	 */
-	public boolean addFetchRefSpec(final RefSpec s) {
+	public boolean addFetchRefSpec(RefSpec s) {
 		if (fetch.contains(s))
 			return false;
 		return fetch.add(s);
@@ -403,7 +343,7 @@ public class RemoteConfig implements Serializable {
 	 *            list of fetch specifications to set. List is copied, it can be
 	 *            modified after this call.
 	 */
-	public void setFetchRefSpecs(final List<RefSpec> specs) {
+	public void setFetchRefSpecs(List<RefSpec> specs) {
 		fetch.clear();
 		fetch.addAll(specs);
 	}
@@ -415,7 +355,7 @@ public class RemoteConfig implements Serializable {
 	 *            list of push specifications to set. List is copied, it can be
 	 *            modified after this call.
 	 */
-	public void setPushRefSpecs(final List<RefSpec> specs) {
+	public void setPushRefSpecs(List<RefSpec> specs) {
 		push.clear();
 		push.addAll(specs);
 	}
@@ -427,7 +367,7 @@ public class RemoteConfig implements Serializable {
 	 *            the specification to remove.
 	 * @return true if the specification existed and was removed.
 	 */
-	public boolean removeFetchRefSpec(final RefSpec s) {
+	public boolean removeFetchRefSpec(RefSpec s) {
 		return fetch.remove(s);
 	}
 
@@ -447,7 +387,7 @@ public class RemoteConfig implements Serializable {
 	 *            the new specification to add.
 	 * @return true if the specification was added; false if it already exists.
 	 */
-	public boolean addPushRefSpec(final RefSpec s) {
+	public boolean addPushRefSpec(RefSpec s) {
 		if (push.contains(s))
 			return false;
 		return push.add(s);
@@ -460,7 +400,7 @@ public class RemoteConfig implements Serializable {
 	 *            the specification to remove.
 	 * @return true if the specification existed and was removed.
 	 */
-	public boolean removePushRefSpec(final RefSpec s) {
+	public boolean removePushRefSpec(RefSpec s) {
 		return push.remove(s);
 	}
 
@@ -509,11 +449,14 @@ public class RemoteConfig implements Serializable {
 	 * @param option
 	 *            method to use when handling annotated tags.
 	 */
-	public void setTagOpt(final TagOpt option) {
+	public void setTagOpt(TagOpt option) {
 		tagopt = option != null ? option : TagOpt.AUTO_FOLLOW;
 	}
 
 	/**
+	 * Whether pushing to the remote automatically deletes remote refs which
+	 * don't exist on the source side.
+	 *
 	 * @return true if pushing to the remote automatically deletes remote refs
 	 *         which don't exist on the source side.
 	 */
@@ -527,11 +470,15 @@ public class RemoteConfig implements Serializable {
 	 * @param m
 	 *            true to automatically delete remote refs during push.
 	 */
-	public void setMirror(final boolean m) {
+	public void setMirror(boolean m) {
 		mirror = m;
 	}
 
-	/** @return timeout (in seconds) before aborting an IO operation. */
+	/**
+	 * Get timeout (in seconds) before aborting an IO operation.
+	 *
+	 * @return timeout (in seconds) before aborting an IO operation.
+	 */
 	public int getTimeout() {
 		return timeout;
 	}
@@ -544,7 +491,7 @@ public class RemoteConfig implements Serializable {
 	 *            before aborting an IO read or write operation with this
 	 *            remote.  A timeout of 0 will block indefinitely.
 	 */
-	public void setTimeout(final int seconds) {
+	public void setTimeout(int seconds) {
 		timeout = seconds;
 	}
 }

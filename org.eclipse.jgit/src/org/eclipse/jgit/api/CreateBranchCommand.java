@@ -1,47 +1,17 @@
 /*
  * Copyright (C) 2010, Mathias Kinzler <mathias.kinzler@sap.com>
- * Copyright (C) 2010, Chris Aniszczyk <caniszczyk@gmail.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, Chris Aniszczyk <caniszczyk@gmail.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 package org.eclipse.jgit.api;
+
+import static org.eclipse.jgit.lib.Constants.HEAD;
+import static org.eclipse.jgit.lib.Constants.R_HEADS;
 
 import java.io.IOException;
 import java.text.MessageFormat;
@@ -78,7 +48,7 @@ public class CreateBranchCommand extends GitCommand<Ref> {
 
 	private SetupUpstreamMode upstreamMode;
 
-	private String startPoint = Constants.HEAD;
+	private String startPoint = HEAD;
 
 	private RevCommit startCommit;
 
@@ -103,31 +73,25 @@ public class CreateBranchCommand extends GitCommand<Ref> {
 	}
 
 	/**
+	 * Constructor for CreateBranchCommand
+	 *
 	 * @param repo
+	 *            the {@link org.eclipse.jgit.lib.Repository}
 	 */
 	protected CreateBranchCommand(Repository repo) {
 		super(repo);
 	}
 
-	/**
-	 * @throws RefAlreadyExistsException
-	 *             when trying to create (without force) a branch with a name
-	 *             that already exists
-	 * @throws RefNotFoundException
-	 *             if the start point can not be found
-	 * @throws InvalidRefNameException
-	 *             if the provided name is <code>null</code> or otherwise
-	 *             invalid
-	 * @return the newly created branch
-	 */
+	/** {@inheritDoc} */
+	@Override
 	public Ref call() throws GitAPIException, RefAlreadyExistsException,
 			RefNotFoundException, InvalidRefNameException {
 		checkCallable();
 		processOptions();
 		try (RevWalk revWalk = new RevWalk(repo)) {
-			Ref refToCheck = repo.getRef(name);
+			Ref refToCheck = repo.findRef(name);
 			boolean exists = refToCheck != null
-					&& refToCheck.getName().startsWith(Constants.R_HEADS);
+					&& refToCheck.getName().startsWith(R_HEADS);
 			if (!force && exists)
 				throw new RefAlreadyExistsException(MessageFormat.format(
 						JGitText.get().refAlreadyExists1, name));
@@ -135,7 +99,7 @@ public class CreateBranchCommand extends GitCommand<Ref> {
 			ObjectId startAt = getStartPointObjectId();
 			String startPointFullName = null;
 			if (startPoint != null) {
-				Ref baseRef = repo.getRef(startPoint);
+				Ref baseRef = repo.findRef(startPoint);
 				if (baseRef != null)
 					startPointFullName = baseRef.getName();
 			}
@@ -159,7 +123,7 @@ public class CreateBranchCommand extends GitCommand<Ref> {
 				else
 					refLogMessage = "branch: Created from commit " + baseCommit; //$NON-NLS-1$
 
-			} else if (startPointFullName.startsWith(Constants.R_HEADS)
+			} else if (startPointFullName.startsWith(R_HEADS)
 					|| startPointFullName.startsWith(Constants.R_REMOTES)) {
 				baseBranch = startPointFullName;
 				if (exists)
@@ -177,7 +141,7 @@ public class CreateBranchCommand extends GitCommand<Ref> {
 							+ startPointFullName;
 			}
 
-			RefUpdate updateRef = repo.updateRef(Constants.R_HEADS + name);
+			RefUpdate updateRef = repo.updateRef(R_HEADS + name);
 			updateRef.setNewObjectId(startAt);
 			updateRef.setRefLogMessage(refLogMessage, false);
 			Result updateResult;
@@ -207,7 +171,7 @@ public class CreateBranchCommand extends GitCommand<Ref> {
 						.get().createBranchUnexpectedResult, updateResult
 						.name()));
 
-			Ref result = repo.getRef(name);
+			Ref result = repo.findRef(name);
 			if (result == null)
 				throw new JGitInternalException(
 						JGitText.get().createBranchFailedUnknownReason);
@@ -285,17 +249,36 @@ public class CreateBranchCommand extends GitCommand<Ref> {
 	}
 
 	private String getStartPointOrHead() {
-		return startPoint != null ? startPoint : Constants.HEAD;
+		return startPoint != null ? startPoint : HEAD;
 	}
 
 	private void processOptions() throws InvalidRefNameException {
 		if (name == null
-				|| !Repository.isValidRefName(Constants.R_HEADS + name))
+				|| !Repository.isValidRefName(R_HEADS + name)
+				|| !isValidBranchName(name))
 			throw new InvalidRefNameException(MessageFormat.format(JGitText
 					.get().branchNameInvalid, name == null ? "<null>" : name)); //$NON-NLS-1$
 	}
 
 	/**
+	 * Check if the given branch name is valid
+	 *
+	 * @param branchName
+	 *            branch name to check
+	 * @return {@code true} if the branch name is valid
+	 *
+	 * @since 5.0
+	 */
+	public static boolean isValidBranchName(String branchName) {
+		if (HEAD.equals(branchName)) {
+			return false;
+		}
+		return !branchName.startsWith("-"); //$NON-NLS-1$
+	}
+
+	/**
+	 * Set the name of the new branch
+	 *
 	 * @param name
 	 *            the name of the new branch
 	 * @return this instance
@@ -307,6 +290,8 @@ public class CreateBranchCommand extends GitCommand<Ref> {
 	}
 
 	/**
+	 * Set whether to create the branch forcefully
+	 *
 	 * @param force
 	 *            if <code>true</code> and the branch with the given name
 	 *            already exists, the start-point of an existing branch will be
@@ -321,6 +306,8 @@ public class CreateBranchCommand extends GitCommand<Ref> {
 	}
 
 	/**
+	 * Set the start point
+	 *
 	 * @param startPoint
 	 *            corresponds to the start-point option; if <code>null</code>,
 	 *            the current HEAD will be used
@@ -334,6 +321,8 @@ public class CreateBranchCommand extends GitCommand<Ref> {
 	}
 
 	/**
+	 * Set the start point
+	 *
 	 * @param startPoint
 	 *            corresponds to the start-point option; if <code>null</code>,
 	 *            the current HEAD will be used
@@ -347,6 +336,8 @@ public class CreateBranchCommand extends GitCommand<Ref> {
 	}
 
 	/**
+	 * Set the upstream mode
+	 *
 	 * @param mode
 	 *            corresponds to the --track/--no-track/--set-upstream options;
 	 *            may be <code>null</code>

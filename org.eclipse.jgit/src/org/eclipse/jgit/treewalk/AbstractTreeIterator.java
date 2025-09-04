@@ -1,56 +1,25 @@
 /*
  * Copyright (C) 2008-2009, Google Inc.
  * Copyright (C) 2007, Robin Rosenberg <robin.rosenberg@dewire.com>
- * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.treewalk;
+
+import static java.nio.charset.StandardCharsets.UTF_8;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 
+import org.eclipse.jgit.attributes.AttributesHandler;
 import org.eclipse.jgit.attributes.AttributesNode;
-import org.eclipse.jgit.dircache.DirCacheCheckout;
 import org.eclipse.jgit.errors.CorruptObjectException;
 import org.eclipse.jgit.errors.IncorrectObjectTypeException;
 import org.eclipse.jgit.lib.Constants;
@@ -58,7 +27,7 @@ import org.eclipse.jgit.lib.FileMode;
 import org.eclipse.jgit.lib.MutableObjectId;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectReader;
-import org.eclipse.jgit.treewalk.filter.TreeFilter;
+import org.eclipse.jgit.util.Paths;
 
 /**
  * Walks a Git tree (directory) in Git sort order.
@@ -87,8 +56,14 @@ public abstract class AbstractTreeIterator {
 	/** A dummy object id buffer that matches the zero ObjectId. */
 	protected static final byte[] zeroid = new byte[Constants.OBJECT_ID_LENGTH];
 
-	/** Iterator for the parent tree; null if we are the root iterator. */
-	final AbstractTreeIterator parent;
+	/**
+	 * Iterator for the parent tree; null if we are the root iterator.
+	 * <p>
+	 * Used by {@link TreeWalk} and {@link AttributesHandler}
+	 *
+	 * @since 4.3
+	 */
+	public final AbstractTreeIterator parent;
 
 	/** The iterator this current entry is path equal to. */
 	AbstractTreeIterator matches;
@@ -146,7 +121,9 @@ public abstract class AbstractTreeIterator {
 	 */
 	protected int pathLen;
 
-	/** Create a new iterator with no parent. */
+	/**
+	 * Create a new iterator with no parent.
+	 */
 	protected AbstractTreeIterator() {
 		parent = null;
 		path = new byte[DEFAULT_PATH_SIZE];
@@ -168,13 +145,13 @@ public abstract class AbstractTreeIterator {
 	 *            root of the repository. A trailing slash ('/') is
 	 *            automatically appended if the prefix does not end in '/'.
 	 */
-	protected AbstractTreeIterator(final String prefix) {
+	protected AbstractTreeIterator(String prefix) {
 		parent = null;
 
 		if (prefix != null && prefix.length() > 0) {
 			final ByteBuffer b;
 
-			b = Constants.CHARSET.encode(CharBuffer.wrap(prefix));
+			b = UTF_8.encode(CharBuffer.wrap(prefix));
 			pathLen = b.limit();
 			path = new byte[Math.max(DEFAULT_PATH_SIZE, pathLen + 1)];
 			b.get(path, 0, pathLen);
@@ -202,7 +179,7 @@ public abstract class AbstractTreeIterator {
 	 *            root of the repository. A trailing slash ('/') is
 	 *            automatically appended if the prefix does not end in '/'.
 	 */
-	protected AbstractTreeIterator(final byte[] prefix) {
+	protected AbstractTreeIterator(byte[] prefix) {
 		parent = null;
 
 		if (prefix != null && prefix.length > 0) {
@@ -224,17 +201,15 @@ public abstract class AbstractTreeIterator {
 	 * @param p
 	 *            parent tree iterator.
 	 */
-	protected AbstractTreeIterator(final AbstractTreeIterator p) {
+	protected AbstractTreeIterator(AbstractTreeIterator p) {
 		parent = p;
 		path = p.path;
 		pathOffset = p.pathLen + 1;
 
-		try {
-			path[pathOffset - 1] = '/';
-		} catch (ArrayIndexOutOfBoundsException e) {
+		if (pathOffset > path.length) {
 			growPath(p.pathLen);
-			path[pathOffset - 1] = '/';
 		}
+		path[pathOffset - 1] = '/';
 	}
 
 	/**
@@ -267,7 +242,7 @@ public abstract class AbstractTreeIterator {
 	 *            number of live bytes in the path buffer. This many bytes will
 	 *            be moved into the larger buffer.
 	 */
-	protected void growPath(final int len) {
+	protected void growPath(int len) {
 		setPathCapacity(path.length << 1, len);
 	}
 
@@ -279,7 +254,7 @@ public abstract class AbstractTreeIterator {
 	 * @param len
 	 *            the amount of live bytes in path buffer
 	 */
-	protected void ensurePathCapacity(final int capacity, final int len) {
+	protected void ensurePathCapacity(int capacity, int len) {
 		if (path.length >= capacity)
 			return;
 		final byte[] o = path;
@@ -314,17 +289,53 @@ public abstract class AbstractTreeIterator {
 	 * @return -1 if this entry sorts first; 0 if the entries are equal; 1 if
 	 *         p's entry sorts first.
 	 */
-	public int pathCompare(final AbstractTreeIterator p) {
+	public int pathCompare(AbstractTreeIterator p) {
 		return pathCompare(p, p.mode);
 	}
 
-	int pathCompare(final AbstractTreeIterator p, final int pMode) {
+	int pathCompare(AbstractTreeIterator p, int pMode) {
 		// Its common when we are a subtree for both parents to match;
 		// when this happens everything in path[0..cPos] is known to
 		// be equal and does not require evaluation again.
 		//
 		int cPos = alreadyMatch(this, p);
 		return pathCompare(p.path, cPos, p.pathLen, pMode, cPos);
+	}
+
+	/**
+	 * Seek the iterator on a file, if present.
+	 *
+	 * @param name
+	 *            file name to find (will not find a directory).
+	 * @return true if the file exists in this tree; false otherwise.
+	 * @throws org.eclipse.jgit.errors.CorruptObjectException
+	 *             tree is invalid.
+	 * @since 4.2
+	 */
+	public boolean findFile(String name) throws CorruptObjectException {
+		return findFile(Constants.encode(name));
+	}
+
+	/**
+	 * Seek the iterator on a file, if present.
+	 *
+	 * @param name
+	 *            file name to find (will not find a directory).
+	 * @return true if the file exists in this tree; false otherwise.
+	 * @throws org.eclipse.jgit.errors.CorruptObjectException
+	 *             tree is invalid.
+	 * @since 4.2
+	 */
+	public boolean findFile(byte[] name) throws CorruptObjectException {
+		for (; !eof(); next(1)) {
+			int cmp = pathCompare(name, 0, name.length, 0, pathOffset);
+			if (cmp == 0) {
+				return true;
+			} else if (cmp > 0) {
+				return false;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -346,20 +357,9 @@ public abstract class AbstractTreeIterator {
 	}
 
 	private int pathCompare(byte[] b, int bPos, int bEnd, int bMode, int aPos) {
-		final byte[] a = path;
-		final int aEnd = pathLen;
-
-		for (; aPos < aEnd && bPos < bEnd; aPos++, bPos++) {
-			final int cmp = (a[aPos] & 0xff) - (b[bPos] & 0xff);
-			if (cmp != 0)
-				return cmp;
-		}
-
-		if (aPos < aEnd)
-			return (a[aPos] & 0xff) - lastPathChar(bMode);
-		if (bPos < bEnd)
-			return lastPathChar(mode) - (b[bPos] & 0xff);
-		return lastPathChar(mode) - lastPathChar(bMode);
+		return Paths.compare(
+				path, aPos, pathLen, mode,
+				b, bPos, bEnd, bMode);
 	}
 
 	private static int alreadyMatch(AbstractTreeIterator a,
@@ -376,10 +376,6 @@ public abstract class AbstractTreeIterator {
 		}
 	}
 
-	private static int lastPathChar(final int mode) {
-		return FileMode.TREE.equals(mode) ? '/' : '\0';
-	}
-
 	/**
 	 * Check if the current entry of both iterators has the same id.
 	 * <p>
@@ -391,12 +387,16 @@ public abstract class AbstractTreeIterator {
 	 *            the other iterator to test against.
 	 * @return true if both iterators have the same object id; false otherwise.
 	 */
-	public boolean idEqual(final AbstractTreeIterator otherIterator) {
+	public boolean idEqual(AbstractTreeIterator otherIterator) {
 		return ObjectId.equals(idBuffer(), idOffset(),
 				otherIterator.idBuffer(), otherIterator.idOffset());
 	}
 
-	/** @return true if the entry has a valid ObjectId. */
+	/**
+	 * Whether the entry has a valid ObjectId.
+	 *
+	 * @return {@code true} if the entry has a valid ObjectId.
+	 */
 	public abstract boolean hasId();
 
 	/**
@@ -414,21 +414,33 @@ public abstract class AbstractTreeIterator {
 	 * @param out
 	 *            buffer to copy the object id into.
 	 */
-	public void getEntryObjectId(final MutableObjectId out) {
+	public void getEntryObjectId(MutableObjectId out) {
 		out.fromRaw(idBuffer(), idOffset());
 	}
 
-	/** @return the file mode of the current entry. */
+	/**
+	 * Get the file mode of the current entry.
+	 *
+	 * @return the file mode of the current entry.
+	 */
 	public FileMode getEntryFileMode() {
 		return FileMode.fromBits(mode);
 	}
 
-	/** @return the file mode of the current entry as bits */
+	/**
+	 * Get the file mode of the current entry as bits.
+	 *
+	 * @return the file mode of the current entry as bits.
+	 */
 	public int getEntryRawMode() {
 		return mode;
 	}
 
-	/** @return path of the current entry, as a string. */
+	/**
+	 * Get path of the current entry, as a string.
+	 *
+	 * @return path of the current entry, as a string.
+	 */
 	public String getEntryPathString() {
 		return TreeWalk.pathOf(this);
 	}
@@ -445,7 +457,11 @@ public abstract class AbstractTreeIterator {
 		return path;
 	}
 
-	/** @return length of the path in {@link #getEntryPathBuffer()}. */
+	/**
+	 * Get length of the path in {@link #getEntryPathBuffer()}.
+	 *
+	 * @return length of the path in {@link #getEntryPathBuffer()}.
+	 */
 	public int getEntryPathLength() {
 		return pathLen;
 	}
@@ -500,10 +516,10 @@ public abstract class AbstractTreeIterator {
 	 * @param reader
 	 *            reader to load the tree data from.
 	 * @return a new parser that walks over the current subtree.
-	 * @throws IncorrectObjectTypeException
+	 * @throws org.eclipse.jgit.errors.IncorrectObjectTypeException
 	 *             the current entry is not actually a tree and cannot be parsed
 	 *             as though it were a tree.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             a loose object or pack file could not be read.
 	 */
 	public abstract AbstractTreeIterator createSubtreeIterator(
@@ -531,10 +547,10 @@ public abstract class AbstractTreeIterator {
 	 * @param idBuffer
 	 *            temporary ObjectId buffer for use by this method.
 	 * @return a new parser that walks over the current subtree.
-	 * @throws IncorrectObjectTypeException
+	 * @throws org.eclipse.jgit.errors.IncorrectObjectTypeException
 	 *             the current entry is not actually a tree and cannot be parsed
 	 *             as though it were a tree.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             a loose object or pack file could not be read.
 	 */
 	public AbstractTreeIterator createSubtreeIterator(
@@ -551,7 +567,7 @@ public abstract class AbstractTreeIterator {
 	 * method of repositioning the iterator to its first entry, so subclasses
 	 * are strongly encouraged to override the method.
 	 *
-	 * @throws CorruptObjectException
+	 * @throws org.eclipse.jgit.errors.CorruptObjectException
 	 *             the tree is invalid.
 	 */
 	public void reset() throws CorruptObjectException {
@@ -600,7 +616,7 @@ public abstract class AbstractTreeIterator {
 	 * @param delta
 	 *            number of entries to move the iterator by. Must be a positive,
 	 *            non-zero integer.
-	 * @throws CorruptObjectException
+	 * @throws org.eclipse.jgit.errors.CorruptObjectException
 	 *             the tree is invalid.
 	 */
 	public abstract void next(int delta) throws CorruptObjectException;
@@ -624,7 +640,7 @@ public abstract class AbstractTreeIterator {
 	 * @param delta
 	 *            number of entries to move the iterator by. Must be a positive,
 	 *            non-zero integer.
-	 * @throws CorruptObjectException
+	 * @throws org.eclipse.jgit.errors.CorruptObjectException
 	 *             the tree is invalid.
 	 */
 	public abstract void back(int delta) throws CorruptObjectException;
@@ -633,11 +649,12 @@ public abstract class AbstractTreeIterator {
 	 * Advance to the next tree entry, populating this iterator with its data.
 	 * <p>
 	 * This method behaves like <code>seek(1)</code> but is called by
-	 * {@link TreeWalk} only if a {@link TreeFilter} was used and ruled out the
-	 * current entry from the results. In such cases this tree iterator may
-	 * perform special behavior.
+	 * {@link org.eclipse.jgit.treewalk.TreeWalk} only if a
+	 * {@link org.eclipse.jgit.treewalk.filter.TreeFilter} was used and ruled
+	 * out the current entry from the results. In such cases this tree iterator
+	 * may perform special behavior.
 	 *
-	 * @throws CorruptObjectException
+	 * @throws org.eclipse.jgit.errors.CorruptObjectException
 	 *             the tree is invalid.
 	 */
 	public void skip() throws CorruptObjectException {
@@ -656,14 +673,28 @@ public abstract class AbstractTreeIterator {
 	}
 
 	/**
-	 * @return the length of the name component of the path for the current entry
+	 * Whether the iterator implements {@link #stopWalk()}.
+	 *
+	 * @return {@code true} if the iterator implements {@link #stopWalk()}.
+	 * @since 4.2
+	 */
+	protected boolean needsStopWalk() {
+		return false;
+	}
+
+	/**
+	 * Get the length of the name component of the path for the current entry.
+	 *
+	 * @return the length of the name component of the path for the current
+	 *         entry.
 	 */
 	public int getNameLength() {
 		return pathLen - pathOffset;
 	}
 
 	/**
-	 * JGit internal API for use by {@link DirCacheCheckout}
+	 * JGit internal API for use by
+	 * {@link org.eclipse.jgit.dircache.DirCacheCheckout}
 	 *
 	 * @return start of name component part within {@link #getEntryPathBuffer()}
 	 * @since 2.0
@@ -687,9 +718,21 @@ public abstract class AbstractTreeIterator {
 		System.arraycopy(path, pathOffset, buffer, offset, pathLen - pathOffset);
 	}
 
+	/** {@inheritDoc} */
 	@SuppressWarnings("nls")
 	@Override
 	public String toString() {
 		return getClass().getSimpleName() + "[" + getEntryPathString() + "]"; //$NON-NLS-1$
+	}
+
+	/**
+	 * Whether or not this Iterator is iterating through the working tree.
+	 *
+	 * @return whether or not this Iterator is iterating through the working
+	 *         tree
+	 * @since 4.3
+	 */
+	public boolean isWorkTree() {
+		return false;
 	}
 }

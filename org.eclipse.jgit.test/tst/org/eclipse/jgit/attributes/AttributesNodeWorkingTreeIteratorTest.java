@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2014, Obeo.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2014, Obeo. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 package org.eclipse.jgit.attributes;
 
@@ -56,7 +23,6 @@ import java.util.Collections;
 import java.util.List;
 
 import org.eclipse.jgit.attributes.Attribute.State;
-import org.eclipse.jgit.errors.CorruptObjectException;
 import org.eclipse.jgit.junit.JGitTestUtil;
 import org.eclipse.jgit.junit.RepositoryTestCase;
 import org.eclipse.jgit.lib.FileMode;
@@ -77,8 +43,6 @@ public class AttributesNodeWorkingTreeIteratorTest extends RepositoryTestCase {
 	private static Attribute EOL_LF = new Attribute("eol", "lf");
 
 	private static Attribute DELTA_UNSET = new Attribute("delta", State.UNSET);
-
-	private TreeWalk walk;
 
 	@Test
 	public void testRules() throws Exception {
@@ -103,24 +67,26 @@ public class AttributesNodeWorkingTreeIteratorTest extends RepositoryTestCase {
 		writeTrashFile("src/config/windows.file", "");
 		writeTrashFile("src/config/windows.txt", "");
 
-		walk = beginWalk();
+		try (TreeWalk walk = beginWalk()) {
+			assertIteration(walk, F, ".gitattributes");
+			assertIteration(walk, F, "global.txt", asList(EOL_LF));
+			assertIteration(walk, F, "readme.txt", asList(EOL_LF));
 
-		assertIteration(F, ".gitattributes");
-		assertIteration(F, "global.txt", asList(EOL_LF));
-		assertIteration(F, "readme.txt", asList(EOL_LF));
+			assertIteration(walk, D, "src");
 
-		assertIteration(D, "src");
+			assertIteration(walk, D, "src/config");
+			assertIteration(walk, F, "src/config/.gitattributes");
+			assertIteration(walk, F, "src/config/readme.txt",
+					asList(DELTA_UNSET));
+			assertIteration(walk, F, "src/config/windows.file", null);
+			assertIteration(walk, F, "src/config/windows.txt",
+					asList(DELTA_UNSET));
 
-		assertIteration(D, "src/config");
-		assertIteration(F, "src/config/.gitattributes");
-		assertIteration(F, "src/config/readme.txt", asList(DELTA_UNSET));
-		assertIteration(F, "src/config/windows.file", null);
-		assertIteration(F, "src/config/windows.txt", asList(DELTA_UNSET));
+			assertIteration(walk, F, "windows.file", null);
+			assertIteration(walk, F, "windows.txt", asList(EOL_LF));
 
-		assertIteration(F, "windows.file", null);
-		assertIteration(F, "windows.txt", asList(EOL_LF));
-
-		endWalk();
+			assertFalse("Not all files tested", walk.next());
+		}
 	}
 
 	/**
@@ -135,17 +101,17 @@ public class AttributesNodeWorkingTreeIteratorTest extends RepositoryTestCase {
 		writeTrashFile("level1/l1.txt", "");
 		writeTrashFile("level1/level2/l2.txt", "");
 
-		walk = beginWalk();
+		try (TreeWalk walk = beginWalk()) {
+			assertIteration(walk, F, "l0.txt");
 
-		assertIteration(F, "l0.txt");
+			assertIteration(walk, D, "level1");
+			assertIteration(walk, F, "level1/l1.txt");
 
-		assertIteration(D, "level1");
-		assertIteration(F, "level1/l1.txt");
+			assertIteration(walk, D, "level1/level2");
+			assertIteration(walk, F, "level1/level2/l2.txt");
 
-		assertIteration(D, "level1/level2");
-		assertIteration(F, "level1/level2/l2.txt");
-
-		endWalk();
+			assertFalse("Not all files tested", walk.next());
+		}
 	}
 
 	/**
@@ -161,18 +127,18 @@ public class AttributesNodeWorkingTreeIteratorTest extends RepositoryTestCase {
 		writeTrashFile("level1/l1.txt", "");
 		writeTrashFile("level1/level2/l2.txt", "");
 
-		walk = beginWalk();
+		try (TreeWalk walk = beginWalk()) {
+			assertIteration(walk, F, ".gitattributes");
+			assertIteration(walk, F, "l0.txt");
 
-		assertIteration(F, ".gitattributes");
-		assertIteration(F, "l0.txt");
+			assertIteration(walk, D, "level1");
+			assertIteration(walk, F, "level1/l1.txt");
 
-		assertIteration(D, "level1");
-		assertIteration(F, "level1/l1.txt");
+			assertIteration(walk, D, "level1/level2");
+			assertIteration(walk, F, "level1/level2/l2.txt");
 
-		assertIteration(D, "level1/level2");
-		assertIteration(F, "level1/level2/l2.txt");
-
-		endWalk();
+			assertFalse("Not all files tested", walk.next());
+		}
 	}
 
 	@Test
@@ -184,26 +150,27 @@ public class AttributesNodeWorkingTreeIteratorTest extends RepositoryTestCase {
 
 		writeTrashFile("levelA/lA.txt", "");
 
-		walk = beginWalk();
+		try (TreeWalk walk = beginWalk()) {
+			assertIteration(walk, F, ".gitattributes");
 
-		assertIteration(F, ".gitattributes");
+			assertIteration(walk, D, "levelA");
+			assertIteration(walk, F, "levelA/.gitattributes");
+			assertIteration(walk, F, "levelA/lA.txt");
 
-		assertIteration(D, "levelA");
-		assertIteration(F, "levelA/.gitattributes");
-		assertIteration(F, "levelA/lA.txt");
+			assertIteration(walk, D, "levelB");
+			assertIteration(walk, F, "levelB/.gitattributes");
 
-		assertIteration(D, "levelB");
-		assertIteration(F, "levelB/.gitattributes");
-
-		endWalk();
+			assertFalse("Not all files tested", walk.next());
+		}
 	}
 
-	private void assertIteration(FileMode type, String pathName)
+	private void assertIteration(TreeWalk walk, FileMode type, String pathName)
 			throws IOException {
-		assertIteration(type, pathName, Collections.<Attribute> emptyList());
+		assertIteration(walk, type, pathName,
+				Collections.<Attribute> emptyList());
 	}
 
-	private void assertIteration(FileMode type, String pathName,
+	private void assertIteration(TreeWalk walk, FileMode type, String pathName,
 			List<Attribute> nodeAttrs)
 			throws IOException {
 		assertTrue("walk has entry", walk.next());
@@ -213,21 +180,23 @@ public class AttributesNodeWorkingTreeIteratorTest extends RepositoryTestCase {
 		assertNotNull("has tree", itr);
 
 		AttributesNode attributesNode = itr.getEntryAttributesNode();
-		assertAttributesNode(pathName, attributesNode, nodeAttrs);
+		assertAttributesNode(walk, pathName, attributesNode, nodeAttrs);
 		if (D.equals(type))
 			walk.enterSubtree();
 
 	}
 
-	private void assertAttributesNode(String pathName,
-			AttributesNode attributesNode, List<Attribute> nodeAttrs) {
+	private void assertAttributesNode(TreeWalk walk, String pathName,
+			AttributesNode attributesNode, List<Attribute> nodeAttrs)
+					throws IOException {
 		if (attributesNode == null)
 			assertTrue(nodeAttrs == null || nodeAttrs.isEmpty());
 		else {
 
 			Attributes entryAttributes = new Attributes();
-			attributesNode.getAttributes(pathName,
-					false, entryAttributes);
+			new AttributesHandler(walk).mergeAttributes(attributesNode,
+					pathName, false,
+					entryAttributes);
 
 			if (nodeAttrs != null && !nodeAttrs.isEmpty()) {
 				for (Attribute attribute : nodeAttrs) {
@@ -253,13 +222,9 @@ public class AttributesNodeWorkingTreeIteratorTest extends RepositoryTestCase {
 		writeTrashFile(name, data.toString());
 	}
 
-	private TreeWalk beginWalk() throws CorruptObjectException {
+	private TreeWalk beginWalk() {
 		TreeWalk newWalk = new TreeWalk(db);
 		newWalk.addTree(new FileTreeIterator(db));
 		return newWalk;
-	}
-
-	private void endWalk() throws IOException {
-		assertFalse("Not all files tested", walk.next());
 	}
 }

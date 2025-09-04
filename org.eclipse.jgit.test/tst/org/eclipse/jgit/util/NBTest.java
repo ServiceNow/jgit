@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2008, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, 2015 Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.util;
@@ -61,6 +28,17 @@ public class NBTest {
 	}
 
 	@Test
+	public void testCompareUInt64() {
+		assertTrue(NB.compareUInt64(0, 0) == 0);
+		assertTrue(NB.compareUInt64(1, 0) > 0);
+		assertTrue(NB.compareUInt64(0, 1) < 0);
+		assertTrue(NB.compareUInt64(-1, 0) > 0);
+		assertTrue(NB.compareUInt64(0, -1) < 0);
+		assertTrue(NB.compareUInt64(-1, 1) > 0);
+		assertTrue(NB.compareUInt64(1, -1) < 0);
+	}
+
+	@Test
 	public void testDecodeUInt16() {
 		assertEquals(0, NB.decodeUInt16(b(0, 0), 0));
 		assertEquals(0, NB.decodeUInt16(padb(3, 0, 0), 3));
@@ -76,6 +54,24 @@ public class NBTest {
 
 		assertEquals(0xffff, NB.decodeUInt16(b(0xff, 0xff), 0));
 		assertEquals(0xffff, NB.decodeUInt16(padb(3, 0xff, 0xff), 3));
+	}
+
+	@Test
+	public void testDecodeUInt24() {
+		assertEquals(0, NB.decodeUInt24(b(0, 0, 0), 0));
+		assertEquals(0, NB.decodeUInt24(padb(3, 0, 0, 0), 3));
+
+		assertEquals(3, NB.decodeUInt24(b(0, 0, 3), 0));
+		assertEquals(3, NB.decodeUInt24(padb(3, 0, 0, 3), 3));
+
+		assertEquals(0xcede03, NB.decodeUInt24(b(0xce, 0xde, 3), 0));
+		assertEquals(0xbade03, NB.decodeUInt24(padb(3, 0xba, 0xde, 3), 3));
+
+		assertEquals(0x03bade, NB.decodeUInt24(b(3, 0xba, 0xde), 0));
+		assertEquals(0x03bade, NB.decodeUInt24(padb(3, 3, 0xba, 0xde), 3));
+
+		assertEquals(0xffffff, NB.decodeUInt24(b(0xff, 0xff, 0xff), 0));
+		assertEquals(0xffffff, NB.decodeUInt24(padb(3, 0xff, 0xff, 0xff), 3));
 	}
 
 	@Test
@@ -187,6 +183,39 @@ public class NBTest {
 	}
 
 	@Test
+	public void testEncodeInt24() {
+		byte[] out = new byte[16];
+
+		prepareOutput(out);
+		NB.encodeInt24(out, 0, 0);
+		assertOutput(b(0, 0, 0), out, 0);
+
+		prepareOutput(out);
+		NB.encodeInt24(out, 3, 0);
+		assertOutput(b(0, 0, 0), out, 3);
+
+		prepareOutput(out);
+		NB.encodeInt24(out, 0, 3);
+		assertOutput(b(0, 0, 3), out, 0);
+
+		prepareOutput(out);
+		NB.encodeInt24(out, 3, 3);
+		assertOutput(b(0, 0, 3), out, 3);
+
+		prepareOutput(out);
+		NB.encodeInt24(out, 0, 0xc0deac);
+		assertOutput(b(0xc0, 0xde, 0xac), out, 0);
+
+		prepareOutput(out);
+		NB.encodeInt24(out, 3, 0xbadeac);
+		assertOutput(b(0xba, 0xde, 0xac), out, 3);
+
+		prepareOutput(out);
+		NB.encodeInt24(out, 3, -1);
+		assertOutput(b(0xff, 0xff, 0xff), out, 3);
+	}
+
+	@Test
 	public void testEncodeInt32() {
 		final byte[] out = new byte[16];
 
@@ -276,7 +305,7 @@ public class NBTest {
 		assertOutput(b(0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff), out, 3);
 	}
 
-	private static void prepareOutput(final byte[] buf) {
+	private static void prepareOutput(byte[] buf) {
 		for (int i = 0; i < buf.length; i++)
 			buf[i] = (byte) (0x77 + i);
 	}
@@ -291,11 +320,11 @@ public class NBTest {
 			assertEquals((byte) (0x77 + i), buf[i]);
 	}
 
-	private static byte[] b(final int a, final int b) {
+	private static byte[] b(int a, int b) {
 		return new byte[] { (byte) a, (byte) b };
 	}
 
-	private static byte[] padb(final int len, final int a, final int b) {
+	private static byte[] padb(int len, int a, int b) {
 		final byte[] r = new byte[len + 2];
 		for (int i = 0; i < len; i++)
 			r[i] = (byte) 0xaf;
@@ -304,8 +333,22 @@ public class NBTest {
 		return r;
 	}
 
-	private static byte[] b(final int a, final int b, final int c, final int d) {
+	private static byte[] b(int a, int b, int c) {
+		return new byte[] { (byte) a, (byte) b, (byte) c };
+	}
+
+	private static byte[] b(int a, int b, int c, int d) {
 		return new byte[] { (byte) a, (byte) b, (byte) c, (byte) d };
+	}
+
+	private static byte[] padb(int len, int a, int b, int c) {
+		final byte[] r = new byte[len + 4];
+		for (int i = 0; i < len; i++)
+			r[i] = (byte) 0xaf;
+		r[len] = (byte) a;
+		r[len + 1] = (byte) b;
+		r[len + 2] = (byte) c;
+		return r;
 	}
 
 	private static byte[] padb(final int len, final int a, final int b,

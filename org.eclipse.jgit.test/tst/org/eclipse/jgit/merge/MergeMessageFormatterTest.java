@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2010, Robin Stocker <robin@nibor.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, Robin Stocker <robin@nibor.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 package org.eclipse.jgit.merge;
 
@@ -46,13 +13,14 @@ import static org.junit.Assert.assertEquals;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.List;
 
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectIdRef;
 import org.eclipse.jgit.lib.Ref;
-import org.eclipse.jgit.lib.SymbolicRef;
 import org.eclipse.jgit.lib.Ref.Storage;
 import org.eclipse.jgit.lib.RefUpdate;
+import org.eclipse.jgit.lib.SymbolicRef;
 import org.eclipse.jgit.test.resources.SampleDataRepositoryTestCase;
 import org.junit.Before;
 import org.junit.Test;
@@ -190,8 +158,8 @@ public class MergeMessageFormatterTest extends SampleDataRepositoryTestCase {
 	public void testFormatWithConflictsNoFooter() {
 		String originalMessage = "Header Line\n\nCommit body\n";
 		String message = formatter.formatWithConflicts(originalMessage,
-				Arrays.asList(new String[] { "path1" }));
-		assertEquals("Header Line\n\nCommit body\n\nConflicts:\n\tpath1\n",
+				List.of("path1"), '#');
+		assertEquals("Header Line\n\nCommit body\n\n# Conflicts:\n#\tpath1\n",
 				message);
 	}
 
@@ -199,8 +167,17 @@ public class MergeMessageFormatterTest extends SampleDataRepositoryTestCase {
 	public void testFormatWithConflictsNoFooterNoLineBreak() {
 		String originalMessage = "Header Line\n\nCommit body";
 		String message = formatter.formatWithConflicts(originalMessage,
-				Arrays.asList(new String[] { "path1" }));
-		assertEquals("Header Line\n\nCommit body\n\nConflicts:\n\tpath1\n",
+				List.of("path1"), '#');
+		assertEquals("Header Line\n\nCommit body\n\n# Conflicts:\n#\tpath1\n",
+				message);
+	}
+
+	@Test
+	public void testFormatWithConflictsCustomCharacter() {
+		String originalMessage = "Header Line\n\nCommit body";
+		String message = formatter.formatWithConflicts(originalMessage,
+				List.of("path1"), ';');
+		assertEquals("Header Line\n\nCommit body\n\n; Conflicts:\n;\tpath1\n",
 				message);
 	}
 
@@ -209,9 +186,9 @@ public class MergeMessageFormatterTest extends SampleDataRepositoryTestCase {
 		String originalMessage = "Header Line\n\nCommit body\n\nChangeId:"
 				+ " I123456789123456789123456789123456789\nBug:1234567\n";
 		String message = formatter.formatWithConflicts(originalMessage,
-				Arrays.asList(new String[] { "path1" }));
+				List.of("path1"), '#');
 		assertEquals(
-				"Header Line\n\nCommit body\n\nConflicts:\n\tpath1\n\n"
+				"Header Line\n\nCommit body\n\n# Conflicts:\n#\tpath1\n\n"
 						+ "ChangeId: I123456789123456789123456789123456789\nBug:1234567\n",
 				message);
 	}
@@ -221,9 +198,9 @@ public class MergeMessageFormatterTest extends SampleDataRepositoryTestCase {
 		String originalMessage = "Header Line\n\nCommit body\nBug:1234567\nMore Body\n\nChangeId:"
 				+ " I123456789123456789123456789123456789\nBug:1234567\n";
 		String message = formatter.formatWithConflicts(originalMessage,
-				Arrays.asList(new String[] { "path1" }));
+				List.of("path1"), '#');
 		assertEquals(
-				"Header Line\n\nCommit body\nBug:1234567\nMore Body\n\nConflicts:\n\tpath1\n\n"
+				"Header Line\n\nCommit body\nBug:1234567\nMore Body\n\n# Conflicts:\n#\tpath1\n\n"
 						+ "ChangeId: I123456789123456789123456789123456789\nBug:1234567\n",
 				message);
 	}

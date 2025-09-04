@@ -1,46 +1,12 @@
 /*
- * Copyright (C) 2010, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, 2021 Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
-
 package org.eclipse.jgit.junit.http;
 
 import java.text.MessageFormat;
@@ -48,23 +14,32 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import org.eclipse.jetty.util.log.Logger;
+import org.slf4j.helpers.MarkerIgnoringBase;
 
-/** Logs warnings into an array for later inspection. */
-public class RecordingLogger implements Logger {
-	private static List<Warning> warnings = new ArrayList<Warning>();
+public class RecordingLogger extends MarkerIgnoringBase {
 
-	/** Clear the warnings, automatically done by {@link AppServer#setUp()} */
+	private static final long serialVersionUID = 1L;
+
+	private static List<Warning> warnings = new ArrayList<>();
+
+	/**
+	 * Clear the warnings, automatically done by
+	 * {@link org.eclipse.jgit.junit.http.AppServer#setUp()}
+	 */
 	public static void clear() {
 		synchronized (warnings) {
 			warnings.clear();
 		}
 	}
 
-	/** @return the warnings (if any) from the last execution */
+	/**
+	 * Get the <code>warnings</code>.
+	 *
+	 * @return the warnings (if any) from the last execution
+	 */
 	public static List<Warning> getWarnings() {
 		synchronized (warnings) {
-			ArrayList<Warning> copy = new ArrayList<Warning>(warnings);
+			ArrayList<Warning> copy = new ArrayList<>(warnings);
 			return Collections.unmodifiableList(copy);
 		}
 	}
@@ -84,112 +59,186 @@ public class RecordingLogger implements Logger {
 		}
 	}
 
-	private final String name;
-
+	/**
+	 * Constructor for <code>RecordingLogger</code>.
+	 */
 	public RecordingLogger() {
 		this("");
 	}
 
-	public RecordingLogger(final String name) {
+	/**
+	 * Constructor for <code>RecordingLogger</code>.
+	 *
+	 * @param name
+	 */
+	public RecordingLogger(String name) {
 		this.name = name;
 	}
 
-	public Logger getLogger(@SuppressWarnings("hiding") String name) {
-		return new RecordingLogger(name);
+	@Override
+	public boolean isTraceEnabled() {
+		// Ignore (not relevant to test failures)
+		return false;
 	}
 
-	public String getName() {
-		return name;
+	@Override
+	public void trace(String msg) {
+		// Ignore (not relevant to test failures)
 	}
 
-	public void warn(String msg, Object arg0, Object arg1) {
-		synchronized (warnings) {
-			warnings.add(new Warning(MessageFormat.format(msg, arg0, arg1)));
-		}
+	@Override
+	public void trace(String format, Object arg) {
+		// Ignore (not relevant to test failures)
 	}
 
-	public void warn(String msg, Throwable th) {
-		synchronized (warnings) {
-			warnings.add(new Warning(msg, th));
-		}
+	@Override
+	public void trace(String format, Object arg1, Object arg2) {
+		// Ignore (not relevant to test failures)
 	}
 
+	@Override
+	public void trace(String format, Object... arguments) {
+		// Ignore (not relevant to test failures)
+	}
+
+	@Override
+	public void trace(String msg, Throwable t) {
+		// Ignore (not relevant to test failures)
+	}
+
+	@Override
+	public boolean isDebugEnabled() {
+		return false;
+	}
+
+	@Override
+	public void debug(String msg) {
+		// Ignore (not relevant to test failures)
+	}
+
+	@Override
+	public void debug(String format, Object arg) {
+		// Ignore (not relevant to test failures)
+	}
+
+	@Override
+	public void debug(String format, Object arg1, Object arg2) {
+		// Ignore (not relevant to test failures)
+	}
+
+	@Override
+	public void debug(String format, Object... arguments) {
+		// Ignore (not relevant to test failures)
+	}
+
+	@Override
+	public void debug(String msg, Throwable t) {
+		// Ignore (not relevant to test failures)
+	}
+
+	@Override
+	public boolean isInfoEnabled() {
+		return false;
+	}
+
+	@Override
+	public void info(String msg) {
+		// Ignore (not relevant to test failures)
+	}
+
+	@Override
+	public void info(String format, Object arg) {
+		// Ignore (not relevant to test failures)
+	}
+
+	@Override
+	public void info(String format, Object arg1, Object arg2) {
+		// Ignore (not relevant to test failures)
+	}
+
+	@Override
+	public void info(String format, Object... arguments) {
+		// Ignore (not relevant to test failures)
+	}
+
+	@Override
+	public void info(String msg, Throwable t) {
+		// Ignore (not relevant to test failures)
+	}
+
+	@Override
+	public boolean isWarnEnabled() {
+		return true;
+	}
+
+	@Override
 	public void warn(String msg) {
 		synchronized (warnings) {
 			warnings.add(new Warning(msg));
 		}
 	}
 
-	public void debug(@SuppressWarnings("unused") String msg,
-			          @SuppressWarnings("unused") Object arg0,
-			          @SuppressWarnings("unused") Object arg1) {
-		// Ignore (not relevant to test failures)
+	@Override
+	public void warn(String format, Object arg) {
+		addWarnings(format, Collections.singleton(arg));
 	}
 
-	public void debug(String msg, Throwable th) {
-		// Ignore (not relevant to test failures)
+	@Override
+	public void warn(String format, Object... arguments) {
+		addWarnings(format, arguments);
 	}
 
-	public void debug(@SuppressWarnings("unused") String msg) {
-		// Ignore (not relevant to test failures)
+	private void addWarnings(String format, Object... arguments) {
+		synchronized (warnings) {
+			int i = 0;
+			int index = format.indexOf("{}");
+			while (index >= 0) {
+				format = format.replaceFirst("\\{\\}", "{" + i++ + "}");
+				index = format.indexOf("{}");
+			}
+			warnings.add(new Warning(MessageFormat.format(format, arguments)));
+		}
 	}
 
-	public void info(@SuppressWarnings("unused") String msg,
-			         @SuppressWarnings("unused") Object arg0,
-			         @SuppressWarnings("unused") Object arg1) {
-		// Ignore (not relevant to test failures)
+	@Override
+	public void warn(String format, Object arg1, Object arg2) {
+		warn(format, new Object[] { arg1, arg2 });
 	}
 
-	public void info(@SuppressWarnings("unused") String msg) {
-		// Ignore (not relevant to test failures)
+	@Override
+	public void warn(String msg, Throwable t) {
+		synchronized (warnings) {
+			warnings.add(new Warning(msg, t));
+		}
 	}
 
-	public boolean isDebugEnabled() {
+	@Override
+	public boolean isErrorEnabled() {
 		return false;
 	}
 
-	public void setDebugEnabled(boolean enabled) {
-		// Ignore (not relevant to test failures)
-	}
-
-	public void warn(String msg, Object... args) {
-		synchronized (warnings) {
-			warnings.add(new Warning(MessageFormat.format(msg, args)));
-		}
-	}
-
-	public void warn(Throwable thrown) {
-		synchronized (warnings) {
-			warnings.add(new Warning(thrown));
-		}
-	}
-
-	public void info(String msg, Object... args) {
-		// Ignore (not relevant to test failures)
-	}
-
-	public void info(Throwable thrown) {
-		// Ignore (not relevant to test failures)
-	}
-
-	public void info(String msg, Throwable thrown) {
-		// Ignore (not relevant to test failures)
-	}
-
-	public void debug(String msg, Object... args) {
-		// Ignore (not relevant to test failures)
-	}
-
-	public void debug(Throwable thrown) {
-		// Ignore (not relevant to test failures)
-	}
-
-	public void ignore(Throwable arg0) {
+	@Override
+	public void error(String msg) {
 		// Ignore (not relevant to test failures)
 	}
 
 	@Override
-	public void debug(String msg, long value) {
+	public void error(String format, Object arg) {
+		// Ignore (not relevant to test failures)
+	}
+
+	@Override
+	public void error(String format, Object arg1, Object arg2) {
+		// Ignore (not relevant to test failures)
+	}
+
+	@Override
+	public void error(String format, Object... arguments) {
+		// Ignore (not relevant to test failures)
+	}
+
+	@Override
+	public void error(String msg, Throwable t) {
 		// Ignore (not relevant to test failures)
 	}
 }

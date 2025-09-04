@@ -1,56 +1,23 @@
 /*
- * Copyright (C) 2008-2009, Google Inc.
+ * Copyright (C) 2008, 2009 Google Inc.
  * Copyright (C) 2008, Marek Zawirski <marek.zawirski@gmail.com>
  * Copyright (C) 2008, Robin Rosenberg <robin.rosenberg@dewire.com>
- * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, 2022 Shawn O. Pearce <spearce@spearce.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.transport;
 
-import static org.eclipse.jgit.lib.RefDatabase.ALL;
+import static java.nio.charset.StandardCharsets.UTF_8;
+import static java.util.Objects.requireNonNull;
 
 import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.PrintStream;
@@ -60,26 +27,28 @@ import java.lang.reflect.Modifier;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.text.MessageFormat;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Enumeration;
-import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Vector;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-import org.eclipse.jgit.api.errors.AbortedByHookException;
+import org.eclipse.jgit.annotations.NonNull;
+import org.eclipse.jgit.annotations.Nullable;
 import org.eclipse.jgit.errors.NotSupportedException;
 import org.eclipse.jgit.errors.TransportException;
 import org.eclipse.jgit.hooks.Hooks;
 import org.eclipse.jgit.hooks.PrePushHook;
 import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.lib.Constants;
-import org.eclipse.jgit.lib.NullProgressMonitor;
 import org.eclipse.jgit.lib.ObjectChecker;
+import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ProgressMonitor;
 import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.lib.Repository;
@@ -98,7 +67,7 @@ import org.eclipse.jgit.storage.pack.PackConfig;
  * Transport instances and the connections they create are not thread-safe.
  * Callers must ensure a transport is accessed by only one thread at a time.
  */
-public abstract class Transport {
+public abstract class Transport implements AutoCloseable {
 	/** Type of operation a Transport is being opened for. */
 	public enum Operation {
 		/** Transport is to fetch objects locally. */
@@ -108,7 +77,7 @@ public abstract class Transport {
 	}
 
 	private static final List<WeakReference<TransportProtocol>> protocols =
-		new CopyOnWriteArrayList<WeakReference<TransportProtocol>>();
+		new CopyOnWriteArrayList<>();
 
 	static {
 		// Registration goes backwards in order of priority.
@@ -144,17 +113,8 @@ public abstract class Transport {
 	}
 
 	private static void scan(ClassLoader ldr, URL url) {
-		BufferedReader br;
-		try {
-			InputStream urlIn = url.openStream();
-			br = new BufferedReader(new InputStreamReader(urlIn, "UTF-8")); //$NON-NLS-1$
-		} catch (IOException err) {
-			// If we cannot read from the service list, go to the next.
-			//
-			return;
-		}
-
-		try {
+		try (BufferedReader br = new BufferedReader(
+				new InputStreamReader(url.openStream(), UTF_8))) {
 			String line;
 			while ((line = br.readLine()) != null) {
 				line = line.trim();
@@ -167,15 +127,8 @@ public abstract class Transport {
 					line = line.substring(0, comment).trim();
 				load(ldr, line);
 			}
-		} catch (IOException err) {
-			// If we failed during a read, ignore the error.
-			//
-		} finally {
-			try {
-				br.close();
-			} catch (IOException e) {
-				// Ignore the close error; we are only reading.
-			}
+		} catch (IOException e) {
+			// Ignore errors
 		}
 	}
 
@@ -195,10 +148,7 @@ public abstract class Transport {
 				TransportProtocol proto;
 				try {
 					proto = (TransportProtocol) f.get(null);
-				} catch (IllegalArgumentException e) {
-					// If we cannot access the field, don't.
-					continue;
-				} catch (IllegalAccessException e) {
+				} catch (IllegalArgumentException | IllegalAccessException e) {
 					// If we cannot access the field, don't.
 					continue;
 				}
@@ -214,7 +164,8 @@ public abstract class Transport {
 	 * Protocol definitions are held by WeakReference, allowing them to be
 	 * garbage collected when the calling application drops all strongly held
 	 * references to the TransportProtocol. Therefore applications should use a
-	 * singleton pattern as described in {@link TransportProtocol}'s class
+	 * singleton pattern as described in
+	 * {@link org.eclipse.jgit.transport.TransportProtocol}'s class
 	 * documentation to ensure their protocol does not get disabled by garbage
 	 * collection earlier than expected.
 	 * <p>
@@ -225,7 +176,7 @@ public abstract class Transport {
 	 *            the protocol definition. Must not be null.
 	 */
 	public static void register(TransportProtocol proto) {
-		protocols.add(0, new WeakReference<TransportProtocol>(proto));
+		protocols.add(0, new WeakReference<>(proto));
 	}
 
 	/**
@@ -255,7 +206,7 @@ public abstract class Transport {
 	 */
 	public static List<TransportProtocol> getTransportProtocols() {
 		int cnt = protocols.size();
-		List<TransportProtocol> res = new ArrayList<TransportProtocol>(cnt);
+		List<TransportProtocol> res = new ArrayList<>(cnt);
 		for (WeakReference<TransportProtocol> ref : protocols) {
 			TransportProtocol proto = ref.get();
 			if (proto != null)
@@ -269,7 +220,8 @@ public abstract class Transport {
 	/**
 	 * Open a new transport instance to connect two repositories.
 	 * <p>
-	 * This method assumes {@link Operation#FETCH}.
+	 * This method assumes
+	 * {@link org.eclipse.jgit.transport.Transport.Operation#FETCH}.
 	 *
 	 * @param local
 	 *            existing local repository.
@@ -278,15 +230,15 @@ public abstract class Transport {
 	 *            configuration name.
 	 * @return the new transport instance. Never null. In case of multiple URIs
 	 *         in remote configuration, only the first is chosen.
-	 * @throws URISyntaxException
+	 * @throws java.net.URISyntaxException
 	 *             the location is not a remote defined in the configuration
 	 *             file and is not a well-formed URL.
-	 * @throws NotSupportedException
+	 * @throws org.eclipse.jgit.errors.NotSupportedException
 	 *             the protocol specified is not supported.
-	 * @throws TransportException
+	 * @throws org.eclipse.jgit.errors.TransportException
 	 *             the transport cannot open this URI.
 	 */
-	public static Transport open(final Repository local, final String remote)
+	public static Transport open(Repository local, String remote)
 			throws NotSupportedException, URISyntaxException,
 			TransportException {
 		return open(local, remote, Operation.FETCH);
@@ -305,12 +257,12 @@ public abstract class Transport {
 	 *            based on the type of connection desired.
 	 * @return the new transport instance. Never null. In case of multiple URIs
 	 *         in remote configuration, only the first is chosen.
-	 * @throws URISyntaxException
+	 * @throws java.net.URISyntaxException
 	 *             the location is not a remote defined in the configuration
 	 *             file and is not a well-formed URL.
-	 * @throws NotSupportedException
+	 * @throws org.eclipse.jgit.errors.NotSupportedException
 	 *             the protocol specified is not supported.
-	 * @throws TransportException
+	 * @throws org.eclipse.jgit.errors.TransportException
 	 *             the transport cannot open this URI.
 	 */
 	public static Transport open(final Repository local, final String remote,
@@ -318,18 +270,20 @@ public abstract class Transport {
 			URISyntaxException, TransportException {
 		if (local != null) {
 			final RemoteConfig cfg = new RemoteConfig(local.getConfig(), remote);
-			if (doesNotExist(cfg))
+			if (doesNotExist(cfg)) {
 				return open(local, new URIish(remote), null);
+			}
 			return open(local, cfg, op);
-		} else
-			return open(new URIish(remote));
+		}
+		return open(new URIish(remote));
 
 	}
 
 	/**
 	 * Open new transport instances to connect two repositories.
 	 * <p>
-	 * This method assumes {@link Operation#FETCH}.
+	 * This method assumes
+	 * {@link org.eclipse.jgit.transport.Transport.Operation#FETCH}.
 	 *
 	 * @param local
 	 *            existing local repository.
@@ -338,12 +292,12 @@ public abstract class Transport {
 	 *            configuration name.
 	 * @return the list of new transport instances for every URI in remote
 	 *         configuration.
-	 * @throws URISyntaxException
+	 * @throws java.net.URISyntaxException
 	 *             the location is not a remote defined in the configuration
 	 *             file and is not a well-formed URL.
-	 * @throws NotSupportedException
+	 * @throws org.eclipse.jgit.errors.NotSupportedException
 	 *             the protocol specified is not supported.
-	 * @throws TransportException
+	 * @throws org.eclipse.jgit.errors.TransportException
 	 *             the transport cannot open this URI.
 	 */
 	public static List<Transport> openAll(final Repository local,
@@ -365,12 +319,12 @@ public abstract class Transport {
 	 *            based on the type of connection desired.
 	 * @return the list of new transport instances for every URI in remote
 	 *         configuration.
-	 * @throws URISyntaxException
+	 * @throws java.net.URISyntaxException
 	 *             the location is not a remote defined in the configuration
 	 *             file and is not a well-formed URL.
-	 * @throws NotSupportedException
+	 * @throws org.eclipse.jgit.errors.NotSupportedException
 	 *             the protocol specified is not supported.
-	 * @throws TransportException
+	 * @throws org.eclipse.jgit.errors.TransportException
 	 *             the transport cannot open this URI.
 	 */
 	public static List<Transport> openAll(final Repository local,
@@ -379,7 +333,7 @@ public abstract class Transport {
 			TransportException {
 		final RemoteConfig cfg = new RemoteConfig(local.getConfig(), remote);
 		if (doesNotExist(cfg)) {
-			final ArrayList<Transport> transports = new ArrayList<Transport>(1);
+			final ArrayList<Transport> transports = new ArrayList<>(1);
 			transports.add(open(local, new URIish(remote), null));
 			return transports;
 		}
@@ -389,7 +343,8 @@ public abstract class Transport {
 	/**
 	 * Open a new transport instance to connect two repositories.
 	 * <p>
-	 * This method assumes {@link Operation#FETCH}.
+	 * This method assumes
+	 * {@link org.eclipse.jgit.transport.Transport.Operation#FETCH}.
 	 *
 	 * @param local
 	 *            existing local repository.
@@ -398,15 +353,15 @@ public abstract class Transport {
 	 *            repository.
 	 * @return the new transport instance. Never null. In case of multiple URIs
 	 *         in remote configuration, only the first is chosen.
-	 * @throws NotSupportedException
+	 * @throws org.eclipse.jgit.errors.NotSupportedException
 	 *             the protocol specified is not supported.
-	 * @throws TransportException
+	 * @throws org.eclipse.jgit.errors.TransportException
 	 *             the transport cannot open this URI.
-	 * @throws IllegalArgumentException
+	 * @throws java.lang.IllegalArgumentException
 	 *             if provided remote configuration doesn't have any URI
 	 *             associated.
 	 */
-	public static Transport open(final Repository local, final RemoteConfig cfg)
+	public static Transport open(Repository local, RemoteConfig cfg)
 			throws NotSupportedException, TransportException {
 		return open(local, cfg, Operation.FETCH);
 	}
@@ -424,11 +379,11 @@ public abstract class Transport {
 	 *            based on the type of connection desired.
 	 * @return the new transport instance. Never null. In case of multiple URIs
 	 *         in remote configuration, only the first is chosen.
-	 * @throws NotSupportedException
+	 * @throws org.eclipse.jgit.errors.NotSupportedException
 	 *             the protocol specified is not supported.
-	 * @throws TransportException
+	 * @throws org.eclipse.jgit.errors.TransportException
 	 *             the transport cannot open this URI.
-	 * @throws IllegalArgumentException
+	 * @throws java.lang.IllegalArgumentException
 	 *             if provided remote configuration doesn't have any URI
 	 *             associated.
 	 */
@@ -447,7 +402,8 @@ public abstract class Transport {
 	/**
 	 * Open new transport instances to connect two repositories.
 	 * <p>
-	 * This method assumes {@link Operation#FETCH}.
+	 * This method assumes
+	 * {@link org.eclipse.jgit.transport.Transport.Operation#FETCH}.
 	 *
 	 * @param local
 	 *            existing local repository.
@@ -456,9 +412,9 @@ public abstract class Transport {
 	 *            repository.
 	 * @return the list of new transport instances for every URI in remote
 	 *         configuration.
-	 * @throws NotSupportedException
+	 * @throws org.eclipse.jgit.errors.NotSupportedException
 	 *             the protocol specified is not supported.
-	 * @throws TransportException
+	 * @throws org.eclipse.jgit.errors.TransportException
 	 *             the transport cannot open this URI.
 	 */
 	public static List<Transport> openAll(final Repository local,
@@ -480,17 +436,17 @@ public abstract class Transport {
 	 *            based on the type of connection desired.
 	 * @return the list of new transport instances for every URI in remote
 	 *         configuration.
-	 * @throws NotSupportedException
+	 * @throws org.eclipse.jgit.errors.NotSupportedException
 	 *             the protocol specified is not supported.
-	 * @throws TransportException
+	 * @throws org.eclipse.jgit.errors.TransportException
 	 *             the transport cannot open this URI.
 	 */
 	public static List<Transport> openAll(final Repository local,
 			final RemoteConfig cfg, final Operation op)
 			throws NotSupportedException, TransportException {
 		final List<URIish> uris = getURIs(cfg, op);
-		final List<Transport> transports = new ArrayList<Transport>(uris.size());
-		for (final URIish uri : uris) {
+		final List<Transport> transports = new ArrayList<>(uris.size());
+		for (URIish uri : uris) {
 			final Transport tn = open(local, uri, cfg.getName());
 			tn.applyConfig(cfg);
 			transports.add(tn);
@@ -514,7 +470,7 @@ public abstract class Transport {
 		}
 	}
 
-	private static boolean doesNotExist(final RemoteConfig cfg) {
+	private static boolean doesNotExist(RemoteConfig cfg) {
 		return cfg.getURIs().isEmpty() && cfg.getPushURIs().isEmpty();
 	}
 
@@ -526,12 +482,12 @@ public abstract class Transport {
 	 * @param uri
 	 *            location of the remote repository.
 	 * @return the new transport instance. Never null.
-	 * @throws NotSupportedException
+	 * @throws org.eclipse.jgit.errors.NotSupportedException
 	 *             the protocol specified is not supported.
-	 * @throws TransportException
+	 * @throws org.eclipse.jgit.errors.TransportException
 	 *             the transport cannot open this URI.
 	 */
-	public static Transport open(final Repository local, final URIish uri)
+	public static Transport open(Repository local, URIish uri)
 			throws NotSupportedException, TransportException {
 		return open(local, uri, null);
 	}
@@ -547,9 +503,9 @@ public abstract class Transport {
 	 *            name of the remote, if the remote as configured in
 	 *            {@code local}; otherwise null.
 	 * @return the new transport instance. Never null.
-	 * @throws NotSupportedException
+	 * @throws org.eclipse.jgit.errors.NotSupportedException
 	 *             the protocol specified is not supported.
-	 * @throws TransportException
+	 * @throws org.eclipse.jgit.errors.TransportException
 	 *             the transport cannot open this URI.
 	 */
 	public static Transport open(Repository local, URIish uri, String remoteName)
@@ -563,9 +519,7 @@ public abstract class Transport {
 
 			if (proto.canHandle(uri, local, remoteName)) {
 				Transport tn = proto.open(uri, local, remoteName);
-				tn.prePush = Hooks.prePush(local, tn.hookOutRedirect);
-				tn.prePush.setRemoteLocation(uri.toString());
-				tn.prePush.setRemoteName(remoteName);
+				tn.remoteName = remoteName;
 				return tn;
 			}
 		}
@@ -579,10 +533,10 @@ public abstract class Transport {
 	 * Note that the resulting transport instance can not be used for fetching
 	 * or pushing, but only for reading remote refs.
 	 *
-	 * @param uri
+	 * @param uri a {@link org.eclipse.jgit.transport.URIish} object.
 	 * @return new Transport instance
-	 * @throws NotSupportedException
-	 * @throws TransportException
+	 * @throws org.eclipse.jgit.errors.NotSupportedException
+	 * @throws org.eclipse.jgit.errors.TransportException
 	 */
 	public static Transport open(URIish uri) throws NotSupportedException, TransportException {
 		for (WeakReference<TransportProtocol> ref : protocols) {
@@ -600,36 +554,47 @@ public abstract class Transport {
 	}
 
 	/**
-	 * Convert push remote refs update specification from {@link RefSpec} form
-	 * to {@link RemoteRefUpdate}. Conversion expands wildcards by matching
-	 * source part to local refs. expectedOldObjectId in RemoteRefUpdate is
-	 * always set as null. Tracking branch is configured if RefSpec destination
-	 * matches source of any fetch ref spec for this transport remote
-	 * configuration.
+	 * Convert push remote refs update specification from
+	 * {@link org.eclipse.jgit.transport.RefSpec} form to
+	 * {@link org.eclipse.jgit.transport.RemoteRefUpdate}. Conversion expands
+	 * wildcards by matching source part to local refs. expectedOldObjectId in
+	 * RemoteRefUpdate is set when specified in leases. Tracking branch is
+	 * configured if RefSpec destination matches source of any fetch ref spec
+	 * for this transport remote configuration.
 	 *
 	 * @param db
 	 *            local database.
 	 * @param specs
 	 *            collection of RefSpec to convert.
+	 * @param leases
+	 *            map from ref to lease (containing expected old object id)
 	 * @param fetchSpecs
 	 *            fetch specifications used for finding localtracking refs. May
 	 *            be null or empty collection.
-	 * @return collection of set up {@link RemoteRefUpdate}.
-	 * @throws IOException
+	 * @return collection of set up
+	 *         {@link org.eclipse.jgit.transport.RemoteRefUpdate}.
+	 * @throws java.io.IOException
 	 *             when problem occurred during conversion or specification set
 	 *             up: most probably, missing objects or refs.
+	 * @since 4.7
 	 */
 	public static Collection<RemoteRefUpdate> findRemoteRefUpdatesFor(
 			final Repository db, final Collection<RefSpec> specs,
+			final Map<String, RefLeaseSpec> leases,
 			Collection<RefSpec> fetchSpecs) throws IOException {
 		if (fetchSpecs == null)
 			fetchSpecs = Collections.emptyList();
-		final List<RemoteRefUpdate> result = new LinkedList<RemoteRefUpdate>();
+		final List<RemoteRefUpdate> result = new LinkedList<>();
 		final Collection<RefSpec> procRefs = expandPushWildcardsFor(db, specs);
 
-		for (final RefSpec spec : procRefs) {
+		for (RefSpec spec : procRefs) {
+			if (spec.isMatching()) {
+				result.add(new RemoteRefUpdate(db, spec.isForceUpdate(),
+						fetchSpecs));
+				continue;
+			}
 			String srcSpec = spec.getSource();
-			final Ref srcRef = db.getRef(srcSpec);
+			final Ref srcRef = db.findRef(srcSpec);
 			if (srcRef != null)
 				srcSpec = srcRef.getName();
 
@@ -652,24 +617,60 @@ public abstract class Transport {
 
 			final boolean forceUpdate = spec.isForceUpdate();
 			final String localName = findTrackingRefName(destSpec, fetchSpecs);
+			final RefLeaseSpec leaseSpec = leases.get(destSpec);
+			final ObjectId expected = leaseSpec == null ? null :
+				db.resolve(leaseSpec.getExpected());
 			final RemoteRefUpdate rru = new RemoteRefUpdate(db, srcSpec,
-					destSpec, forceUpdate, localName, null);
+					destSpec, forceUpdate, localName, expected);
 			result.add(rru);
 		}
 		return result;
 	}
 
+	/**
+	 * Convert push remote refs update specification from
+	 * {@link org.eclipse.jgit.transport.RefSpec} form to
+	 * {@link org.eclipse.jgit.transport.RemoteRefUpdate}. Conversion expands
+	 * wildcards by matching source part to local refs. expectedOldObjectId in
+	 * RemoteRefUpdate is always set as null. Tracking branch is configured if
+	 * RefSpec destination matches source of any fetch ref spec for this
+	 * transport remote configuration.
+	 *
+	 * @param db
+	 *            local database.
+	 * @param specs
+	 *            collection of RefSpec to convert.
+	 * @param fetchSpecs
+	 *            fetch specifications used for finding localtracking refs. May
+	 *            be null or empty collection.
+	 * @return collection of set up
+	 *         {@link org.eclipse.jgit.transport.RemoteRefUpdate}.
+	 * @throws java.io.IOException
+	 *             when problem occurred during conversion or specification set
+	 *             up: most probably, missing objects or refs.
+	 */
+	public static Collection<RemoteRefUpdate> findRemoteRefUpdatesFor(
+			final Repository db, final Collection<RefSpec> specs,
+			Collection<RefSpec> fetchSpecs) throws IOException {
+		return findRemoteRefUpdatesFor(db, specs, Collections.emptyMap(),
+					       fetchSpecs);
+	}
+
 	private static Collection<RefSpec> expandPushWildcardsFor(
 			final Repository db, final Collection<RefSpec> specs)
 			throws IOException {
-		final Map<String, Ref> localRefs = db.getRefDatabase().getRefs(ALL);
-		final Collection<RefSpec> procRefs = new HashSet<RefSpec>();
+		final Collection<RefSpec> procRefs = new LinkedHashSet<>();
 
-		for (final RefSpec spec : specs) {
-			if (spec.isWildcard()) {
-				for (final Ref localRef : localRefs.values()) {
-					if (spec.matchSource(localRef))
+		List<Ref> localRefs = null;
+		for (RefSpec spec : specs) {
+			if (!spec.isMatching() && spec.isWildcard()) {
+				if (localRefs == null) {
+					localRefs = db.getRefDatabase().getRefs();
+				}
+				for (Ref localRef : localRefs) {
+					if (spec.matchSource(localRef)) {
 						procRefs.add(spec.expandFromSource(localRef));
+					}
 				}
 			} else {
 				procRefs.add(spec);
@@ -678,16 +679,16 @@ public abstract class Transport {
 		return procRefs;
 	}
 
-	private static String findTrackingRefName(final String remoteName,
+	static String findTrackingRefName(final String remoteName,
 			final Collection<RefSpec> fetchSpecs) {
 		// try to find matching tracking refs
-		for (final RefSpec fetchSpec : fetchSpecs) {
+		for (RefSpec fetchSpec : fetchSpecs) {
 			if (fetchSpec.matchSource(remoteName)) {
-				if (fetchSpec.isWildcard())
+				if (fetchSpec.isWildcard()) {
 					return fetchSpec.expandFromSource(remoteName)
 							.getDestination();
-				else
-					return fetchSpec.getDestination();
+				}
+				return fetchSpec.getDestination();
 			}
 		}
 		return null;
@@ -702,6 +703,13 @@ public abstract class Transport {
 	 * Default setting for {@link #pushThin} option.
 	 */
 	public static final boolean DEFAULT_PUSH_THIN = false;
+
+	/**
+	 * Default setting for {@link #pushUseBitmaps} option.
+	 *
+	 * @since 6.4
+	 */
+	public static final boolean DEFAULT_PUSH_USE_BITMAPS = true;
 
 	/**
 	 * Specification for fetch or push operations, to fetch or push all tags.
@@ -752,6 +760,12 @@ public abstract class Transport {
 	/** Should push produce thin-pack when sending objects to remote repository. */
 	private boolean pushThin = DEFAULT_PUSH_THIN;
 
+	/** Should push be all-or-nothing atomic behavior? */
+	private boolean pushAtomic;
+
+	/** Should push use bitmaps? */
+	private boolean pushUseBitmaps = DEFAULT_PUSH_USE_BITMAPS;
+
 	/** Should push just check for operation result, not really push. */
 	private boolean dryRun;
 
@@ -760,6 +774,8 @@ public abstract class Transport {
 
 	/** Should refs no longer on the source be pruned from the destination? */
 	private boolean removeDeletedRefs;
+
+	private FilterSpec filterSpec = FilterSpec.NO_FILTER;
 
 	/** Timeout in seconds to wait before aborting an IO read or write. */
 	private int timeout;
@@ -770,9 +786,24 @@ public abstract class Transport {
 	/** Assists with authentication the connection. */
 	private CredentialsProvider credentialsProvider;
 
+	/** The option strings associated with the push operation. */
+	private List<String> pushOptions;
+
 	private PrintStream hookOutRedirect;
 
-	private PrePushHook prePush;
+	private PrintStream hookErrRedirect;
+
+	private String remoteName;
+
+	private Integer depth;
+
+	private Instant deepenSince;
+
+	private List<String> deepenNots = new ArrayList<>();
+
+	@Nullable
+	TransferConfig.ProtocolVersion protocol;
+
 	/**
 	 * Create a new transport instance.
 	 *
@@ -784,21 +815,22 @@ public abstract class Transport {
 	 *            the URI used to access the remote repository. This must be the
 	 *            URI passed to {@link #open(Repository, URIish)}.
 	 */
-	protected Transport(final Repository local, final URIish uri) {
+	protected Transport(Repository local, URIish uri) {
 		final TransferConfig tc = local.getConfig().get(TransferConfig.KEY);
 		this.local = local;
 		this.uri = uri;
+		this.protocol = tc.protocolVersion;
 		this.objectChecker = tc.newObjectChecker();
 		this.credentialsProvider = CredentialsProvider.getDefault();
-		prePush = Hooks.prePush(local, hookOutRedirect);
 	}
 
 	/**
 	 * Create a minimal transport instance not tied to a single repository.
 	 *
 	 * @param uri
+	 *            a {@link org.eclipse.jgit.transport.URIish} object.
 	 */
-	protected Transport(final URIish uri) {
+	protected Transport(URIish uri) {
 		this.uri = uri;
 		this.local = null;
 		this.objectChecker = new ObjectChecker();
@@ -831,11 +863,37 @@ public abstract class Transport {
 	 * @param where
 	 *            name of the executable.
 	 */
-	public void setOptionUploadPack(final String where) {
+	public void setOptionUploadPack(String where) {
 		if (where != null && where.length() > 0)
 			optionUploadPack = where;
 		else
 			optionUploadPack = RemoteConfig.DEFAULT_UPLOAD_PACK;
+	}
+
+	/**
+	 * Sets a {@link PrintStream} a {@link PrePushHook} may write its stdout to.
+	 * If not set, {@link System#out} will be used.
+	 *
+	 * @param redirect
+	 *            {@link PrintStream} to use; if {@code null},
+	 *            {@link System#out} will be used
+	 * @since 6.4
+	 */
+	public void setHookOutputStream(PrintStream redirect) {
+		hookOutRedirect = redirect;
+	}
+
+	/**
+	 * Sets a {@link PrintStream} a {@link PrePushHook} may write its stderr to.
+	 * If not set, {@link System#err} will be used.
+	 *
+	 * @param redirect
+	 *            {@link PrintStream} to use; if {@code null},
+	 *            {@link System#err} will be used
+	 * @since 6.4
+	 */
+	public void setHookErrorStream(PrintStream redirect) {
+		hookErrRedirect = redirect;
 	}
 
 	/**
@@ -853,7 +911,7 @@ public abstract class Transport {
 	 * @param option
 	 *            method to use when handling annotated tags.
 	 */
-	public void setTagOpt(final TagOpt option) {
+	public void setTagOpt(TagOpt option) {
 		tagopt = option != null ? option : TagOpt.AUTO_FOLLOW;
 	}
 
@@ -877,11 +935,13 @@ public abstract class Transport {
 	 *            when it shouldn't
 	 * @see PackTransport
 	 */
-	public void setFetchThin(final boolean fetchThin) {
+	public void setFetchThin(boolean fetchThin) {
 		this.fetchThin = fetchThin;
 	}
 
 	/**
+	 * Whether fetch will verify if received objects are formatted correctly.
+	 *
 	 * @return true if fetch will verify received objects are formatted
 	 *         correctly. Validating objects requires more CPU time on the
 	 *         client side of the connection.
@@ -891,12 +951,14 @@ public abstract class Transport {
 	}
 
 	/**
+	 * Configure if checking received objects is enabled
+	 *
 	 * @param check
 	 *            true to enable checking received objects; false to assume all
 	 *            received objects are valid.
 	 * @see #setObjectChecker(ObjectChecker)
 	 */
-	public void setCheckFetchedObjects(final boolean check) {
+	public void setCheckFetchedObjects(boolean check) {
 		if (check && objectChecker == null)
 			setObjectChecker(new ObjectChecker());
 		else if (!check && objectChecker != null)
@@ -904,6 +966,8 @@ public abstract class Transport {
 	}
 
 	/**
+	 * Get configured object checker for received objects
+	 *
 	 * @return configured object checker for received objects, or null.
 	 * @since 3.6
 	 */
@@ -912,6 +976,8 @@ public abstract class Transport {
 	}
 
 	/**
+	 * Set the object checker to verify each received object with
+	 *
 	 * @param impl
 	 *            if non-null the object checking instance to verify each
 	 *            received object with; null to disable object checking.
@@ -922,7 +988,8 @@ public abstract class Transport {
 	}
 
 	/**
-	 * Default setting is: {@link RemoteConfig#DEFAULT_RECEIVE_PACK}
+	 * Default setting is:
+	 * {@link org.eclipse.jgit.transport.RemoteConfig#DEFAULT_RECEIVE_PACK}
 	 *
 	 * @return remote executable providing receive-pack service for pack
 	 *         transports.
@@ -934,7 +1001,8 @@ public abstract class Transport {
 
 	/**
 	 * Set remote executable providing receive-pack service for pack transports.
-	 * Default setting is: {@link RemoteConfig#DEFAULT_RECEIVE_PACK}
+	 * Default setting is:
+	 * {@link org.eclipse.jgit.transport.RemoteConfig#DEFAULT_RECEIVE_PACK}
 	 *
 	 * @param optionReceivePack
 	 *            remote executable, if null or empty default one is set;
@@ -965,11 +1033,61 @@ public abstract class Transport {
 	 *            false when it shouldn't
 	 * @see PackTransport
 	 */
-	public void setPushThin(final boolean pushThin) {
+	public void setPushThin(boolean pushThin) {
 		this.pushThin = pushThin;
 	}
 
 	/**
+	 * Default setting is false.
+	 *
+	 * @return true if push requires all-or-nothing atomic behavior.
+	 * @since 4.2
+	 */
+	public boolean isPushAtomic() {
+		return pushAtomic;
+	}
+
+	/**
+	 * Request atomic push (all references succeed, or none do).
+	 * <p>
+	 * Server must also support atomic push. If the server does not support the
+	 * feature the push will abort without making changes.
+	 *
+	 * @param atomic
+	 *            true when push should be an all-or-nothing operation.
+	 * @see PackTransport
+	 * @since 4.2
+	 */
+	public void setPushAtomic(boolean atomic) {
+		this.pushAtomic = atomic;
+	}
+
+	/**
+	 * Default setting is: {@value #DEFAULT_PUSH_USE_BITMAPS}
+	 *
+	 * @return true if push use bitmaps.
+	 * @since 6.4
+	 */
+	public boolean isPushUseBitmaps() {
+		return pushUseBitmaps;
+	}
+
+	/**
+	 * Set whether to use bitmaps for push. Default setting is:
+	 * {@value #DEFAULT_PUSH_USE_BITMAPS}
+	 *
+	 * @param useBitmaps
+	 *            false to disable use of bitmaps for push, true otherwise.
+	 * @since 6.4
+	 */
+	public void setPushUseBitmaps(boolean useBitmaps) {
+		this.pushUseBitmaps = useBitmaps;
+	}
+
+	/**
+	 * Whether destination refs should be removed if they no longer exist at the
+	 * source repository.
+	 *
 	 * @return true if destination refs should be removed if they no longer
 	 *         exist at the source repository.
 	 */
@@ -989,8 +1107,124 @@ public abstract class Transport {
 	 *
 	 * @param remove true to remove refs that no longer exist.
 	 */
-	public void setRemoveDeletedRefs(final boolean remove) {
+	public void setRemoveDeletedRefs(boolean remove) {
 		removeDeletedRefs = remove;
+	}
+
+	/**
+	 * @return the blob limit value set with {@link #setFilterBlobLimit} or
+	 *         {@link #setFilterSpec(FilterSpec)}, or -1 if no blob limit value
+	 *         was set
+	 * @since 5.0
+	 * @deprecated Use {@link #getFilterSpec()} instead
+	 */
+	@Deprecated
+	public final long getFilterBlobLimit() {
+		return filterSpec.getBlobLimit();
+	}
+
+	/**
+	 * @param bytes exclude blobs of size greater than this
+	 * @since 5.0
+	 * @deprecated Use {@link #setFilterSpec(FilterSpec)} instead
+	 */
+	@Deprecated
+	public final void setFilterBlobLimit(long bytes) {
+		setFilterSpec(FilterSpec.withBlobLimit(bytes));
+	}
+
+	/**
+	 * @return the last filter spec set with {@link #setFilterSpec(FilterSpec)},
+	 *         or {@link FilterSpec#NO_FILTER} if it was never invoked.
+	 * @since 5.4
+	 */
+	public final FilterSpec getFilterSpec() {
+		return filterSpec;
+	}
+
+	/**
+	 * @param filter a new filter to use for this transport
+	 * @since 5.4
+	 */
+	public final void setFilterSpec(@NonNull FilterSpec filter) {
+		filterSpec = requireNonNull(filter);
+	}
+
+
+	/**
+	 * Retrieves the depth for a shallow clone.
+	 *
+	 * @return the depth, or {@code null} if none set
+	 * @since 6.3
+	 */
+	public final Integer getDepth() {
+		return depth;
+	}
+
+	/**
+	 * Limits fetching to the specified number of commits from the tip of each
+	 * remote branch history.
+	 *
+	 * @param depth
+	 *            the depth
+	 * @since 6.3
+	 */
+	public final void setDepth(int depth) {
+		if (depth < 1) {
+			throw new IllegalArgumentException(JGitText.get().depthMustBeAt1);
+		}
+		this.depth = Integer.valueOf(depth);
+	}
+
+	/**
+	 * Limits fetching to the specified number of commits from the tip of each
+	 * remote branch history.
+	 *
+	 * @param depth
+	 *            the depth, or {@code null} to unset the depth
+	 * @since 6.3
+	 */
+	public final void setDepth(Integer depth) {
+		if (depth != null && depth.intValue() < 1) {
+			throw new IllegalArgumentException(JGitText.get().depthMustBeAt1);
+		}
+		this.depth = depth;
+	}
+
+	/**
+	 * @return the deepen-since for a shallow clone
+	 * @since 6.3
+	 */
+	public final Instant getDeepenSince() {
+		return deepenSince;
+	}
+
+	/**
+	 * Deepen or shorten the history of a shallow repository to include all reachable commits after a specified time.
+	 *
+	 * @param deepenSince the deepen-since. Must not be {@code null}
+	 * @since 6.3
+	 */
+	public final void setDeepenSince(@NonNull Instant deepenSince) {
+		this.deepenSince = deepenSince;
+	}
+
+	/**
+	 * @return the deepen-not for a shallow clone
+	 * @since 6.3
+	 */
+	public final List<String> getDeepenNots() {
+		return deepenNots;
+	}
+
+	/**
+	 * Deepen or shorten the history of a shallow repository to exclude commits reachable from a specified remote branch or tag.
+	 *
+	 * @param deepenNots the deepen-not. Must not be {@code null}
+	 * @since 6.3
+	 */
+	public final void setDeepenNots(@NonNull List<String> deepenNots) {
+		this.deepenNots = deepenNots;
 	}
 
 	/**
@@ -999,7 +1233,7 @@ public abstract class Transport {
 	 * @param cfg
 	 *            configuration to apply on this transport.
 	 */
-	public void applyConfig(final RemoteConfig cfg) {
+	public void applyConfig(RemoteConfig cfg) {
 		setOptionUploadPack(cfg.getUploadPack());
 		setOptionReceivePack(cfg.getReceivePack());
 		setTagOpt(cfg.getTagOpt());
@@ -1009,6 +1243,9 @@ public abstract class Transport {
 	}
 
 	/**
+	 * Whether push operation should just check for possible result and not
+	 * really update remote refs
+	 *
 	 * @return true if push operation should just check for possible result and
 	 *         not really update remote refs, false otherwise - when push should
 	 *         act normally.
@@ -1025,11 +1262,15 @@ public abstract class Transport {
 	 *            and not really update remote refs, false otherwise - when push
 	 *            should act normally.
 	 */
-	public void setDryRun(final boolean dryRun) {
+	public void setDryRun(boolean dryRun) {
 		this.dryRun = dryRun;
 	}
 
-	/** @return timeout (in seconds) before aborting an IO operation. */
+	/**
+	 * Get timeout (in seconds) before aborting an IO operation.
+	 *
+	 * @return timeout (in seconds) before aborting an IO operation.
+	 */
 	public int getTimeout() {
 		return timeout;
 	}
@@ -1042,7 +1283,7 @@ public abstract class Transport {
 	 *            before aborting an IO read or write operation with this
 	 *            remote.
 	 */
-	public void setTimeout(final int seconds) {
+	public void setTimeout(int seconds) {
 		timeout = seconds;
 	}
 
@@ -1093,32 +1334,102 @@ public abstract class Transport {
 	}
 
 	/**
+	 * Get the option strings associated with the push operation
+	 *
+	 * @return the option strings associated with the push operation
+	 * @since 4.5
+	 */
+	public List<String> getPushOptions() {
+		return pushOptions;
+	}
+
+	/**
+	 * Sets the option strings associated with the push operation.
+	 *
+	 * @param pushOptions
+	 *            null if push options are unsupported
+	 * @since 4.5
+	 */
+	public void setPushOptions(List<String> pushOptions) {
+		this.pushOptions = pushOptions;
+	}
+
+	/**
 	 * Fetch objects and refs from the remote repository to the local one.
 	 * <p>
 	 * This is a utility function providing standard fetch behavior. Local
 	 * tracking refs associated with the remote repository are automatically
-	 * updated if this transport was created from a {@link RemoteConfig} with
-	 * fetch RefSpecs defined.
+	 * updated if this transport was created from a
+	 * {@link org.eclipse.jgit.transport.RemoteConfig} with fetch RefSpecs
+	 * defined.
 	 *
 	 * @param monitor
 	 *            progress monitor to inform the user about our processing
-	 *            activity. Must not be null. Use {@link NullProgressMonitor} if
-	 *            progress updates are not interesting or necessary.
+	 *            activity. Must not be null. Use
+	 *            {@link org.eclipse.jgit.lib.NullProgressMonitor} if progress
+	 *            updates are not interesting or necessary.
 	 * @param toFetch
 	 *            specification of refs to fetch locally. May be null or the
 	 *            empty collection to use the specifications from the
-	 *            RemoteConfig. Source for each RefSpec can't be null.
+	 *            RemoteConfig. May contains regular and negative
+	 *            {@link RefSpec}s. Source for each regular RefSpec can't
+	 *            be null.
 	 * @return information describing the tracking refs updated.
-	 * @throws NotSupportedException
+	 * @throws org.eclipse.jgit.errors.NotSupportedException
 	 *             this transport implementation does not support fetching
 	 *             objects.
-	 * @throws TransportException
+	 * @throws org.eclipse.jgit.errors.TransportException
 	 *             the remote connection could not be established or object
 	 *             copying (if necessary) failed or update specification was
 	 *             incorrect.
+	 * @since 5.11
 	 */
 	public FetchResult fetch(final ProgressMonitor monitor,
-			Collection<RefSpec> toFetch) throws NotSupportedException,
+			Collection<RefSpec> toFetch)
+			throws NotSupportedException, TransportException {
+		return fetch(monitor, toFetch, null);
+	}
+
+	/**
+	 * Fetch objects and refs from the remote repository to the local one.
+	 * <p>
+	 * This is a utility function providing standard fetch behavior. Local
+	 * tracking refs associated with the remote repository are automatically
+	 * updated if this transport was created from a
+	 * {@link org.eclipse.jgit.transport.RemoteConfig} with fetch RefSpecs
+	 * defined.
+	 *
+	 * @param monitor
+	 *            progress monitor to inform the user about our processing
+	 *            activity. Must not be null. Use
+	 *            {@link org.eclipse.jgit.lib.NullProgressMonitor} if progress
+	 *            updates are not interesting or necessary.
+	 * @param toFetch
+	 *            specification of refs to fetch locally. May be null or the
+	 *            empty collection to use the specifications from the
+	 *            RemoteConfig. May contain regular and negative
+	 *            {@link RefSpec}s. Source for each regular RefSpec can't
+	 *            be null.
+	 * @param branch
+	 *            the initial branch to check out when cloning the repository.
+	 *            Can be specified as ref name (<code>refs/heads/master</code>),
+	 *            branch name (<code>master</code>) or tag name
+	 *            (<code>v1.2.3</code>). The default is to use the branch
+	 *            pointed to by the cloned repository's HEAD and can be
+	 *            requested by passing {@code null} or <code>HEAD</code>.
+	 * @return information describing the tracking refs updated.
+	 * @throws org.eclipse.jgit.errors.NotSupportedException
+	 *             this transport implementation does not support fetching
+	 *             objects.
+	 * @throws org.eclipse.jgit.errors.TransportException
+	 *             the remote connection could not be established or object
+	 *             copying (if necessary) failed or update specification was
+	 *             incorrect.
+	 * @since 5.11
+	 */
+	public FetchResult fetch(final ProgressMonitor monitor,
+			Collection<RefSpec> toFetch, String branch)
+			throws NotSupportedException,
 			TransportException {
 		if (toFetch == null || toFetch.isEmpty()) {
 			// If the caller did not ask for anything use the defaults.
@@ -1132,10 +1443,10 @@ public abstract class Transport {
 			// the local tracking branches without incurring additional
 			// object transfer overheads.
 			//
-			final Collection<RefSpec> tmp = new ArrayList<RefSpec>(toFetch);
-			for (final RefSpec requested : toFetch) {
+			final Collection<RefSpec> tmp = new ArrayList<>(toFetch);
+			for (RefSpec requested : toFetch) {
 				final String reqSrc = requested.getSource();
-				for (final RefSpec configured : fetch) {
+				for (RefSpec configured : fetch) {
 					final String cfgSrc = configured.getSource();
 					final String cfgDst = configured.getDestination();
 					if (cfgSrc.equals(reqSrc) && cfgDst != null) {
@@ -1148,7 +1459,10 @@ public abstract class Transport {
 		}
 
 		final FetchResult result = new FetchResult();
-		new FetchProcess(this, toFetch).execute(monitor, result);
+		new FetchProcess(this, toFetch).execute(monitor, result, branch);
+
+		local.autoGC(monitor);
+
 		return result;
 	}
 
@@ -1164,17 +1478,18 @@ public abstract class Transport {
 	 * For setting up remote ref update specification from ref spec, see helper
 	 * method {@link #findRemoteRefUpdatesFor(Collection)}, predefined refspecs
 	 * ({@link #REFSPEC_TAGS}, {@link #REFSPEC_PUSH_ALL}) or consider using
-	 * directly {@link RemoteRefUpdate} for more possibilities.
+	 * directly {@link org.eclipse.jgit.transport.RemoteRefUpdate} for more
+	 * possibilities.
 	 * <p>
 	 * When {@link #isDryRun()} is true, result of this operation is just
 	 * estimation of real operation result, no real action is performed.
 	 *
 	 * @see RemoteRefUpdate
-	 *
 	 * @param monitor
 	 *            progress monitor to inform the user about our processing
-	 *            activity. Must not be null. Use {@link NullProgressMonitor} if
-	 *            progress updates are not interesting or necessary.
+	 *            activity. Must not be null. Use
+	 *            {@link org.eclipse.jgit.lib.NullProgressMonitor} if progress
+	 *            updates are not interesting or necessary.
 	 * @param toPush
 	 *            specification of refs to push. May be null or the empty
 	 *            collection to use the specifications from the RemoteConfig
@@ -1185,10 +1500,10 @@ public abstract class Transport {
 	 *            output stream to write messages to
 	 * @return information about results of remote refs updates, tracking refs
 	 *         updates and refs advertised by remote repository.
-	 * @throws NotSupportedException
+	 * @throws org.eclipse.jgit.errors.NotSupportedException
 	 *             this transport implementation does not support pushing
 	 *             objects.
-	 * @throws TransportException
+	 * @throws org.eclipse.jgit.errors.TransportException
 	 *             the remote connection could not be established or object
 	 *             copying (if necessary) failed at I/O or protocol level or
 	 *             update specification was incorrect.
@@ -1209,16 +1524,16 @@ public abstract class Transport {
 			if (toPush.isEmpty())
 				throw new TransportException(JGitText.get().nothingToPush);
 		}
-		if (prePush != null) {
-			try {
-				prePush.setRefs(toPush);
-				prePush.call();
-			} catch (AbortedByHookException | IOException e) {
-				throw new TransportException(e.getMessage(), e);
-			}
-		}
 
-		final PushProcess pushProcess = new PushProcess(this, toPush, out);
+		PrePushHook prePush = null;
+		if (local != null) {
+			// Pushing will always have a local repository. But better safe than
+			// sorry.
+			prePush = Hooks.prePush(local, hookOutRedirect, hookErrRedirect);
+			prePush.setRemoteLocation(uri.toString());
+			prePush.setRemoteName(remoteName);
+		}
+		PushProcess pushProcess = new PushProcess(this, toPush, prePush, out);
 		return pushProcess.execute(monitor);
 	}
 
@@ -1234,30 +1549,30 @@ public abstract class Transport {
 	 * For setting up remote ref update specification from ref spec, see helper
 	 * method {@link #findRemoteRefUpdatesFor(Collection)}, predefined refspecs
 	 * ({@link #REFSPEC_TAGS}, {@link #REFSPEC_PUSH_ALL}) or consider using
-	 * directly {@link RemoteRefUpdate} for more possibilities.
+	 * directly {@link org.eclipse.jgit.transport.RemoteRefUpdate} for more
+	 * possibilities.
 	 * <p>
 	 * When {@link #isDryRun()} is true, result of this operation is just
 	 * estimation of real operation result, no real action is performed.
 	 *
 	 * @see RemoteRefUpdate
-	 *
 	 * @param monitor
 	 *            progress monitor to inform the user about our processing
-	 *            activity. Must not be null. Use {@link NullProgressMonitor} if
-	 *            progress updates are not interesting or necessary.
+	 *            activity. Must not be null. Use
+	 *            {@link org.eclipse.jgit.lib.NullProgressMonitor} if progress
+	 *            updates are not interesting or necessary.
 	 * @param toPush
 	 *            specification of refs to push. May be null or the empty
 	 *            collection to use the specifications from the RemoteConfig
 	 *            converted by {@link #findRemoteRefUpdatesFor(Collection)}. No
 	 *            more than 1 RemoteRefUpdate with the same remoteName is
 	 *            allowed. These objects are modified during this call.
-	 *
 	 * @return information about results of remote refs updates, tracking refs
 	 *         updates and refs advertised by remote repository.
-	 * @throws NotSupportedException
+	 * @throws org.eclipse.jgit.errors.NotSupportedException
 	 *             this transport implementation does not support pushing
 	 *             objects.
-	 * @throws TransportException
+	 * @throws org.eclipse.jgit.errors.TransportException
 	 *             the remote connection could not be established or object
 	 *             copying (if necessary) failed at I/O or protocol level or
 	 *             update specification was incorrect.
@@ -1269,26 +1584,59 @@ public abstract class Transport {
 	}
 
 	/**
-	 * Convert push remote refs update specification from {@link RefSpec} form
-	 * to {@link RemoteRefUpdate}. Conversion expands wildcards by matching
-	 * source part to local refs. expectedOldObjectId in RemoteRefUpdate is
-	 * always set as null. Tracking branch is configured if RefSpec destination
-	 * matches source of any fetch ref spec for this transport remote
-	 * configuration.
+	 * Convert push remote refs update specification from
+	 * {@link org.eclipse.jgit.transport.RefSpec} form to
+	 * {@link org.eclipse.jgit.transport.RemoteRefUpdate}. Conversion expands
+	 * wildcards by matching source part to local refs. expectedOldObjectId in
+	 * RemoteRefUpdate is always set as null. Tracking branch is configured if
+	 * RefSpec destination matches source of any fetch ref spec for this
+	 * transport remote configuration.
 	 * <p>
 	 * Conversion is performed for context of this transport (database, fetch
 	 * specifications).
 	 *
 	 * @param specs
 	 *            collection of RefSpec to convert.
-	 * @return collection of set up {@link RemoteRefUpdate}.
-	 * @throws IOException
+	 * @return collection of set up
+	 *         {@link org.eclipse.jgit.transport.RemoteRefUpdate}.
+	 * @throws java.io.IOException
 	 *             when problem occurred during conversion or specification set
 	 *             up: most probably, missing objects or refs.
 	 */
 	public Collection<RemoteRefUpdate> findRemoteRefUpdatesFor(
 			final Collection<RefSpec> specs) throws IOException {
-		return findRemoteRefUpdatesFor(local, specs, fetch);
+		return findRemoteRefUpdatesFor(local, specs, Collections.emptyMap(),
+					       fetch);
+	}
+
+	/**
+	 * Convert push remote refs update specification from
+	 * {@link org.eclipse.jgit.transport.RefSpec} form to
+	 * {@link org.eclipse.jgit.transport.RemoteRefUpdate}. Conversion expands
+	 * wildcards by matching source part to local refs. expectedOldObjectId in
+	 * RemoteRefUpdate is set according to leases. Tracking branch is configured
+	 * if RefSpec destination matches source of any fetch ref spec for this
+	 * transport remote configuration.
+	 * <p>
+	 * Conversion is performed for context of this transport (database, fetch
+	 * specifications).
+	 *
+	 * @param specs
+	 *            collection of RefSpec to convert.
+	 * @param leases
+	 *            map from ref to lease (containing expected old object id)
+	 * @return collection of set up
+	 *         {@link org.eclipse.jgit.transport.RemoteRefUpdate}.
+	 * @throws java.io.IOException
+	 *             when problem occurred during conversion or specification set
+	 *             up: most probably, missing objects or refs.
+	 * @since 4.7
+	 */
+	public Collection<RemoteRefUpdate> findRemoteRefUpdatesFor(
+			final Collection<RefSpec> specs,
+			final Map<String, RefLeaseSpec> leases) throws IOException {
+		return findRemoteRefUpdatesFor(local, specs, leases,
+					       fetch);
 	}
 
 	/**
@@ -1298,33 +1646,77 @@ public abstract class Transport {
 	 * be used for reading remote refs.
 	 *
 	 * @return a fresh connection to fetch from the remote repository.
-	 * @throws NotSupportedException
+	 * @throws org.eclipse.jgit.errors.NotSupportedException
 	 *             the implementation does not support fetching.
-	 * @throws TransportException
+	 * @throws org.eclipse.jgit.errors.TransportException
 	 *             the remote connection could not be established.
 	 */
 	public abstract FetchConnection openFetch() throws NotSupportedException,
 			TransportException;
 
 	/**
+	 * Begins a new connection for fetching from the remote repository.
+	 * <p>
+	 * If the transport has no local repository, the fetch connection can only
+	 * be used for reading remote refs.
+	 * </p>
+	 * <p>
+	 * If the server supports git protocol V2, the {@link RefSpec}s and the
+	 * additional patterns, if any, are used to restrict the server's ref
+	 * advertisement to matching refs only.
+	 * </p>
+	 * <p>
+	 * Transports that want to support git protocol V2 <em>must</em> override
+	 * this; the default implementation ignores its arguments and calls
+	 * {@link #openFetch()}.
+	 * </p>
+	 *
+	 * @param refSpecs
+	 *            that will be fetched via
+	 *            {@link FetchConnection#fetch(ProgressMonitor, Collection, java.util.Set, OutputStream)} later
+	 * @param additionalPatterns
+	 *            that will be set as ref prefixes if the server supports git
+	 *            protocol V2; {@code null} values are ignored
+	 *
+	 * @return a fresh connection to fetch from the remote repository.
+	 * @throws org.eclipse.jgit.errors.NotSupportedException
+	 *             the implementation does not support fetching.
+	 * @throws org.eclipse.jgit.errors.TransportException
+	 *             the remote connection could not be established.
+	 * @since 5.11
+	 */
+	public FetchConnection openFetch(Collection<RefSpec> refSpecs,
+			String... additionalPatterns)
+			throws NotSupportedException, TransportException {
+		return openFetch();
+	}
+
+	/**
 	 * Begins a new connection for pushing into the remote repository.
 	 *
 	 * @return a fresh connection to push into the remote repository.
-	 * @throws NotSupportedException
+	 * @throws org.eclipse.jgit.errors.NotSupportedException
 	 *             the implementation does not support pushing.
-	 * @throws TransportException
+	 * @throws org.eclipse.jgit.errors.TransportException
 	 *             the remote connection could not be established
 	 */
 	public abstract PushConnection openPush() throws NotSupportedException,
 			TransportException;
 
 	/**
+	 * {@inheritDoc}
+	 * <p>
 	 * Close any resources used by this transport.
 	 * <p>
 	 * If the remote repository is contacted by a network socket this method
 	 * must close that network socket, disconnecting the two peers. If the
 	 * remote repository is actually local (same system) this method must close
 	 * any open file handles used to read the "remote" repository.
+	 * <p>
+	 * {@code AutoClosable.close()} declares that it throws {@link Exception}.
+	 * Implementers shouldn't throw checked exceptions. This override narrows
+	 * the signature to prevent them from doing so.
 	 */
+	@Override
 	public abstract void close();
 }

@@ -1,49 +1,18 @@
 /*
  * Copyright (C) 2007, Dave Watson <dwatson@mimvista.com>
- * Copyright (C) 2006-2007, Robin Rosenberg <robin.rosenberg@dewire.com>
- * Copyright (C) 2006-2007, Shawn O. Pearce <spearce@spearce.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2006, 2007, Robin Rosenberg <robin.rosenberg@dewire.com>
+ * Copyright (C) 2006, 2020, Shawn O. Pearce <spearce@spearce.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.lib;
+
+import static java.nio.charset.StandardCharsets.UTF_8;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -51,6 +20,8 @@ import java.io.OutputStreamWriter;
 import java.io.UnsupportedEncodingException;
 import java.nio.charset.Charset;
 import java.util.List;
+
+import org.eclipse.jgit.util.References;
 
 /**
  * Mutable builder to construct a commit recording the state of a project.
@@ -63,7 +34,7 @@ import java.util.List;
  * and obtain a {@link org.eclipse.jgit.revwalk.RevCommit} instance by calling
  * {@link org.eclipse.jgit.revwalk.RevWalk#parseCommit(AnyObjectId)}.
  */
-public class CommitBuilder {
+public class CommitBuilder extends ObjectBuilder {
 	private static final ObjectId[] EMPTY_OBJECTID_LIST = new ObjectId[0];
 
 	private static final byte[] htree = Constants.encodeASCII("tree"); //$NON-NLS-1$
@@ -74,33 +45,32 @@ public class CommitBuilder {
 
 	private static final byte[] hcommitter = Constants.encodeASCII("committer"); //$NON-NLS-1$
 
-	private static final byte[] hencoding = Constants.encodeASCII("encoding"); //$NON-NLS-1$
+	private static final byte[] hgpgsig = Constants.encodeASCII("gpgsig"); //$NON-NLS-1$
 
 	private ObjectId treeId;
 
 	private ObjectId[] parentIds;
 
-	private PersonIdent author;
-
 	private PersonIdent committer;
 
-	private String message;
-
-	private Charset encoding;
-
-	/** Initialize an empty commit. */
+	/**
+	 * Initialize an empty commit.
+	 */
 	public CommitBuilder() {
 		parentIds = EMPTY_OBJECTID_LIST;
-		encoding = Constants.CHARSET;
 	}
 
-	/** @return id of the root tree listing this commit's snapshot. */
+	/**
+	 * Get id of the root tree listing this commit's snapshot.
+	 *
+	 * @return id of the root tree listing this commit's snapshot.
+	 */
 	public ObjectId getTreeId() {
 		return treeId;
 	}
 
 	/**
-	 * Set the tree id for this commit object
+	 * Set the tree id for this commit object.
 	 *
 	 * @param id
 	 *            the tree identity.
@@ -109,9 +79,14 @@ public class CommitBuilder {
 		treeId = id.copy();
 	}
 
-	/** @return the author of this commit (who wrote it). */
+	/**
+	 * Get the author of this commit (who wrote it).
+	 *
+	 * @return the author of this commit (who wrote it).
+	 */
+	@Override
 	public PersonIdent getAuthor() {
-		return author;
+		return super.getAuthor();
 	}
 
 	/**
@@ -120,17 +95,22 @@ public class CommitBuilder {
 	 * @param newAuthor
 	 *            the new author. Should not be null.
 	 */
+	@Override
 	public void setAuthor(PersonIdent newAuthor) {
-		author = newAuthor;
+		super.setAuthor(newAuthor);
 	}
 
-	/** @return the committer and commit time for this object. */
+	/**
+	 * Get the committer and commit time for this object.
+	 *
+	 * @return the committer and commit time for this object.
+	 */
 	public PersonIdent getCommitter() {
 		return committer;
 	}
 
 	/**
-	 * Set the committer and commit time for this object
+	 * Set the committer and commit time for this object.
 	 *
 	 * @param newCommitter
 	 *            the committer information. Should not be null.
@@ -139,7 +119,11 @@ public class CommitBuilder {
 		committer = newCommitter;
 	}
 
-	/** @return the ancestors of this commit. Never null. */
+	/**
+	 * Get the ancestors of this commit.
+	 *
+	 * @return the ancestors of this commit. Never null.
+	 */
 	public ObjectId[] getParentIds() {
 		return parentIds;
 	}
@@ -210,55 +194,20 @@ public class CommitBuilder {
 		}
 	}
 
-	/** @return the complete commit message. */
-	public String getMessage() {
-		return message;
-	}
-
 	/**
-	 * Set the commit message.
-	 *
-	 * @param newMessage
-	 *            the commit message. Should not be null.
-	 */
-	public void setMessage(final String newMessage) {
-		message = newMessage;
-	}
-
-	/**
-	 * Set the encoding for the commit information
+	 * Set the encoding for the commit information.
 	 *
 	 * @param encodingName
-	 *            the encoding name. See {@link Charset#forName(String)}.
+	 *            the encoding name. See
+	 *            {@link java.nio.charset.Charset#forName(String)}.
+	 * @deprecated use {@link #setEncoding(Charset)} instead.
 	 */
+	@Deprecated
 	public void setEncoding(String encodingName) {
-		encoding = Charset.forName(encodingName);
+		setEncoding(Charset.forName(encodingName));
 	}
 
-	/**
-	 * Set the encoding for the commit information
-	 *
-	 * @param enc
-	 *            the encoding to use.
-	 */
-	public void setEncoding(Charset enc) {
-		encoding = enc;
-	}
-
-	/** @return the encoding that should be used for the commit message text. */
-	public Charset getEncoding() {
-		return encoding;
-	}
-
-	/**
-	 * Format this builder's state as a commit object.
-	 *
-	 * @return this object in the canonical commit format, suitable for storage
-	 *         in a repository.
-	 * @throws UnsupportedEncodingException
-	 *             the encoding specified by {@link #getEncoding()} is not
-	 *             supported by this Java runtime.
-	 */
+	@Override
 	public byte[] build() throws UnsupportedEncodingException {
 		ByteArrayOutputStream os = new ByteArrayOutputStream();
 		OutputStreamWriter w = new OutputStreamWriter(os, getEncoding());
@@ -287,12 +236,16 @@ public class CommitBuilder {
 			w.flush();
 			os.write('\n');
 
-			if (getEncoding() != Constants.CHARSET) {
-				os.write(hencoding);
+			GpgSignature signature = getGpgSignature();
+			if (signature != null) {
+				os.write(hgpgsig);
 				os.write(' ');
-				os.write(Constants.encodeASCII(getEncoding().name()));
+				writeMultiLineHeader(signature.toExternalString(), os,
+						true);
 				os.write('\n');
 			}
+
+			writeEncoding(getEncoding(), os);
 
 			os.write('\n');
 
@@ -314,7 +267,7 @@ public class CommitBuilder {
 	 *
 	 * @return this object in the canonical commit format, suitable for storage
 	 *         in a repository.
-	 * @throws UnsupportedEncodingException
+	 * @throws java.io.UnsupportedEncodingException
 	 *             the encoding specified by {@link #getEncoding()} is not
 	 *             supported by this Java runtime.
 	 */
@@ -322,6 +275,7 @@ public class CommitBuilder {
 		return build();
 	}
 
+	/** {@inheritDoc} */
 	@SuppressWarnings("nls")
 	@Override
 	public String toString() {
@@ -340,21 +294,28 @@ public class CommitBuilder {
 		}
 
 		r.append("author ");
-		r.append(author != null ? author.toString() : "NOT_SET");
+		r.append(getAuthor() != null ? getAuthor().toString() : "NOT_SET");
 		r.append("\n");
 
 		r.append("committer ");
 		r.append(committer != null ? committer.toString() : "NOT_SET");
 		r.append("\n");
 
-		if (encoding != null && encoding != Constants.CHARSET) {
+		r.append("gpgSignature ");
+		GpgSignature signature = getGpgSignature();
+		r.append(signature != null ? signature.toString()
+				: "NOT_SET");
+		r.append("\n");
+
+		Charset encoding = getEncoding();
+		if (!References.isSameObject(encoding, UTF_8)) {
 			r.append("encoding ");
 			r.append(encoding.name());
 			r.append("\n");
 		}
 
 		r.append("\n");
-		r.append(message != null ? message : "");
+		r.append(getMessage() != null ? getMessage() : "");
 		r.append("}");
 		return r.toString();
 	}

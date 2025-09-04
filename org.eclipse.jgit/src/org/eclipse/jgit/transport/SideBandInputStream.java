@@ -1,49 +1,17 @@
 /*
  * Copyright (C) 2008, Robin Rosenberg <robin.rosenberg@dewire.com>
- * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, 2022 Shawn O. Pearce <spearce@spearce.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.transport;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.eclipse.jgit.transport.SideBandOutputStream.HDR_SIZE;
 
 import java.io.IOException;
@@ -57,10 +25,11 @@ import java.util.regex.Pattern;
 import org.eclipse.jgit.errors.PackProtocolException;
 import org.eclipse.jgit.errors.TransportException;
 import org.eclipse.jgit.internal.JGitText;
-import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.ProgressMonitor;
 import org.eclipse.jgit.util.IO;
 import org.eclipse.jgit.util.RawParseUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Unmultiplexes the data portion of a side-band channel.
@@ -76,14 +45,15 @@ import org.eclipse.jgit.util.RawParseUtils;
  * an unrecoverable error.
  *
  * @see SideBandOutputStream
+ * @since 4.11
  */
-class SideBandInputStream extends InputStream {
-	private static final String PFX_REMOTE = JGitText.get().prefixRemote;
+public class SideBandInputStream extends InputStream {
+
+	private static final Logger LOG = LoggerFactory
+			.getLogger(SideBandInputStream.class);
 
 	static final int CH_DATA = 1;
-
 	static final int CH_PROGRESS = 2;
-
 	static final int CH_ERROR = 3;
 
 	private static Pattern P_UNBOUNDED = Pattern
@@ -124,6 +94,7 @@ class SideBandInputStream extends InputStream {
 		out = outputStream;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public int read() throws IOException {
 		needDataPacket();
@@ -133,8 +104,9 @@ class SideBandInputStream extends InputStream {
 		return rawIn.read();
 	}
 
+	/** {@inheritDoc} */
 	@Override
-	public int read(final byte[] b, int off, int len) throws IOException {
+	public int read(byte[] b, int off, int len) throws IOException {
 		int r = 0;
 		while (len > 0) {
 			needDataPacket();
@@ -174,7 +146,7 @@ class SideBandInputStream extends InputStream {
 				continue;
 			case CH_ERROR:
 				eof = true;
-				throw new TransportException(PFX_REMOTE + readString(available));
+				throw new TransportException(remote(readString(available)));
 			default:
 				throw new PackProtocolException(
 						MessageFormat.format(JGitText.get().invalidChannel,
@@ -204,7 +176,7 @@ class SideBandInputStream extends InputStream {
 		progressBuffer = pkt;
 	}
 
-	private void doProgressLine(final String msg) throws IOException {
+	private void doProgressLine(String msg) throws IOException {
 		Matcher matcher;
 
 		matcher = P_BOUNDED.matcher(msg);
@@ -237,16 +209,42 @@ class SideBandInputStream extends InputStream {
 
 		messages.write(msg);
 		if (out != null)
-			out.write(msg.getBytes());
+			out.write(msg.getBytes(UTF_8));
 	}
 
-	private void beginTask(final int totalWorkUnits) {
-		monitor.beginTask(PFX_REMOTE + currentTask, totalWorkUnits);
+	private void beginTask(int totalWorkUnits) {
+		monitor.beginTask(remote(currentTask), totalWorkUnits);
 	}
 
-	private String readString(final int len) throws IOException {
+	/**
+	 * Forces any buffered progress messages to be written.
+	 */
+	void drainMessages() {
+		if (!progressBuffer.isEmpty()) {
+			try {
+				progress("\n"); //$NON-NLS-1$
+			} catch (IOException e) {
+				// Just log; otherwise this IOException might hide a real
+				// TransportException
+				LOG.error(e.getMessage(), e);
+			}
+		}
+	}
+
+	private static String remote(String msg) {
+		String prefix = JGitText.get().prefixRemote;
+		StringBuilder r = new StringBuilder(prefix.length() + msg.length() + 1);
+		r.append(prefix);
+		if (prefix.length() > 0 && prefix.charAt(prefix.length() - 1) != ' ') {
+			r.append(' ');
+		}
+		r.append(msg);
+		return r.toString();
+	}
+
+	private String readString(int len) throws IOException {
 		final byte[] raw = new byte[len];
 		IO.readFully(rawIn, raw, 0, len);
-		return RawParseUtils.decode(Constants.CHARSET, raw, 0, len);
+		return RawParseUtils.decode(UTF_8, raw, 0, len);
 	}
 }

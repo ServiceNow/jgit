@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2008-2009, Johannes E. Schindelin <johannes.schindelin@gmx.de>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008-2009, Johannes E. Schindelin <johannes.schindelin@gmx.de> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.diff;
@@ -64,7 +31,7 @@ package org.eclipse.jgit.diff;
  */
 public class Edit {
 	/** Type of edit */
-	public static enum Type {
+	public enum Type {
 		/** Sequence B has inserted the region. */
 		INSERT,
 
@@ -94,7 +61,7 @@ public class Edit {
 	 * @param bs
 	 *            beginB: start and end of region in sequence B; 0 based.
 	 */
-	public Edit(final int as, final int bs) {
+	public Edit(int as, int bs) {
 		this(as, as, bs, bs);
 	}
 
@@ -110,7 +77,7 @@ public class Edit {
 	 * @param be
 	 *            endB: end of region in sequence B; must be &gt; = bs.
 	 */
-	public Edit(final int as, final int ae, final int bs, final int be) {
+	public Edit(int as, int ae, int bs, int be) {
 		beginA = as;
 		endA = ae;
 
@@ -118,55 +85,103 @@ public class Edit {
 		endB = be;
 	}
 
-	/** @return the type of this region */
+	/**
+	 * Get type
+	 *
+	 * @return the type of this region
+	 */
 	public final Type getType() {
 		if (beginA < endA) {
-			if (beginB < endB)
+			if (beginB < endB) {
 				return Type.REPLACE;
-			else /* if (beginB == endB) */
-				return Type.DELETE;
+			}
+			return Type.DELETE;
 
-		} else /* if (beginA == endA) */{
-			if (beginB < endB)
-				return Type.INSERT;
-			else /* if (beginB == endB) */
-				return Type.EMPTY;
 		}
+		if (beginB < endB) {
+			return Type.INSERT;
+		}
+		// beginB == endB)
+		return Type.EMPTY;
 	}
 
-	/** @return true if the edit is empty (lengths of both a and b is zero). */
+	/**
+	 * Whether edit is empty
+	 *
+	 * @return {@code true} if the edit is empty (lengths of both a and b is
+	 *         zero)
+	 */
 	public final boolean isEmpty() {
 		return beginA == endA && beginB == endB;
 	}
 
-	/** @return start point in sequence A. */
+	/**
+	 * Get start point in sequence A
+	 *
+	 * @return start point in sequence A
+	 */
 	public final int getBeginA() {
 		return beginA;
 	}
 
-	/** @return end point in sequence A. */
+	/**
+	 * Get end point in sequence A
+	 *
+	 * @return end point in sequence A
+	 */
 	public final int getEndA() {
 		return endA;
 	}
 
-	/** @return start point in sequence B. */
+	/**
+	 * Get start point in sequence B
+	 *
+	 * @return start point in sequence B
+	 */
 	public final int getBeginB() {
 		return beginB;
 	}
 
-	/** @return end point in sequence B. */
+	/**
+	 * Get end point in sequence B
+	 *
+	 * @return end point in sequence B
+	 */
 	public final int getEndB() {
 		return endB;
 	}
 
-	/** @return length of the region in A. */
+	/**
+	 * Get length of the region in A
+	 *
+	 * @return length of the region in A
+	 */
 	public final int getLengthA() {
 		return endA - beginA;
 	}
 
-	/** @return length of the region in B. */
+	/**
+	 * Get length of the region in B
+	 *
+	 * @return return length of the region in B
+	 */
 	public final int getLengthB() {
 		return endB - beginB;
+	}
+
+	/**
+	 * Move the edit region by the specified amount.
+	 *
+	 * @param amount
+	 *            the region is shifted by this amount, and can be positive or
+	 *            negative.
+	 * @since 4.8
+	 */
+	public final void shift(int amount) {
+		beginA += amount;
+		endA += amount;
+		beginB += amount;
+		endB += amount;
 	}
 
 	/**
@@ -195,17 +210,23 @@ public class Edit {
 		return new Edit(cut.endA, endA, cut.endB, endB);
 	}
 
-	/** Increase {@link #getEndA()} by 1. */
+	/**
+	 * Increase {@link #getEndA()} by 1.
+	 */
 	public void extendA() {
 		endA++;
 	}
 
-	/** Increase {@link #getEndB()} by 1. */
+	/**
+	 * Increase {@link #getEndB()} by 1.
+	 */
 	public void extendB() {
 		endB++;
 	}
 
-	/** Swap A and B, so the edit goes the other direction. */
+	/**
+	 * Swap A and B, so the edit goes the other direction.
+	 */
 	public void swap() {
 		final int sBegin = beginA;
 		final int sEnd = endA;
@@ -217,13 +238,15 @@ public class Edit {
 		endB = sEnd;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public int hashCode() {
 		return beginA ^ endA;
 	}
 
+	/** {@inheritDoc} */
 	@Override
-	public boolean equals(final Object o) {
+	public boolean equals(Object o) {
 		if (o instanceof Edit) {
 			final Edit e = (Edit) o;
 			return this.beginA == e.beginA && this.endA == e.endA
@@ -232,6 +255,7 @@ public class Edit {
 		return false;
 	}
 
+	/** {@inheritDoc} */
 	@SuppressWarnings("nls")
 	@Override
 	public String toString() {

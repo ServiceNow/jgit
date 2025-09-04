@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2010, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.diff;
@@ -85,8 +52,9 @@ import java.util.List;
  * So long as {@link #setMaxChainLength(int)} is a small constant (such as 64),
  * the algorithm runs in O(N * D) time, where N is the sum of the input lengths
  * and D is the number of edits in the resulting EditList. If the supplied
- * {@link SequenceComparator} has a good hash function, this implementation
- * typically out-performs {@link MyersDiff}, even though its theoretical running
+ * {@link org.eclipse.jgit.diff.SequenceComparator} has a good hash function,
+ * this implementation typically out-performs
+ * {@link org.eclipse.jgit.diff.MyersDiff}, even though its theoretical running
  * time is the same.
  * <p>
  * This implementation has an internal limitation that prevents it from handling
@@ -130,17 +98,19 @@ public class HistogramDiff extends LowLevelDiffAlgorithm {
 		maxChainLength = maxLen;
 	}
 
+	/** {@inheritDoc} */
+	@Override
 	public <S extends Sequence> void diffNonCommon(EditList edits,
 			HashedSequenceComparator<S> cmp, HashedSequence<S> a,
 			HashedSequence<S> b, Edit region) {
-		new State<S>(edits, cmp, a, b).diffRegion(region);
+		new State<>(edits, cmp, a, b).diffRegion(region);
 	}
 
 	private class State<S extends Sequence> {
 		private final HashedSequenceComparator<S> cmp;
 		private final HashedSequence<S> a;
 		private final HashedSequence<S> b;
-		private final List<Edit> queue = new ArrayList<Edit>();
+		private final List<Edit> queue = new ArrayList<>();
 
 		/** Result edits we have determined that must be made to convert a to b. */
 		final EditList edits;
@@ -160,7 +130,7 @@ public class HistogramDiff extends LowLevelDiffAlgorithm {
 		}
 
 		private void diffReplace(Edit r) {
-			Edit lcs = new HistogramDiffIndex<S>(maxChainLength, cmp, a, b, r)
+			Edit lcs = new HistogramDiffIndex<>(maxChainLength, cmp, a, b, r)
 					.findLongestCommonSequence();
 			if (lcs != null) {
 				// If we were given an edit, we can prove a result here.
@@ -213,7 +183,7 @@ public class HistogramDiff extends LowLevelDiffAlgorithm {
 		}
 
 		private SubsequenceComparator<HashedSequence<S>> subcmp() {
-			return new SubsequenceComparator<HashedSequence<S>>(cmp);
+			return new SubsequenceComparator<>(cmp);
 		}
 	}
 }

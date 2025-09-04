@@ -1,45 +1,12 @@
 /*
  * Copyright (C) 2008-2009, Johannes E. Schindelin <johannes.schindelin@gmx.de>
- * Copyright (C) 2009, Johannes Schindelin <johannes.schindelin@gmx.de>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2009, Johannes Schindelin <johannes.schindelin@gmx.de> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.diff;
@@ -119,7 +86,7 @@ public class MyersDiff<S extends Sequence> {
 		public <S extends Sequence> void diffNonCommon(EditList edits,
 				HashedSequenceComparator<S> cmp, HashedSequence<S> a,
 				HashedSequence<S> b, Edit region) {
-			new MyersDiff<S>(edits, cmp, a, b, region);
+			new MyersDiff<>(edits, cmp, a, b, region);
 		}
 	};
 
@@ -359,7 +326,7 @@ if (k < beginK || k > endK)
 			abstract int getLeft(int x);
 			abstract int getRight(int x);
 			abstract boolean isBetter(int left, int right);
-			abstract void adjustMinMaxK(final int k, final int x);
+			abstract void adjustMinMaxK(int k, int x);
 			abstract boolean meets(int d, int k, int x, long snake);
 
 			final long newSnake(int k, int x) {
@@ -460,6 +427,7 @@ if (k < beginK || k > endK)
 		}
 
 		class ForwardEditPaths extends EditPaths {
+			@Override
 			final int snake(int k, int x) {
 				for (; x < endA && k + x < endB; x++)
 					if (!cmp.equals(a, x, b, k + x))
@@ -467,19 +435,23 @@ if (k < beginK || k > endK)
 				return x;
 			}
 
-			final int getLeft(final int x) {
+			@Override
+			final int getLeft(int x) {
 				return x;
 			}
 
-			final int getRight(final int x) {
+			@Override
+			final int getRight(int x) {
 				return x + 1;
 			}
 
-			final boolean isBetter(final int left, final int right) {
+			@Override
+			final boolean isBetter(int left, int right) {
 				return left > right;
 			}
 
-			final void adjustMinMaxK(final int k, final int x) {
+			@Override
+			final void adjustMinMaxK(int k, int x) {
 				if (x >= endA || k + x >= endB) {
 					if (k > backward.middleK)
 						maxK = k;
@@ -488,6 +460,7 @@ if (k < beginK || k > endK)
 				}
 			}
 
+			@Override
 			final boolean meets(int d, int k, int x, long snake) {
 				if (k < backward.beginK || k > backward.endK)
 					return false;
@@ -502,6 +475,7 @@ if (k < beginK || k > endK)
 		}
 
 		class BackwardEditPaths extends EditPaths {
+			@Override
 			final int snake(int k, int x) {
 				for (; x > beginA && k + x > beginB; x--)
 					if (!cmp.equals(a, x - 1, b, k + x - 1))
@@ -509,19 +483,23 @@ if (k < beginK || k > endK)
 				return x;
 			}
 
-			final int getLeft(final int x) {
+			@Override
+			final int getLeft(int x) {
 				return x - 1;
 			}
 
-			final int getRight(final int x) {
+			@Override
+			final int getRight(int x) {
 				return x;
 			}
 
-			final boolean isBetter(final int left, final int right) {
+			@Override
+			final boolean isBetter(int left, int right) {
 				return left < right;
 			}
 
-			final void adjustMinMaxK(final int k, final int x) {
+			@Override
+			final void adjustMinMaxK(int k, int x) {
 				if (x <= beginA || k + x <= beginB) {
 					if (k > forward.middleK)
 						maxK = k;
@@ -530,6 +508,7 @@ if (k < beginK || k > endK)
 				}
 			}
 
+			@Override
 			final boolean meets(int d, int k, int x, long snake) {
 				if (k < forward.beginK || k > forward.endK)
 					return false;
@@ -545,7 +524,10 @@ if (k < beginK || k > endK)
 	}
 
 	/**
-	 * @param args two filenames specifying the contents to be diffed
+	 * Main method
+	 *
+	 * @param args
+	 *            two filenames specifying the contents to be diffed
 	 */
 	public static void main(String[] args) {
 		if (args.length != 2) {

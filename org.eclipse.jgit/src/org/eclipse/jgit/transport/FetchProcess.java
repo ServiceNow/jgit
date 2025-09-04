@@ -1,49 +1,17 @@
 /*
  * Copyright (C) 2008, Robin Rosenberg <robin.rosenberg@dewire.com>
- * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, 2022 Shawn O. Pearce <spearce@spearce.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.transport;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.eclipse.jgit.transport.ReceiveCommand.Result.NOT_ATTEMPTED;
 import static org.eclipse.jgit.transport.ReceiveCommand.Result.OK;
 import static org.eclipse.jgit.transport.ReceiveCommand.Result.REJECTED_NONFASTFORWARD;
@@ -63,22 +31,25 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 import org.eclipse.jgit.errors.MissingObjectException;
 import org.eclipse.jgit.errors.NotSupportedException;
 import org.eclipse.jgit.errors.TransportException;
 import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.internal.storage.file.LockFile;
-import org.eclipse.jgit.internal.storage.file.PackLock;
 import org.eclipse.jgit.lib.BatchRefUpdate;
 import org.eclipse.jgit.lib.BatchingProgressMonitor;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.ObjectId;
+import org.eclipse.jgit.lib.ObjectIdRef;
 import org.eclipse.jgit.lib.ProgressMonitor;
 import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.lib.RefDatabase;
 import org.eclipse.jgit.revwalk.ObjectWalk;
+import org.eclipse.jgit.revwalk.RevObject;
 import org.eclipse.jgit.revwalk.RevWalk;
+import org.eclipse.jgit.util.StringUtils;
 
 class FetchProcess {
 	/** Transport we will fetch over. */
@@ -87,30 +58,41 @@ class FetchProcess {
 	/** List of things we want to fetch from the remote repository. */
 	private final Collection<RefSpec> toFetch;
 
+	/**
+	 * List of things we don't want to fetch from the remote repository or to
+	 * the local repository.
+	 */
+	private final Collection<RefSpec> negativeRefSpecs;
+
 	/** Set of refs we will actually wind up asking to obtain. */
-	private final HashMap<ObjectId, Ref> askFor = new HashMap<ObjectId, Ref>();
+	private final HashMap<ObjectId, Ref> askFor = new HashMap<>();
 
 	/** Objects we know we have locally. */
-	private final HashSet<ObjectId> have = new HashSet<ObjectId>();
+	private final HashSet<ObjectId> have = new HashSet<>();
 
 	/** Updates to local tracking branches (if any). */
-	private final ArrayList<TrackingRefUpdate> localUpdates = new ArrayList<TrackingRefUpdate>();
+	private final ArrayList<TrackingRefUpdate> localUpdates = new ArrayList<>();
 
 	/** Records to be recorded into FETCH_HEAD. */
-	private final ArrayList<FetchHeadRecord> fetchHeadUpdates = new ArrayList<FetchHeadRecord>();
+	private final ArrayList<FetchHeadRecord> fetchHeadUpdates = new ArrayList<>();
 
-	private final ArrayList<PackLock> packLocks = new ArrayList<PackLock>();
+	private final ArrayList<PackLock> packLocks = new ArrayList<>();
 
 	private FetchConnection conn;
 
 	private Map<String, Ref> localRefs;
 
-	FetchProcess(final Transport t, final Collection<RefSpec> f) {
+	FetchProcess(Transport t, Collection<RefSpec> refSpecs) {
 		transport = t;
-		toFetch = f;
+		toFetch = refSpecs.stream().filter(refSpec -> !refSpec.isNegative())
+				.collect(Collectors.toList());
+		negativeRefSpecs = refSpecs.stream().filter(RefSpec::isNegative)
+				.collect(Collectors.toList());
 	}
 
-	void execute(final ProgressMonitor monitor, final FetchResult result)
+	@SuppressWarnings("Finally")
+	void execute(ProgressMonitor monitor, FetchResult result,
+			String initialBranch)
 			throws NotSupportedException, TransportException {
 		askFor.clear();
 		localUpdates.clear();
@@ -118,27 +100,67 @@ class FetchProcess {
 		packLocks.clear();
 		localRefs = null;
 
+		Throwable e1 = null;
 		try {
-			executeImp(monitor, result);
+			executeImp(monitor, result, initialBranch);
+		} catch (NotSupportedException | TransportException err) {
+			e1 = err;
+			throw err;
 		} finally {
 			try {
-			for (final PackLock lock : packLocks)
-				lock.unlock();
-			} catch (IOException e) {
+				for (PackLock lock : packLocks) {
+					lock.unlock();
+				}
+			} catch (Throwable e) {
+				if (e1 != null) {
+					e.addSuppressed(e1);
+				}
 				throw new TransportException(e.getMessage(), e);
 			}
 		}
 	}
 
+	private boolean isInitialBranchMissing(Map<String, Ref> refsMap,
+			String initialBranch) {
+		if (StringUtils.isEmptyOrNull(initialBranch) || refsMap.isEmpty()) {
+			return false;
+		}
+		if (refsMap.containsKey(initialBranch)
+				|| refsMap.containsKey(Constants.R_HEADS + initialBranch)
+				|| refsMap.containsKey(Constants.R_TAGS + initialBranch)) {
+			return false;
+		}
+		return true;
+	}
+
 	private void executeImp(final ProgressMonitor monitor,
-			final FetchResult result) throws NotSupportedException,
-			TransportException {
-		conn = transport.openFetch();
+			final FetchResult result, String initialBranch)
+			throws NotSupportedException, TransportException {
+		final TagOpt tagopt = transport.getTagOpt();
+		String getTags = (tagopt == TagOpt.NO_TAGS) ? null : Constants.R_TAGS;
+		String getHead = null;
 		try {
-			result.setAdvertisedRefs(transport.getURI(), conn.getRefsMap());
+			// If we don't have a HEAD yet, we're cloning and need to get the
+			// upstream HEAD, too.
+			Ref head = transport.local.exactRef(Constants.HEAD);
+			ObjectId id = head != null ? head.getObjectId() : null;
+			if (id == null || id.equals(ObjectId.zeroId())) {
+				getHead = Constants.HEAD;
+			}
+		} catch (IOException e) {
+			// Ignore
+		}
+		conn = transport.openFetch(toFetch, getTags, getHead);
+		try {
+			Map<String, Ref> refsMap = conn.getRefsMap();
+			if (isInitialBranchMissing(refsMap, initialBranch)) {
+				throw new TransportException(MessageFormat.format(
+						JGitText.get().remoteBranchNotFound, initialBranch));
+			}
+			result.setAdvertisedRefs(transport.getURI(), refsMap);
 			result.peerUserAgent = conn.getPeerUserAgent();
-			final Set<Ref> matched = new HashSet<Ref>();
-			for (final RefSpec spec : toFetch) {
+			final Set<Ref> matched = new HashSet<>();
+			for (RefSpec spec : toFetch) {
 				if (spec.getSource() == null)
 					throw new TransportException(MessageFormat.format(
 							JGitText.get().sourceRefNotSpecifiedForRefspec, spec));
@@ -150,7 +172,6 @@ class FetchProcess {
 			}
 
 			Collection<Ref> additionalTags = Collections.<Ref> emptyList();
-			final TagOpt tagopt = transport.getTagOpt();
 			if (tagopt == TagOpt.AUTO_FOLLOW)
 				additionalTags = expandAutoFollowTags();
 			else if (tagopt == TagOpt.FETCH_TAGS)
@@ -175,11 +196,11 @@ class FetchProcess {
 				//
 				have.addAll(askFor.keySet());
 				askFor.clear();
-				for (final Ref r : additionalTags) {
+				for (Ref r : additionalTags) {
 					ObjectId id = r.getPeeledObjectId();
 					if (id == null)
 						id = r.getObjectId();
-					if (transport.local.hasObject(id))
+					if (localHasObject(id))
 						wantTag(r);
 				}
 
@@ -195,19 +216,23 @@ class FetchProcess {
 
 		BatchRefUpdate batch = transport.local.getRefDatabase()
 				.newBatchUpdate()
-				.setAllowNonFastForwards(true)
-				.setRefLogMessage("fetch", true); //$NON-NLS-1$
-		try (final RevWalk walk = new RevWalk(transport.local)) {
+				.setAllowNonFastForwards(true);
+
+		// Generate reflog only when fetching updates and not at the first clone
+		if (initialBranch == null) {
+			batch.setRefLogMessage("fetch", true); //$NON-NLS-1$
+		}
+
+		try (RevWalk walk = new RevWalk(transport.local)) {
+			walk.setRetainBody(false);
 			if (monitor instanceof BatchingProgressMonitor) {
 				((BatchingProgressMonitor) monitor).setDelayStart(
 						250, TimeUnit.MILLISECONDS);
 			}
-			if (transport.isRemoveDeletedRefs())
+			if (transport.isRemoveDeletedRefs()) {
 				deleteStaleTrackingRefs(result, batch);
-			for (TrackingRefUpdate u : localUpdates) {
-				result.add(u);
-				batch.addCommand(u.asReceiveCommand());
 			}
+			addUpdateBatchCommands(result, batch);
 			for (ReceiveCommand cmd : batch.getCommands()) {
 				cmd.updateType(walk);
 				if (cmd.getType() == UPDATE_NONFASTFORWARD
@@ -220,8 +245,11 @@ class FetchProcess {
 					if (cmd.getResult() == NOT_ATTEMPTED)
 						cmd.setResult(OK);
 				}
-			} else
+			} else {
 				batch.execute(walk, monitor);
+			}
+		} catch (TransportException e) {
+			throw e;
 		} catch (IOException err) {
 			throw new TransportException(MessageFormat.format(
 					JGitText.get().failureUpdatingTrackingRef,
@@ -238,7 +266,24 @@ class FetchProcess {
 		}
 	}
 
-	private void fetchObjects(final ProgressMonitor monitor)
+	private void addUpdateBatchCommands(FetchResult result,
+			BatchRefUpdate batch) throws TransportException {
+		Map<String, ObjectId> refs = new HashMap<>();
+		for (TrackingRefUpdate u : localUpdates) {
+			// Try to skip duplicates if they'd update to the same object ID
+			ObjectId existing = refs.get(u.getLocalName());
+			if (existing == null) {
+				refs.put(u.getLocalName(), u.getNewObjectId());
+				result.add(u);
+				batch.addCommand(u.asReceiveCommand());
+			} else if (!existing.equals(u.getNewObjectId())) {
+				throw new TransportException(MessageFormat
+						.format(JGitText.get().duplicateRef, u.getLocalName()));
+			}
+		}
+	}
+
+	private void fetchObjects(ProgressMonitor monitor)
 			throws TransportException {
 		try {
 			conn.setPackLockMessage("jgit fetch " + transport.uri); //$NON-NLS-1$
@@ -252,7 +297,7 @@ class FetchProcess {
 					JGitText.get().peerDidNotSupplyACompleteObjectGraph);
 	}
 
-	private void closeConnection(final FetchResult result) {
+	private void closeConnection(FetchResult result) {
 		if (conn != null) {
 			conn.close();
 			result.addMessages(conn.getMessages());
@@ -265,7 +310,17 @@ class FetchProcess {
 		if (conn != null)
 			return;
 
-		conn = transport.openFetch();
+		// Build prefixes
+		Set<String> prefixes = new HashSet<>();
+		for (Ref toGet : askFor.values()) {
+			String src = toGet.getName();
+			prefixes.add(src);
+			prefixes.add(Constants.R_REFS + src);
+			prefixes.add(Constants.R_HEADS + src);
+			prefixes.add(Constants.R_TAGS + src);
+		}
+		conn = transport.openFetch(Collections.emptyList(),
+				prefixes.toArray(new String[0]));
 
 		// Since we opened a new connection we cannot be certain
 		// that the system we connected to has the same exact set
@@ -275,13 +330,13 @@ class FetchProcess {
 		// We rebuild our askFor list using only the refs that the
 		// new connection has offered to us.
 		//
-		final HashMap<ObjectId, Ref> avail = new HashMap<ObjectId, Ref>();
-		for (final Ref r : conn.getRefs())
+		final HashMap<ObjectId, Ref> avail = new HashMap<>();
+		for (Ref r : conn.getRefs())
 			avail.put(r.getObjectId(), r);
 
-		final Collection<Ref> wants = new ArrayList<Ref>(askFor.values());
+		final Collection<Ref> wants = new ArrayList<>(askFor.values());
 		askFor.clear();
-		for (final Ref want : wants) {
+		for (Ref want : wants) {
 			final Ref newRef = avail.get(want.getObjectId());
 			if (newRef != null) {
 				askFor.put(newRef.getObjectId(), newRef);
@@ -292,7 +347,7 @@ class FetchProcess {
 		}
 	}
 
-	private void removeTrackingRefUpdate(final ObjectId want) {
+	private void removeTrackingRefUpdate(ObjectId want) {
 		final Iterator<TrackingRefUpdate> i = localUpdates.iterator();
 		while (i.hasNext()) {
 			final TrackingRefUpdate u = i.next();
@@ -301,7 +356,7 @@ class FetchProcess {
 		}
 	}
 
-	private void removeFetchHeadRecord(final ObjectId want) {
+	private void removeFetchHeadRecord(ObjectId want) {
 		final Iterator<FetchHeadRecord> i = fetchHeadUpdates.iterator();
 		while (i.hasNext()) {
 			final FetchHeadRecord fh = i.next();
@@ -310,22 +365,19 @@ class FetchProcess {
 		}
 	}
 
-	private void updateFETCH_HEAD(final FetchResult result) throws IOException {
+	private void updateFETCH_HEAD(FetchResult result) throws IOException {
 		File meta = transport.local.getDirectory();
 		if (meta == null)
 			return;
-		final LockFile lock = new LockFile(new File(meta, "FETCH_HEAD"), //$NON-NLS-1$
-				transport.local.getFS());
+		final LockFile lock = new LockFile(new File(meta, "FETCH_HEAD")); //$NON-NLS-1$
 		try {
 			if (lock.lock()) {
-				final Writer w = new OutputStreamWriter(lock.getOutputStream());
-				try {
-					for (final FetchHeadRecord h : fetchHeadUpdates) {
+				try (Writer w = new OutputStreamWriter(
+						lock.getOutputStream(), UTF_8)) {
+					for (FetchHeadRecord h : fetchHeadUpdates) {
 						h.write(w);
 						result.add(h);
 					}
-				} finally {
-					w.close();
 				}
 				lock.commit();
 			}
@@ -336,14 +388,22 @@ class FetchProcess {
 
 	private boolean askForIsComplete() throws TransportException {
 		try {
-			try (final ObjectWalk ow = new ObjectWalk(transport.local)) {
-				for (final ObjectId want : askFor.keySet())
-					ow.markStart(ow.parseAny(want));
-				for (final Ref ref : localRefs().values())
-					ow.markUninteresting(ow.parseAny(ref.getObjectId()));
-				ow.checkConnectivity();
+			try (ObjectWalk ow = new ObjectWalk(transport.local)) {
+				boolean hasCommitObject = false;
+				for (ObjectId want : askFor.keySet()) {
+					RevObject obj = ow.parseAny(want);
+					ow.markStart(obj);
+					hasCommitObject |= obj.getType() == Constants.OBJ_COMMIT;
+				}
+				// Checking connectivity makes sense on commits only
+				if (hasCommitObject) {
+					for (Ref ref : localRefs().values()) {
+						ow.markUninteresting(ow.parseAny(ref.getObjectId()));
+					}
+					ow.checkConnectivity();
+				}
 			}
-			return true;
+			return transport.getDepth() == null; // if depth is set we need to request objects that are already available
 		} catch (MissingObjectException e) {
 			return false;
 		} catch (IOException e) {
@@ -351,28 +411,68 @@ class FetchProcess {
 		}
 	}
 
-	private void expandWildcard(final RefSpec spec, final Set<Ref> matched)
+	private void expandWildcard(RefSpec spec, Set<Ref> matched)
 			throws TransportException {
-		for (final Ref src : conn.getRefs()) {
-			if (spec.matchSource(src) && matched.add(src))
-				want(src, spec.expandFromSource(src));
+		for (Ref src : conn.getRefs()) {
+			if (spec.matchSource(src)) {
+				RefSpec expandedRefSpec = spec.expandFromSource(src);
+				if (!matchNegativeRefSpec(expandedRefSpec)
+						&& matched.add(src)) {
+					want(src, expandedRefSpec);
+				}
+			}
 		}
 	}
 
-	private void expandSingle(final RefSpec spec, final Set<Ref> matched)
+	private void expandSingle(RefSpec spec, Set<Ref> matched)
 			throws TransportException {
-		final Ref src = conn.getRef(spec.getSource());
-		if (src == null) {
-			throw new TransportException(MessageFormat.format(JGitText.get().remoteDoesNotHaveSpec, spec.getSource()));
+		String want = spec.getSource();
+		if (ObjectId.isId(want)) {
+			want(ObjectId.fromString(want));
+			return;
 		}
-		if (matched.add(src))
+
+		Ref src = conn.getRef(want);
+		if (src == null) {
+			throw new TransportException(MessageFormat.format(JGitText.get().remoteDoesNotHaveSpec, want));
+		}
+		if (!matchNegativeRefSpec(spec) && matched.add(src)) {
 			want(src, spec);
+		}
+	}
+
+	private boolean matchNegativeRefSpec(RefSpec spec) {
+		for (RefSpec negativeRefSpec : negativeRefSpecs) {
+			if (negativeRefSpec.getSource() != null && spec.getSource() != null
+					&& negativeRefSpec.matchSource(spec.getSource())) {
+				return true;
+			}
+
+			if (negativeRefSpec.getDestination() != null
+					&& spec.getDestination() != null && negativeRefSpec
+							.matchDestination(spec.getDestination())) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private boolean localHasObject(ObjectId id) throws TransportException {
+		try {
+			return transport.local.getObjectDatabase().has(id);
+		} catch (IOException err) {
+			throw new TransportException(
+					MessageFormat.format(
+							JGitText.get().readingObjectsFromLocalRepositoryFailed,
+							err.getMessage()),
+					err);
+		}
 	}
 
 	private Collection<Ref> expandAutoFollowTags() throws TransportException {
-		final Collection<Ref> additionalTags = new ArrayList<Ref>();
+		final Collection<Ref> additionalTags = new ArrayList<>();
 		final Map<String, Ref> haveRefs = localRefs();
-		for (final Ref r : conn.getRefs()) {
+		for (Ref r : conn.getRefs()) {
 			if (!isTag(r))
 				continue;
 
@@ -386,7 +486,7 @@ class FetchProcess {
 			if (obj == null)
 				obj = r.getObjectId();
 
-			if (askFor.containsKey(obj) || transport.local.hasObject(obj))
+			if (askFor.containsKey(obj) || localHasObject(obj))
 				wantTag(r);
 			else
 				additionalTags.add(r);
@@ -396,27 +496,40 @@ class FetchProcess {
 
 	private void expandFetchTags() throws TransportException {
 		final Map<String, Ref> haveRefs = localRefs();
-		for (final Ref r : conn.getRefs()) {
-			if (!isTag(r))
+		for (Ref r : conn.getRefs()) {
+			if (!isTag(r)) {
 				continue;
+			}
+			ObjectId id = r.getObjectId();
+			if (id == null) {
+				continue;
+			}
 			final Ref local = haveRefs.get(r.getName());
-			if (local == null || !r.getObjectId().equals(local.getObjectId()))
+			if (local == null || !id.equals(local.getObjectId())) {
 				wantTag(r);
+			}
 		}
 	}
 
-	private void wantTag(final Ref r) throws TransportException {
+	private void wantTag(Ref r) throws TransportException {
 		want(r, new RefSpec().setSource(r.getName())
 				.setDestination(r.getName()).setForceUpdate(true));
 	}
 
-	private void want(final Ref src, final RefSpec spec)
+	private void want(Ref src, RefSpec spec)
 			throws TransportException {
 		final ObjectId newId = src.getObjectId();
+		if (newId == null) {
+			throw new NullPointerException(MessageFormat.format(
+					JGitText.get().transportProvidedRefWithNoObjectId,
+					src.getName()));
+		}
 		if (spec.getDestination() != null) {
 			final TrackingRefUpdate tru = createUpdate(spec, newId);
-			if (newId.equals(tru.getOldObjectId()))
+			// if depth is set we need to update the ref
+			if (newId.equals(tru.getOldObjectId()) && transport.getDepth() == null) {
 				return;
+			}
 			localUpdates.add(tru);
 		}
 
@@ -428,6 +541,11 @@ class FetchProcess {
 		fhr.sourceName = src.getName();
 		fhr.sourceURI = transport.getURI();
 		fetchHeadUpdates.add(fhr);
+	}
+
+	private void want(ObjectId id) {
+		askFor.put(id,
+				new ObjectIdRef.Unpeeled(Ref.Storage.NETWORK, id.name(), id));
 	}
 
 	private TrackingRefUpdate createUpdate(RefSpec spec, ObjectId newId)
@@ -458,12 +576,17 @@ class FetchProcess {
 
 	private void deleteStaleTrackingRefs(FetchResult result,
 			BatchRefUpdate batch) throws IOException {
-		for (final Ref ref : localRefs().values()) {
-			final String refname = ref.getName();
-			for (final RefSpec spec : toFetch) {
+		Set<Ref> processed = new HashSet<>();
+		for (Ref ref : localRefs().values()) {
+			if (ref.isSymbolic()) {
+				continue;
+			}
+			String refname = ref.getName();
+			for (RefSpec spec : toFetch) {
 				if (spec.matchDestination(refname)) {
-					final RefSpec s = spec.expandFromDestination(refname);
-					if (result.getAdvertisedRef(s.getSource()) == null) {
+					RefSpec s = spec.expandFromDestination(refname);
+					if (result.getAdvertisedRef(s.getSource()) == null
+							&& processed.add(ref)) {
 						deleteTrackingRef(result, batch, s, ref);
 					}
 				}
@@ -485,11 +608,11 @@ class FetchProcess {
 		batch.addCommand(update.asReceiveCommand());
 	}
 
-	private static boolean isTag(final Ref r) {
+	private static boolean isTag(Ref r) {
 		return isTag(r.getName());
 	}
 
-	private static boolean isTag(final String name) {
+	private static boolean isTag(String name) {
 		return name.startsWith(Constants.R_TAGS);
 	}
 

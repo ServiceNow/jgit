@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2015, christian.Halstrick <christian.halstrick@sap.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2015, christian.Halstrick <christian.halstrick@sap.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 package org.eclipse.jgit.http.test;
 
@@ -60,6 +27,7 @@ import org.eclipse.jgit.http.server.GitServlet;
 import org.eclipse.jgit.http.server.resolver.DefaultReceivePackFactory;
 import org.eclipse.jgit.junit.TestRepository;
 import org.eclipse.jgit.junit.http.HttpTestCase;
+import org.eclipse.jgit.lib.AnyObjectId;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.NullProgressMonitor;
 import org.eclipse.jgit.lib.ObjectChecker;
@@ -74,7 +42,6 @@ import org.eclipse.jgit.transport.ReceivePack;
 import org.eclipse.jgit.transport.RemoteRefUpdate;
 import org.eclipse.jgit.transport.Transport;
 import org.eclipse.jgit.transport.URIish;
-import org.eclipse.jgit.transport.resolver.RepositoryResolver;
 import org.eclipse.jgit.transport.resolver.ServiceNotAuthorizedException;
 import org.eclipse.jgit.transport.resolver.ServiceNotEnabledException;
 import org.junit.Before;
@@ -106,6 +73,7 @@ public class GitServletResponseTests extends HttpTestCase {
 	 * configure the maximum pack file size, the object checker and custom hooks
 	 * just before they talk to the server.
 	 */
+	@Override
 	@Before
 	public void setUp() throws Exception {
 		super.setUp();
@@ -115,19 +83,16 @@ public class GitServletResponseTests extends HttpTestCase {
 
 		ServletContextHandler app = server.addContext("/git");
 		gs = new GitServlet();
-		gs.setRepositoryResolver(new RepositoryResolver<HttpServletRequest>() {
-			public Repository open(HttpServletRequest req, String name)
-					throws RepositoryNotFoundException,
-					ServiceNotEnabledException {
-				if (!name.equals(repoName))
-					throw new RepositoryNotFoundException(name);
-
-				final Repository db = srv.getRepository();
-				db.incrementOpen();
-				return db;
+		gs.setRepositoryResolver((HttpServletRequest req, String name) -> {
+			if (!name.equals(repoName)) {
+				throw new RepositoryNotFoundException(name);
 			}
+			final Repository db = srv.getRepository();
+			db.incrementOpen();
+			return db;
 		});
 		gs.setReceivePackFactory(new DefaultReceivePackFactory() {
+			@Override
 			public ReceivePack create(HttpServletRequest req, Repository db)
 					throws ServiceNotEnabledException,
 					ServiceNotAuthorizedException {
@@ -172,20 +137,14 @@ public class GitServletResponseTests extends HttpTestCase {
 		final RevCommit Q = client.commit().add("Q", Q_txt).create();
 		final Repository clientRepo = client.getRepository();
 		final String srvBranchName = Constants.R_HEADS + "new.branch";
-		Transport t;
 
 		maxPackSize = 0;
 		postHook = null;
-		preHook = new PreReceiveHook() {
-			@Override
-			public void onPreReceive(ReceivePack rp,
-					Collection<ReceiveCommand> commands) {
-				throw new IllegalStateException();
-			}
+		preHook = (ReceivePack rp, Collection<ReceiveCommand> commands) -> {
+			throw new IllegalStateException();
 		};
 
-		t = Transport.open(clientRepo, srvURI);
-		try {
+		try (Transport t = Transport.open(clientRepo, srvURI)) {
 			RemoteRefUpdate update = new RemoteRefUpdate(clientRepo, Q.name(),
 					srvBranchName, false, null, null);
 			try {
@@ -195,8 +154,6 @@ public class GitServletResponseTests extends HttpTestCase {
 			} catch (Exception e) {
 				assertTrue(e instanceof TransportException);
 			}
-		} finally {
-			t.close();
 		}
 	}
 
@@ -214,20 +171,19 @@ public class GitServletResponseTests extends HttpTestCase {
 		final RevCommit Q = client.commit().add("Q", Q_txt).create();
 		final Repository clientRepo = client.getRepository();
 		final String srvBranchName = Constants.R_HEADS + "new.branch";
-		Transport t;
 
 		maxPackSize = 0;
 		postHook = null;
 		preHook = null;
 		oc = new ObjectChecker() {
 			@Override
-			public void checkCommit(byte[] raw) throws CorruptObjectException {
-				throw new IllegalStateException();
+			public void checkCommit(AnyObjectId id, byte[] raw)
+					throws CorruptObjectException {
+				throw new CorruptObjectException("refusing all commits");
 			}
 		};
 
-		t = Transport.open(clientRepo, srvURI);
-		try {
+		try (Transport t = Transport.open(clientRepo, srvURI)) {
 			RemoteRefUpdate update = new RemoteRefUpdate(clientRepo, Q.name(),
 					srvBranchName, false, null, null);
 			try {
@@ -237,8 +193,6 @@ public class GitServletResponseTests extends HttpTestCase {
 			} catch (Exception e) {
 				assertTrue(e instanceof TransportException);
 			}
-		} finally {
-			t.close();
 		}
 	}
 
@@ -261,24 +215,19 @@ public class GitServletResponseTests extends HttpTestCase {
 		final RevCommit Q = client.commit().add("Q", Q_txt).create();
 		final Repository clientRepo = client.getRepository();
 		final String srvBranchName = Constants.R_HEADS + "new.branch";
-		Transport t;
 
 		// this maxPackSize leads to an unPackError
-		maxPackSize = 400;
+		maxPackSize = 100;
 		// this PostReceiveHook when called after an unsuccesfull unpack will
 		// lead to an IllegalStateException
-		postHook = new PostReceiveHook() {
-			public void onPostReceive(ReceivePack rp,
-					Collection<ReceiveCommand> commands) {
-				// the maxPackSize setting caused that the packfile couldn't be
-				// saved to disk. Calling getPackSize() now will lead to a
-				// IllegalStateException.
-				rp.getPackSize();
-			}
+		postHook = (ReceivePack rp, Collection<ReceiveCommand> commands) -> {
+			// the maxPackSize setting caused that the packfile couldn't be
+			// saved to disk. Calling getPackSize() now will lead to a
+			// IllegalStateException.
+			rp.getPackSize();
 		};
 
-		t = Transport.open(clientRepo, srvURI);
-		try {
+		try (Transport t = Transport.open(clientRepo, srvURI)) {
 			RemoteRefUpdate update = new RemoteRefUpdate(clientRepo, Q.name(),
 					srvBranchName, false, null, null);
 			try {
@@ -288,8 +237,6 @@ public class GitServletResponseTests extends HttpTestCase {
 			} catch (Exception e) {
 				assertTrue(e instanceof TooLargePackException);
 			}
-		} finally {
-			t.close();
 		}
 	}
 }

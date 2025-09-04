@@ -3,46 +3,13 @@
  * Copyright (C) 2008, Jonas Fonseca <fonseca@diku.dk>
  * Copyright (C) 2008, Marek Zawirski <marek.zawirski@gmail.com>
  * Copyright (C) 2007, Robin Rosenberg <robin.rosenberg@dewire.com>
- * Copyright (C) 2006-2008, Shawn O. Pearce <spearce@spearce.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2006-2008, Shawn O. Pearce <spearce@spearce.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.lib;
@@ -61,16 +28,23 @@ import org.eclipse.jgit.util.IO;
  */
 public abstract class ObjectLoader {
 	/**
-	 * @return Git in pack object type, see {@link Constants}.
+	 * Get Git in pack object type
+	 *
+	 * @return Git in pack object type, see
+	 *         {@link org.eclipse.jgit.lib.Constants}.
 	 */
 	public abstract int getType();
 
 	/**
+	 * Get size of object in bytes
+	 *
 	 * @return size of object in bytes
 	 */
 	public abstract long getSize();
 
 	/**
+	 * Whether this object is too large to obtain as a byte array.
+	 *
 	 * @return true if this object is too large to obtain as a byte array.
 	 *         Objects over a certain threshold should be accessed only by their
 	 *         {@link #openStream()} to prevent overflowing the JVM heap.
@@ -91,7 +65,7 @@ public abstract class ObjectLoader {
 	 * be modified by the caller.
 	 *
 	 * @return the bytes of this object.
-	 * @throws LargeObjectException
+	 * @throws org.eclipse.jgit.errors.LargeObjectException
 	 *             if the object won't fit into a byte array, because
 	 *             {@link #isLarge()} returns true. Callers should use
 	 *             {@link #openStream()} instead to access the contents.
@@ -113,16 +87,18 @@ public abstract class ObjectLoader {
 	 *
 	 * @param sizeLimit
 	 *            maximum number of bytes to return. If the object is larger
-	 *            than this limit, {@link LargeObjectException} will be thrown.
+	 *            than this limit,
+	 *            {@link org.eclipse.jgit.errors.LargeObjectException} will be
+	 *            thrown.
 	 * @return the bytes of this object.
-	 * @throws LargeObjectException
+	 * @throws org.eclipse.jgit.errors.LargeObjectException
 	 *             if the object is bigger than {@code sizeLimit}, or if
-	 *             {@link OutOfMemoryError} occurs during allocation of the
-	 *             result array. Callers should use {@link #openStream()}
+	 *             {@link java.lang.OutOfMemoryError} occurs during allocation
+	 *             of the result array. Callers should use {@link #openStream()}
 	 *             instead to access the contents.
-	 * @throws MissingObjectException
+	 * @throws org.eclipse.jgit.errors.MissingObjectException
 	 *             the object is large, and it no longer exists.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the object store cannot be accessed.
 	 */
 	public final byte[] getBytes(int sizeLimit) throws LargeObjectException,
@@ -144,7 +120,7 @@ public abstract class ObjectLoader {
 	 * Changes (if made) will affect the cache but not the repository itself.
 	 *
 	 * @return the cached bytes of this object. Do not modify it.
-	 * @throws LargeObjectException
+	 * @throws org.eclipse.jgit.errors.LargeObjectException
 	 *             if the object won't fit into a byte array, because
 	 *             {@link #isLarge()} returns true. Callers should use
 	 *             {@link #openStream()} instead to access the contents.
@@ -167,16 +143,17 @@ public abstract class ObjectLoader {
 	 * @param sizeLimit
 	 *            maximum number of bytes to return. If the object size is
 	 *            larger than this limit and {@link #isLarge()} is true,
-	 *            {@link LargeObjectException} will be thrown.
+	 *            {@link org.eclipse.jgit.errors.LargeObjectException} will be
+	 *            thrown.
 	 * @return the cached bytes of this object. Do not modify it.
-	 * @throws LargeObjectException
+	 * @throws org.eclipse.jgit.errors.LargeObjectException
 	 *             if the object is bigger than {@code sizeLimit}, or if
-	 *             {@link OutOfMemoryError} occurs during allocation of the
-	 *             result array. Callers should use {@link #openStream()}
+	 *             {@link java.lang.OutOfMemoryError} occurs during allocation
+	 *             of the result array. Callers should use {@link #openStream()}
 	 *             instead to access the contents.
-	 * @throws MissingObjectException
+	 * @throws org.eclipse.jgit.errors.MissingObjectException
 	 *             the object is large, and it no longer exists.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the object store cannot be accessed.
 	 */
 	public byte[] getCachedBytes(int sizeLimit) throws LargeObjectException,
@@ -184,8 +161,7 @@ public abstract class ObjectLoader {
 		if (!isLarge())
 			return getCachedBytes();
 
-		ObjectStream in = openStream();
-		try {
+		try (ObjectStream in = openStream()) {
 			long sz = in.getSize();
 			if (sizeLimit < sz)
 				throw new LargeObjectException.ExceedsLimit(sizeLimit, sz);
@@ -202,8 +178,6 @@ public abstract class ObjectLoader {
 
 			IO.readFully(in, buf, 0, buf.length);
 			return buf;
-		} finally {
-			in.close();
 		}
 	}
 
@@ -213,9 +187,9 @@ public abstract class ObjectLoader {
 	 * @return a stream of this object's data. Caller must close the stream when
 	 *         through with it. The returned stream is buffered with a
 	 *         reasonable buffer size.
-	 * @throws MissingObjectException
+	 * @throws org.eclipse.jgit.errors.MissingObjectException
 	 *             the object no longer exists.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the object store cannot be accessed.
 	 */
 	public abstract ObjectStream openStream() throws MissingObjectException,
@@ -236,17 +210,16 @@ public abstract class ObjectLoader {
 	 *            stream to receive the complete copy of this object's data.
 	 *            Caller is responsible for flushing or closing this stream
 	 *            after this method returns.
-	 * @throws MissingObjectException
+	 * @throws org.eclipse.jgit.errors.MissingObjectException
 	 *             the object no longer exists.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the object store cannot be accessed, or the stream cannot be
 	 *             written to.
 	 */
 	public void copyTo(OutputStream out) throws MissingObjectException,
 			IOException {
 		if (isLarge()) {
-			ObjectStream in = openStream();
-			try {
+			try (ObjectStream in = openStream()) {
 				final long sz = in.getSize();
 				byte[] tmp = new byte[8192];
 				long copied = 0;
@@ -259,15 +232,13 @@ public abstract class ObjectLoader {
 				}
 				if (0 <= in.read())
 					throw new EOFException();
-			} finally {
-				in.close();
 			}
 		} else {
 			out.write(getCachedBytes());
 		}
 	}
 
-	private static byte[] cloneArray(final byte[] data) {
+	private static byte[] cloneArray(byte[] data) {
 		final byte[] copy = new byte[data.length];
 		System.arraycopy(data, 0, copy, 0, data.length);
 		return copy;
@@ -321,6 +292,44 @@ public abstract class ObjectLoader {
 		@Override
 		public ObjectStream openStream() {
 			return new ObjectStream.SmallStream(this);
+		}
+	}
+
+	/**
+	 * Wraps a delegate ObjectLoader.
+	 *
+	 * @since 4.10
+	 */
+	public abstract static class Filter extends ObjectLoader {
+		/**
+		 * @return delegate ObjectLoader to handle all processing.
+		 * @since 4.10
+		 */
+		protected abstract ObjectLoader delegate();
+
+		@Override
+		public int getType() {
+			return delegate().getType();
+		}
+
+		@Override
+		public long getSize() {
+			return delegate().getSize();
+		}
+
+		@Override
+		public boolean isLarge() {
+			return delegate().isLarge();
+		}
+
+		@Override
+		public byte[] getCachedBytes() {
+			return delegate().getCachedBytes();
+		}
+
+		@Override
+		public ObjectStream openStream() throws IOException {
+			return delegate().openStream();
 		}
 	}
 }

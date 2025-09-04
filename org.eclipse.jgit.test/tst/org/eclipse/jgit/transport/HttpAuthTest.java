@@ -100,7 +100,7 @@ public class HttpAuthTest {
 		} catch (IOException e) {
 			fail("Couldn't instantiate AuthHeadersResponse: " + e.toString());
 		}
-		HttpAuthMethod authMethod = HttpAuthMethod.scanResponse(response);
+		HttpAuthMethod authMethod = HttpAuthMethod.scanResponse(response, null);
 
 		if (!expectedAuthMethod.equals(getAuthMethodName(authMethod))) {
 			fail("Wrong authentication method: expected " + expectedAuthMethod
@@ -113,7 +113,7 @@ public class HttpAuthTest {
 	}
 
 	private static class AuthHeadersResponse extends JDKHttpConnection {
-		Map<String, List<String>> headerFields = new HashMap<String, List<String>>();
+		Map<String, List<String>> headerFields = new HashMap<>();
 
 		public AuthHeadersResponse(String[] authHeaders)
 				throws MalformedURLException, IOException {
@@ -133,16 +133,15 @@ public class HttpAuthTest {
 
 		@Override
 		public String getHeaderField(String name) {
-			if (!headerFields.containsKey(name))
+			if (!headerFields.containsKey(name)) {
 				return null;
-			else {
-				int n = headerFields.get(name).size();
-
-				if (n > 0)
-					return headerFields.get(name).get(n - 1);
-				else
-					return null;
 			}
+			int n = headerFields.get(name).size();
+
+			if (n > 0) {
+				return headerFields.get(name).get(n - 1);
+			}
+			return null;
 		}
 
 		@Override

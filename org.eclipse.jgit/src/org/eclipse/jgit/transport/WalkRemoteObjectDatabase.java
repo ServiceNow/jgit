@@ -1,47 +1,16 @@
 /*
- * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.transport;
+
+import static java.nio.charset.StandardCharsets.UTF_8;
 
 import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
@@ -80,10 +49,6 @@ abstract class WalkRemoteObjectDatabase {
 
 	static final String INFO_PACKS = "info/packs"; //$NON-NLS-1$
 
-	static final String INFO_ALTERNATES = "info/alternates"; //$NON-NLS-1$
-
-	static final String INFO_HTTP_ALTERNATES = "info/http-alternates"; //$NON-NLS-1$
-
 	static final String INFO_REFS = ROOT_DIR + Constants.INFO_REFS;
 
 	abstract URIish getURI();
@@ -105,8 +70,10 @@ abstract class WalkRemoteObjectDatabase {
 	/**
 	 * Obtain alternate connections to alternate object databases (if any).
 	 * <p>
-	 * Alternates are typically read from the file {@link #INFO_ALTERNATES} or
-	 * {@link #INFO_HTTP_ALTERNATES}. The content of each line must be resolved
+         * Alternates are typically read from the file
+         * {@link org.eclipse.jgit.lib.Constants#INFO_ALTERNATES} or
+         * {@link org.eclipse.jgit.lib.Constants#INFO_HTTP_ALTERNATES}.
+         * The content of each line must be resolved
 	 * by the implementation and a new database reference should be returned to
 	 * represent the additional location.
 	 * <p>
@@ -133,6 +100,9 @@ abstract class WalkRemoteObjectDatabase {
 	 * Callers such as {@link WalkFetchConnection} are prepared to handle this
 	 * by validating the content received, and assuming content that fails to
 	 * match its hash is an incorrectly phrased FileNotFoundException.
+	 * <p>
+	 * This method is recommended for already compressed files like loose objects
+	 * and pack files. For text files, see {@link #openReader(String)}.
 	 *
 	 * @param path
 	 *            location of the file to read, relative to this objects
@@ -199,7 +169,7 @@ abstract class WalkRemoteObjectDatabase {
 	 * @throws IOException
 	 *             deletion is not supported, or deletion failed.
 	 */
-	void deleteFile(final String path) throws IOException {
+	void deleteFile(String path) throws IOException {
 		throw new IOException(MessageFormat.format(JGitText.get().deletingNotSupported, path));
 	}
 
@@ -260,12 +230,9 @@ abstract class WalkRemoteObjectDatabase {
 	 *             writing is not supported, or attempting to write the file
 	 *             failed, possibly due to permissions or remote disk full, etc.
 	 */
-	void writeFile(final String path, final byte[] data) throws IOException {
-		final OutputStream os = writeFile(path, null, null);
-		try {
+	void writeFile(String path, byte[] data) throws IOException {
+		try (OutputStream os = writeFile(path, null, null)) {
 			os.write(data);
-		} finally {
-			os.close();
 		}
 	}
 
@@ -278,7 +245,7 @@ abstract class WalkRemoteObjectDatabase {
 	 * @throws IOException
 	 *             deletion is not supported, or deletion failed.
 	 */
-	void deleteRef(final String name) throws IOException {
+	void deleteRef(String name) throws IOException {
 		deleteFile(ROOT_DIR + name);
 	}
 
@@ -291,7 +258,7 @@ abstract class WalkRemoteObjectDatabase {
 	 * @throws IOException
 	 *             deletion is not supported, or deletion failed.
 	 */
-	void deleteRefLog(final String name) throws IOException {
+	void deleteRefLog(String name) throws IOException {
 		deleteFile(ROOT_DIR + Constants.LOGS + "/" + name); //$NON-NLS-1$
 	}
 
@@ -309,7 +276,7 @@ abstract class WalkRemoteObjectDatabase {
 	 *             writing is not supported, or attempting to write the file
 	 *             failed, possibly due to permissions or remote disk full, etc.
 	 */
-	void writeRef(final String name, final ObjectId value) throws IOException {
+	void writeRef(String name, ObjectId value) throws IOException {
 		final ByteArrayOutputStream b;
 
 		b = new ByteArrayOutputStream(Constants.OBJECT_ID_STRING_LENGTH + 1);
@@ -333,9 +300,9 @@ abstract class WalkRemoteObjectDatabase {
 	 *             writing is not supported, or attempting to write the file
 	 *             failed, possibly due to permissions or remote disk full, etc.
 	 */
-	void writeInfoPacks(final Collection<String> packNames) throws IOException {
+	void writeInfoPacks(Collection<String> packNames) throws IOException {
 		final StringBuilder w = new StringBuilder();
-		for (final String n : packNames) {
+		for (String n : packNames) {
 			w.append("P "); //$NON-NLS-1$
 			w.append(n);
 			w.append('\n');
@@ -346,8 +313,8 @@ abstract class WalkRemoteObjectDatabase {
 	/**
 	 * Open a buffered reader around a file.
 	 * <p>
-	 * This is shorthand for calling {@link #open(String)} and then wrapping it
-	 * in a reader suitable for line oriented files like the alternates list.
+	 * This method is suitable for reading line-oriented resources like
+	 * <code>info/packs</code>, <code>info/refs</code>, and the alternates list.
 	 *
 	 * @return a stream to read from the file. Never null.
 	 * @param path
@@ -361,9 +328,9 @@ abstract class WalkRemoteObjectDatabase {
 	 *             exists, or after it was determined to exist but before the
 	 *             stream could be created.
 	 */
-	BufferedReader openReader(final String path) throws IOException {
+	BufferedReader openReader(String path) throws IOException {
 		final InputStream is = open(path).in;
-		return new BufferedReader(new InputStreamReader(is, Constants.CHARSET));
+		return new BufferedReader(new InputStreamReader(is, UTF_8));
 	}
 
 	/**
@@ -391,9 +358,8 @@ abstract class WalkRemoteObjectDatabase {
 	 */
 	Collection<WalkRemoteObjectDatabase> readAlternates(final String listPath)
 			throws IOException {
-		final BufferedReader br = openReader(listPath);
-		try {
-			final Collection<WalkRemoteObjectDatabase> alts = new ArrayList<WalkRemoteObjectDatabase>();
+		try (BufferedReader br = openReader(listPath)) {
+			final Collection<WalkRemoteObjectDatabase> alts = new ArrayList<>();
 			for (;;) {
 				String line = br.readLine();
 				if (line == null)
@@ -403,8 +369,6 @@ abstract class WalkRemoteObjectDatabase {
 				alts.add(openAlternate(line));
 			}
 			return alts;
-		} finally {
-			br.close();
 		}
 	}
 
@@ -414,19 +378,13 @@ abstract class WalkRemoteObjectDatabase {
 	 * @param avail
 	 *            return collection of references. Any existing entries will be
 	 *            replaced if they are found in the packed-refs file.
-	 * @throws TransportException
+	 * @throws org.eclipse.jgit.errors.TransportException
 	 *             an error occurred reading from the packed refs file.
 	 */
-	protected void readPackedRefs(final Map<String, Ref> avail)
+	protected void readPackedRefs(Map<String, Ref> avail)
 			throws TransportException {
-		try {
-			final BufferedReader br = openReader(ROOT_DIR
-					+ Constants.PACKED_REFS);
-			try {
-				readPackedRefsImpl(avail, br);
-			} finally {
-				br.close();
-			}
+		try (BufferedReader br = openReader(ROOT_DIR + Constants.PACKED_REFS)) {
+			readPackedRefsImpl(avail, br);
 		} catch (FileNotFoundException notPacked) {
 			// Perhaps it wasn't worthwhile, or is just an older repository.
 		} catch (IOException e) {
@@ -484,7 +442,7 @@ abstract class WalkRemoteObjectDatabase {
 		 *            stream containing the file data. This stream will be
 		 *            closed by the caller when reading is complete.
 		 */
-		FileStream(final InputStream i) {
+		FileStream(InputStream i) {
 			in = i;
 			length = -1;
 		}
@@ -499,7 +457,7 @@ abstract class WalkRemoteObjectDatabase {
 		 *            total number of bytes available for reading through
 		 *            <code>i</code>.
 		 */
-		FileStream(final InputStream i, final long n) {
+		FileStream(InputStream i, long n) {
 			in = i;
 			length = n;
 		}

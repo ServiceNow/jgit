@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2009-2010, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2009-2010, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.http.server;
@@ -62,8 +29,6 @@ import org.eclipse.jgit.http.server.resolver.AsIsFileService;
 import org.eclipse.jgit.http.server.resolver.DefaultReceivePackFactory;
 import org.eclipse.jgit.http.server.resolver.DefaultUploadPackFactory;
 import org.eclipse.jgit.lib.Constants;
-import org.eclipse.jgit.transport.ReceivePack;
-import org.eclipse.jgit.transport.UploadPack;
 import org.eclipse.jgit.transport.resolver.FileResolver;
 import org.eclipse.jgit.transport.resolver.ReceivePackFactory;
 import org.eclipse.jgit.transport.resolver.RepositoryResolver;
@@ -74,15 +39,16 @@ import org.eclipse.jgit.util.StringUtils;
  * Handles Git repository access over HTTP.
  * <p>
  * Applications embedding this filter should map a directory path within the
- * application to this filter. For a servlet version, see {@link GitServlet}.
+ * application to this filter. For a servlet version, see
+ * {@link org.eclipse.jgit.http.server.GitServlet}.
  * <p>
  * Applications may wish to add additional repository action URLs to this
- * servlet by taking advantage of its extension from {@link MetaFilter}.
- * Callers may register their own URL suffix translations through
- * {@link #serve(String)}, or their regex translations through
- * {@link #serveRegex(String)}. Each translation should contain a complete
- * filter pipeline which ends with the HttpServlet that should handle the
- * requested action.
+ * servlet by taking advantage of its extension from
+ * {@link org.eclipse.jgit.http.server.glue.MetaFilter}. Callers may register
+ * their own URL suffix translations through {@link #serve(String)}, or their
+ * regex translations through {@link #serveRegex(String)}. Each translation
+ * should contain a complete filter pipeline which ends with the HttpServlet
+ * that should handle the requested action.
  */
 public class GitFilter extends MetaFilter {
 	private volatile boolean initialized;
@@ -93,11 +59,15 @@ public class GitFilter extends MetaFilter {
 
 	private UploadPackFactory<HttpServletRequest> uploadPackFactory = new DefaultUploadPackFactory();
 
+	private UploadPackErrorHandler uploadPackErrorHandler;
+
 	private ReceivePackFactory<HttpServletRequest> receivePackFactory = new DefaultReceivePackFactory();
 
-	private final List<Filter> uploadPackFilters = new LinkedList<Filter>();
+	private ReceivePackErrorHandler receivePackErrorHandler;
 
-	private final List<Filter> receivePackFilters = new LinkedList<Filter>();
+	private final List<Filter> uploadPackFilters = new LinkedList<>();
+
+	private final List<Filter> receivePackFilters = new LinkedList<>();
 
 	/**
 	 * New servlet that will load its base directory from {@code web.xml}.
@@ -124,6 +94,8 @@ public class GitFilter extends MetaFilter {
 	}
 
 	/**
+	 * Set AsIsFileService
+	 *
 	 * @param f
 	 *            the filter to validate direct access to repository files
 	 *            through a dumb client. If {@code null} then dumb client
@@ -135,9 +107,12 @@ public class GitFilter extends MetaFilter {
 	}
 
 	/**
+	 * Set upload-pack factory
+	 *
 	 * @param f
-	 *            the factory to construct and configure an {@link UploadPack}
-	 *            session when a fetch or clone is requested by a client.
+	 *            the factory to construct and configure an
+	 *            {@link org.eclipse.jgit.transport.UploadPack} session when a
+	 *            fetch or clone is requested by a client.
 	 */
 	@SuppressWarnings("unchecked")
 	public void setUploadPackFactory(UploadPackFactory<HttpServletRequest> f) {
@@ -146,10 +121,24 @@ public class GitFilter extends MetaFilter {
 	}
 
 	/**
+	 * Set a custom error handler for git-upload-pack.
+	 *
+	 * @param h
+	 *            A custom error handler for git-upload-pack.
+	 * @since 5.6
+	 */
+	public void setUploadPackErrorHandler(UploadPackErrorHandler h) {
+		assertNotInitialized();
+		this.uploadPackErrorHandler = h;
+	}
+
+	/**
+	 * Add upload-pack filter
+	 *
 	 * @param filter
 	 *            filter to apply before any of the UploadPack operations. The
 	 *            UploadPack instance is available in the request attribute
-	 *            {@link ServletUtils#ATTRIBUTE_HANDLER}.
+	 *            {@link org.eclipse.jgit.http.server.ServletUtils#ATTRIBUTE_HANDLER}.
 	 */
 	public void addUploadPackFilter(Filter filter) {
 		assertNotInitialized();
@@ -157,9 +146,12 @@ public class GitFilter extends MetaFilter {
 	}
 
 	/**
+	 * Set the receive-pack factory
+	 *
 	 * @param f
-	 *            the factory to construct and configure a {@link ReceivePack}
-	 *            session when a push is requested by a client.
+	 *            the factory to construct and configure a
+	 *            {@link org.eclipse.jgit.transport.ReceivePack} session when a
+	 *            push is requested by a client.
 	 */
 	@SuppressWarnings("unchecked")
 	public void setReceivePackFactory(ReceivePackFactory<HttpServletRequest> f) {
@@ -168,10 +160,24 @@ public class GitFilter extends MetaFilter {
 	}
 
 	/**
+	 * Set a custom error handler for git-receive-pack.
+	 *
+	 * @param h
+	 *            A custom error handler for git-receive-pack.
+	 * @since 5.7
+	 */
+	public void setReceivePackErrorHandler(ReceivePackErrorHandler h) {
+		assertNotInitialized();
+		this.receivePackErrorHandler = h;
+	}
+
+	/**
+	 * Add receive-pack filter
+	 *
 	 * @param filter
 	 *            filter to apply before any of the ReceivePack operations. The
 	 *            ReceivePack instance is available in the request attribute
-	 *            {@link ServletUtils#ATTRIBUTE_HANDLER}.
+	 *            {@link org.eclipse.jgit.http.server.ServletUtils#ATTRIBUTE_HANDLER}.
 	 */
 	public void addReceivePackFilter(Filter filter) {
 		assertNotInitialized();
@@ -183,6 +189,7 @@ public class GitFilter extends MetaFilter {
 			throw new IllegalStateException(HttpServerText.get().alreadyInitializedByContainer);
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public void init(FilterConfig filterConfig) throws ServletException {
 		super.init(filterConfig);
@@ -190,7 +197,7 @@ public class GitFilter extends MetaFilter {
 		if (resolver == null) {
 			File root = getFile(filterConfig, "base-path");
 			boolean exportAll = getBoolean(filterConfig, "export-all");
-			setRepositoryResolver(new FileResolver<HttpServletRequest>(root, exportAll));
+			setRepositoryResolver(new FileResolver<>(root, exportAll));
 		}
 
 		initialized = true;
@@ -200,7 +207,7 @@ public class GitFilter extends MetaFilter {
 			b = b.through(new UploadPackServlet.Factory(uploadPackFactory));
 			for (Filter f : uploadPackFilters)
 				b = b.through(f);
-			b.with(new UploadPackServlet());
+			b.with(new UploadPackServlet(uploadPackErrorHandler));
 		}
 
 		if (receivePackFactory != ReceivePackFactory.DISABLED) {
@@ -208,7 +215,7 @@ public class GitFilter extends MetaFilter {
 			b = b.through(new ReceivePackServlet.Factory(receivePackFactory));
 			for (Filter f : receivePackFilters)
 				b = b.through(f);
-			b.with(new ReceivePackServlet());
+			b.with(new ReceivePackServlet(receivePackErrorHandler));
 		}
 
 		ServletBinder refs = serve("*/" + Constants.INFO_REFS);
@@ -236,13 +243,13 @@ public class GitFilter extends MetaFilter {
 					.through(enabled)//
 					.with(new TextFileServlet(Constants.HEAD));
 
-			final String info_alternates = "objects/info/alternates";
+			final String info_alternates = Constants.OBJECTS + "/" + Constants.INFO_ALTERNATES;
 			serve("*/" + info_alternates)//
 					.through(mustBeLocal)//
 					.through(enabled)//
 					.with(new TextFileServlet(info_alternates));
 
-			final String http_alternates = "objects/info/http-alternates";
+			final String http_alternates = Constants.OBJECTS + "/" + Constants.INFO_HTTP_ALTERNATES;
 			serve("*/" + http_alternates)//
 					.through(mustBeLocal)//
 					.through(enabled)//
@@ -293,10 +300,12 @@ public class GitFilter extends MetaFilter {
 		try {
 			return StringUtils.toBoolean(n);
 		} catch (IllegalArgumentException err) {
-			throw new ServletException(MessageFormat.format(HttpServerText.get().invalidBoolean, param, n));
+			throw new ServletException(MessageFormat.format(
+					HttpServerText.get().invalidBoolean, param, n), err);
 		}
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	protected ServletBinder register(ServletBinder binder) {
 		if (resolver == null)

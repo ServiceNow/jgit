@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2010, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.revwalk;
@@ -59,7 +26,8 @@ import org.eclipse.jgit.treewalk.filter.TreeFilter;
  * triggers rename detection so that the path node is updated to include a prior
  * file name as the RevWalk traverses history.
  *
- * The renames found will be reported to a {@link RenameCallback} if one is set.
+ * The renames found will be reported to a
+ * {@link org.eclipse.jgit.revwalk.RenameCallback} if one is set.
  * <p>
  * Results with this filter are unpredictable if the path being followed is a
  * subdirectory.
@@ -81,7 +49,7 @@ public class FollowFilter extends TreeFilter {
 	 * @param cfg
 	 *            diff config specifying rename detection options.
 	 * @return a new filter for the requested path.
-	 * @throws IllegalArgumentException
+	 * @throws java.lang.IllegalArgumentException
 	 *             the path supplied was the empty string.
 	 * @since 3.0
 	 */
@@ -94,33 +62,42 @@ public class FollowFilter extends TreeFilter {
 
 	private RenameCallback renameCallback;
 
-	FollowFilter(final PathFilter path, final DiffConfig cfg) {
+	FollowFilter(PathFilter path, DiffConfig cfg) {
 		this.path = path;
 		this.cfg = cfg;
 	}
 
 	/** @return the path this filter matches. */
+	/**
+	 * Get the path this filter matches.
+	 *
+	 * @return the path this filter matches.
+	 */
 	public String getPath() {
 		return path.getPath();
 	}
 
+	/** {@inheritDoc} */
 	@Override
-	public boolean include(final TreeWalk walker)
+	public boolean include(TreeWalk walker)
 			throws MissingObjectException, IncorrectObjectTypeException,
 			IOException {
 		return path.include(walker) && ANY_DIFF.include(walker);
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public boolean shouldBeRecursive() {
 		return path.shouldBeRecursive() || ANY_DIFF.shouldBeRecursive();
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public TreeFilter clone() {
 		return new FollowFilter(path.clone(), cfg);
 	}
 
+	/** {@inheritDoc} */
 	@SuppressWarnings("nls")
 	@Override
 	public String toString() {
@@ -130,6 +107,8 @@ public class FollowFilter extends TreeFilter {
 	}
 
 	/**
+	 * Get the callback to which renames are reported.
+	 *
 	 * @return the callback to which renames are reported, or <code>null</code>
 	 *         if none
 	 */

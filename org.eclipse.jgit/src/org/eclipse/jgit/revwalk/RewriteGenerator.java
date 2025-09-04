@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.revwalk;
@@ -57,14 +24,7 @@ import org.eclipse.jgit.errors.MissingObjectException;
  * commit that matched the revision walker's filters.
  * <p>
  * This generator is the second phase of a path limited revision walk and
- * assumes it is receiving RevCommits from {@link TreeRevFilter},
- * after they have been fully buffered by {@link AbstractRevQueue}. The full
- * buffering is necessary to allow the simple loop used within our own
- * {@link #rewrite(RevCommit)} to pull completely through a strand of
- * {@link RevWalk#REWRITE} colored commits and come up with a simplification
- * that makes the DAG dense. Not fully buffering the commits first would cause
- * this loop to abort early, due to commits not being parsed and colored
- * correctly.
+ * assumes it is receiving RevCommits from {@link TreeRevFilter}.
  *
  * @see TreeRevFilter
  */
@@ -76,12 +36,16 @@ class RewriteGenerator extends Generator {
 
 	private final Generator source;
 
-	RewriteGenerator(final Generator s) {
+	private final FIFORevQueue pending;
+
+	RewriteGenerator(Generator s) {
+		super(s.firstParent);
 		source = s;
+		pending = new FIFORevQueue(s.firstParent);
 	}
 
 	@Override
-	void shareFreeList(final BlockRevQueue q) {
+	void shareFreeList(BlockRevQueue q) {
 		source.shareFreeList(q);
 	}
 
@@ -90,36 +54,83 @@ class RewriteGenerator extends Generator {
 		return source.outputType() & ~NEEDS_REWRITE;
 	}
 
+	@SuppressWarnings("ReferenceEquality")
 	@Override
 	RevCommit next() throws MissingObjectException,
 			IncorrectObjectTypeException, IOException {
-		for (;;) {
-			final RevCommit c = source.next();
-			if (c == null)
+		RevCommit c = pending.next();
+
+		if (c == null) {
+			c = source.next();
+			if (c == null) {
+				// We are done: Both the source generator and our internal list
+				// are completely exhausted.
 				return null;
-
-			boolean rewrote = false;
-			final RevCommit[] pList = c.parents;
-			final int nParents = pList.length;
-			for (int i = 0; i < nParents; i++) {
-				final RevCommit oldp = pList[i];
-				final RevCommit newp = rewrite(oldp);
-				if (oldp != newp) {
-					pList[i] = newp;
-					rewrote = true;
-				}
 			}
-			if (rewrote)
-				c.parents = cleanup(pList);
+		}
 
-			return c;
+		applyFilterToParents(c);
+
+		boolean rewrote = false;
+		final RevCommit[] pList = c.getParents();
+		final int nParents = pList.length;
+		for (int i = 0; i < nParents; i++) {
+			final RevCommit oldp = pList[i];
+			final RevCommit newp = rewrite(oldp);
+			if (firstParent) {
+				if (newp == null) {
+					c.parents = RevCommit.NO_PARENTS;
+				} else {
+					c.parents = new RevCommit[] { newp };
+				}
+				return c;
+			}
+			if (oldp != newp) {
+				pList[i] = newp;
+				rewrote = true;
+			}
+		}
+		if (rewrote) {
+			c.parents = cleanup(pList);
+		}
+		return c;
+	}
+
+	/**
+	 * Makes sure that the {@link TreeRevFilter} has been applied to all parents
+	 * of this commit by the previous {@link PendingGenerator}.
+	 *
+	 * @param c
+	 * @throws MissingObjectException
+	 * @throws IncorrectObjectTypeException
+	 * @throws IOException
+	 */
+	private void applyFilterToParents(RevCommit c)
+			throws MissingObjectException, IncorrectObjectTypeException,
+			IOException {
+		for (RevCommit parent : c.getParents()) {
+			while ((parent.flags & RevWalk.TREE_REV_FILTER_APPLIED) == 0) {
+
+				RevCommit n = source.next();
+
+				if (n != null) {
+					pending.add(n);
+				} else {
+					// Source generator is exhausted; filter has been applied to
+					// all commits
+					return;
+				}
+
+			}
+
 		}
 	}
 
-	private RevCommit rewrite(RevCommit p) {
+	private RevCommit rewrite(RevCommit p) throws MissingObjectException,
+			IncorrectObjectTypeException, IOException {
 		for (;;) {
-			final RevCommit[] pList = p.parents;
-			if (pList.length > 1) {
+
+			if (p.getParentCount() > 1) {
 				// This parent is a merge, so keep it.
 				//
 				return p;
@@ -139,18 +150,20 @@ class RewriteGenerator extends Generator {
 				return p;
 			}
 
-			if (pList.length == 0) {
+			if (p.getParentCount() == 0) {
 				// We can't go back any further, other than to
 				// just delete the parent entirely.
 				//
 				return null;
 			}
 
-			p = pList[0];
+			applyFilterToParents(p.getParent(0));
+			p = p.getParent(0);
+
 		}
 	}
 
-	private RevCommit[] cleanup(final RevCommit[] oldList) {
+	private RevCommit[] cleanup(RevCommit[] oldList) {
 		// Remove any duplicate parents caused due to rewrites (e.g. a merge
 		// with two sides that both simplified back into the merge base).
 		// We also may have deleted a parent by marking it null.
@@ -169,14 +182,14 @@ class RewriteGenerator extends Generator {
 		}
 
 		if (newCnt == oldList.length) {
-			for (final RevCommit p : oldList)
+			for (RevCommit p : oldList)
 				p.flags &= ~DUPLICATE;
 			return oldList;
 		}
 
 		final RevCommit[] newList = new RevCommit[newCnt];
 		newCnt = 0;
-		for (final RevCommit p : oldList) {
+		for (RevCommit p : oldList) {
 			if (p != null) {
 				newList[newCnt++] = p;
 				p.flags &= ~DUPLICATE;

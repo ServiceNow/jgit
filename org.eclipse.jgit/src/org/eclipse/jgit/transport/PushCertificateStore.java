@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2015, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2015, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.transport;
@@ -57,7 +24,6 @@ import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -135,11 +101,14 @@ public class PushCertificateStore implements AutoCloseable {
 	}
 
 	/**
+	 * {@inheritDoc}
+	 * <p>
 	 * Close resources opened by this store.
 	 * <p>
-	 * If {@link #get(String)} was called, closes the cached object reader created
-	 * by that method. Does not close the underlying repository.
+	 * If {@link #get(String)} was called, closes the cached object reader
+	 * created by that method. Does not close the underlying repository.
 	 */
+	@Override
 	public void close() {
 		if (reader != null) {
 			reader.close();
@@ -159,7 +128,7 @@ public class PushCertificateStore implements AutoCloseable {
 	 *            the ref name to get the certificate for.
 	 * @return last certificate affecting the ref, or null if no cert was recorded
 	 *         for the last update to this ref.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             if a problem occurred reading the repository.
 	 */
 	public PushCertificate get(String refName) throws IOException {
@@ -189,82 +158,78 @@ public class PushCertificateStore implements AutoCloseable {
 	 * @return iterable over certificates; must be fully iterated in order to
 	 *         close resources.
 	 */
-	public Iterable<PushCertificate> getAll(final String refName) {
-		return new Iterable<PushCertificate>() {
-			@Override
-			public Iterator<PushCertificate> iterator() {
-				return new Iterator<PushCertificate>() {
-					private final String path = pathName(refName);
-					private PushCertificate next;
+	public Iterable<PushCertificate> getAll(String refName) {
+		return () -> new Iterator<>() {
+			private final String path = pathName(refName);
 
-					private RevWalk rw;
-					{
+			private PushCertificate next;
+
+			private RevWalk rw;
+			{
+				try {
+					if (reader == null) {
+						load();
+					}
+					if (commit != null) {
+						rw = new RevWalk(reader);
+						rw.setTreeFilter(AndTreeFilter.create(
+								PathFilterGroup.create(Collections
+										.singleton(PathFilter.create(path))),
+								TreeFilter.ANY_DIFF));
+						rw.setRewriteParents(false);
+						rw.markStart(rw.parseCommit(commit));
+					} else {
+						rw = null;
+					}
+				} catch (IOException e) {
+					throw new RuntimeException(e);
+				}
+			}
+
+			@Override
+			public boolean hasNext() {
+				try {
+					if (next == null) {
+						if (rw == null) {
+							return false;
+						}
 						try {
-							if (reader == null) {
-								load();
-							}
-							if (commit != null) {
-								rw = new RevWalk(reader);
-								rw.setTreeFilter(AndTreeFilter.create(
-										PathFilterGroup.create(
-											Collections.singleton(PathFilter.create(path))),
-										TreeFilter.ANY_DIFF));
-								rw.setRewriteParents(false);
-								rw.markStart(rw.parseCommit(commit));
+							RevCommit c = rw.next();
+							if (c != null) {
+								try (TreeWalk tw = TreeWalk.forPath(
+										rw.getObjectReader(), path,
+										c.getTree())) {
+									next = read(tw);
+								}
 							} else {
-								rw = null;
+								next = null;
 							}
 						} catch (IOException e) {
 							throw new RuntimeException(e);
 						}
 					}
-
-					@Override
-					public boolean hasNext() {
-						try {
-							if (next == null) {
-								if (rw == null) {
-									return false;
-								}
-								try {
-									RevCommit c = rw.next();
-									if (c != null) {
-										try (TreeWalk tw = TreeWalk.forPath(
-												rw.getObjectReader(), path, c.getTree())) {
-											next = read(tw);
-										}
-									} else {
-										next = null;
-									}
-								} catch (IOException e) {
-									throw new RuntimeException(e);
-								}
-							}
-							return next != null;
-						} finally {
-							if (next == null && rw != null) {
-								rw.close();
-								rw = null;
-							}
-						}
+					return next != null;
+				} finally {
+					if (next == null && rw != null) {
+						rw.close();
+						rw = null;
 					}
+				}
+			}
 
-					@Override
-					public PushCertificate next() {
-						hasNext();
-						PushCertificate n = next;
-						if (n == null) {
-							throw new NoSuchElementException();
-						}
-						next = null;
-						return n;
-					}
+			@Override
+			public PushCertificate next() {
+				if (!hasNext()) {
+					throw new NoSuchElementException();
+				}
+				PushCertificate n = next;
+				next = null;
+				return n;
+			}
 
-					@Override
-					public void remove() {
-						throw new UnsupportedOperationException();
-					}
-				};
+			@Override
+			public void remove() {
+				throw new UnsupportedOperationException();
 			}
 		};
 	}
@@ -289,7 +254,8 @@ public class PushCertificateStore implements AutoCloseable {
 		ObjectLoader loader =
 				tw.getObjectReader().open(tw.getObjectId(0), OBJ_BLOB);
 		try (InputStream in = loader.openStream();
-				Reader r = new BufferedReader(new InputStreamReader(in, UTF_8))) {
+				Reader r = new BufferedReader(
+						new InputStreamReader(in, UTF_8))) {
 			return PushCertificateParser.fromReader(r);
 		}
 	}
@@ -297,20 +263,20 @@ public class PushCertificateStore implements AutoCloseable {
 	/**
 	 * Put a certificate to be saved to the store.
 	 * <p>
-	 * Writes the contents of this certificate for each ref mentioned. It is up to
-	 * the caller to ensure this certificate accurately represents the state of
-	 * the ref.
+	 * Writes the contents of this certificate for each ref mentioned. It is up
+	 * to the caller to ensure this certificate accurately represents the state
+	 * of the ref.
 	 * <p>
-	 * Pending certificates added to this method are not returned by {@link
-	 * #get(String)} and {@link #getAll(String)} until after calling {@link
-	 * #save()}.
+	 * Pending certificates added to this method are not returned by
+	 * {@link #get(String)} and {@link #getAll(String)} until after calling
+	 * {@link #save()}.
 	 *
 	 * @param cert
 	 *            certificate to store.
 	 * @param ident
 	 *            identity for the commit that stores this certificate. Pending
-	 *            certificates are sorted by identity timestamp during {@link
-	 *            #save()}.
+	 *            certificates are sorted by identity timestamp during
+	 *            {@link #save()}.
 	 */
 	public void put(PushCertificate cert, PersonIdent ident) {
 		put(cert, ident, null);
@@ -324,16 +290,16 @@ public class PushCertificateStore implements AutoCloseable {
 	 * list that exactly matches the old/new values mentioned in the push
 	 * certificate.
 	 * <p>
-	 * Pending certificates added to this method are not returned by {@link
-	 * #get(String)} and {@link #getAll(String)} until after calling {@link
-	 * #save()}.
+	 * Pending certificates added to this method are not returned by
+	 * {@link #get(String)} and {@link #getAll(String)} until after calling
+	 * {@link #save()}.
 	 *
 	 * @param cert
 	 *            certificate to store.
 	 * @param ident
 	 *            identity for the commit that stores this certificate. Pending
-	 *            certificates are sorted by identity timestamp during {@link
-	 *            #save()}.
+	 *            certificates are sorted by identity timestamp during
+	 *            {@link #save()}.
 	 * @param matching
 	 *            only store certs for the refs listed in this list whose values
 	 *            match the commands in the cert.
@@ -346,15 +312,15 @@ public class PushCertificateStore implements AutoCloseable {
 	/**
 	 * Save pending certificates to the store.
 	 * <p>
-	 * One commit is created per certificate added with {@link
-	 * #put(PushCertificate, PersonIdent)}, in order of identity timestamps, and
-	 * a single ref update is performed.
+	 * One commit is created per certificate added with
+	 * {@link #put(PushCertificate, PersonIdent)}, in order of identity
+	 * timestamps, and a single ref update is performed.
 	 * <p>
-	 * The pending list is cleared if and only the ref update fails, which allows
-	 * for easy retries in case of lock failure.
+	 * The pending list is cleared if and only the ref update fails, which
+	 * allows for easy retries in case of lock failure.
 	 *
 	 * @return the result of attempting to update the ref.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             if there was an error reading from or writing to the
 	 *             repository.
 	 */
@@ -383,18 +349,19 @@ public class PushCertificateStore implements AutoCloseable {
 	/**
 	 * Save pending certificates to the store in an existing batch ref update.
 	 * <p>
-	 * One commit is created per certificate added with {@link
-	 * #put(PushCertificate, PersonIdent)}, in order of identity timestamps, all
-	 * commits are flushed, and a single command is added to the batch.
+	 * One commit is created per certificate added with
+	 * {@link #put(PushCertificate, PersonIdent)}, in order of identity
+	 * timestamps, all commits are flushed, and a single command is added to the
+	 * batch.
 	 * <p>
-	 * The cached ref value and pending list are <em>not</em> cleared. If the ref
-	 * update succeeds, the caller is responsible for calling {@link #close()}
-	 * and/or {@link #clear()}.
+	 * The cached ref value and pending list are <em>not</em> cleared. If the
+	 * ref update succeeds, the caller is responsible for calling
+	 * {@link #close()} and/or {@link #clear()}.
 	 *
 	 * @param batch
 	 *            update to save to.
 	 * @return whether a command was added to the batch.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             if there was an error reading from or writing to the
 	 *             repository.
 	 */
@@ -437,13 +404,8 @@ public class PushCertificateStore implements AutoCloseable {
 	}
 
 	private static void sortPending(List<PendingCert> pending) {
-		Collections.sort(pending, new Comparator<PendingCert>() {
-			@Override
-			public int compare(PendingCert a, PendingCert b) {
-				return Long.signum(
-						a.ident.getWhen().getTime() - b.ident.getWhen().getTime());
-			}
-		});
+		Collections.sort(pending, (PendingCert a, PendingCert b) -> Long.signum(
+				a.ident.getWhen().getTime() - b.ident.getWhen().getTime()));
 	}
 
 	private DirCache newDirCache() throws IOException {

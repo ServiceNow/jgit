@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2010, 2013 Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, 2013 Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.internal.storage.file;
@@ -48,6 +15,7 @@ import static org.eclipse.jgit.lib.Constants.R_HEADS;
 import static org.eclipse.jgit.lib.Constants.R_TAGS;
 import static org.eclipse.jgit.lib.Ref.Storage.LOOSE;
 import static org.eclipse.jgit.lib.Ref.Storage.NEW;
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -59,55 +27,59 @@ import static org.junit.Assert.fail;
 
 import java.io.File;
 import java.io.IOException;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.eclipse.jgit.errors.LockFailedException;
 import org.eclipse.jgit.events.ListenerHandle;
 import org.eclipse.jgit.events.RefsChangedEvent;
-import org.eclipse.jgit.events.RefsChangedListener;
 import org.eclipse.jgit.junit.LocalDiskRepositoryTestCase;
+import org.eclipse.jgit.junit.Repeat;
 import org.eclipse.jgit.junit.TestRepository;
 import org.eclipse.jgit.lib.AnyObjectId;
-import org.eclipse.jgit.lib.BatchRefUpdate;
-import org.eclipse.jgit.lib.ProgressMonitor;
-import org.eclipse.jgit.lib.NullProgressMonitor;
 import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.lib.Ref.Storage;
 import org.eclipse.jgit.lib.RefDatabase;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.revwalk.RevTag;
-import org.eclipse.jgit.revwalk.RevWalk;
-import org.eclipse.jgit.transport.ReceiveCommand;
-import org.eclipse.jgit.transport.ReceiveCommand.Type;
+import org.eclipse.jgit.util.FS;
 import org.junit.Before;
 import org.junit.Test;
 
+@SuppressWarnings("boxing")
 public class RefDirectoryTest extends LocalDiskRepositoryTestCase {
 	private Repository diskRepo;
 
-	private TestRepository<Repository> repo;
+	TestRepository<Repository> repo;
 
-	private RefDirectory refdir;
+	RefDirectory refdir;
 
-	private RevCommit A;
+	RevCommit A;
 
-	private RevCommit B;
+	RevCommit B;
 
 	private RevTag v1_0;
 
+	@Override
 	@Before
 	public void setUp() throws Exception {
 		super.setUp();
+		refDirectorySetup();
+	}
 
+	public void refDirectorySetup() throws Exception {
 		diskRepo = createBareRepository();
 		refdir = (RefDirectory) diskRepo.getRefDatabase();
 
-		repo = new TestRepository<Repository>(diskRepo);
+		repo = new TestRepository<>(diskRepo);
 		A = repo.commit().create();
 		B = repo.commit(repo.getRevWalk().parseCommit(A));
 		v1_0 = repo.tag("v1_0", B);
@@ -136,6 +108,33 @@ public class RefDirectoryTest extends LocalDiskRepositoryTestCase {
 		assertEquals(0, new File(d, "logs/refs/heads").list().length);
 
 		assertEquals("ref: refs/heads/master\n", read(new File(d, HEAD)));
+	}
+
+	@Test(expected = UnsupportedOperationException.class)
+	public void testVersioningNotImplemented_exactRef() throws IOException {
+		assertFalse(refdir.hasVersioning());
+
+		Ref ref = refdir.exactRef(HEAD);
+		assertNotNull(ref);
+		ref.getUpdateIndex(); // Not implemented on FS
+	}
+
+	@Test
+	public void testVersioningNotImplemented_getRefs() throws Exception {
+		assertFalse(refdir.hasVersioning());
+
+		RevCommit C = repo.commit().parent(B).create();
+		repo.update("master", C);
+		List<Ref> refs = refdir.getRefs();
+
+		for (Ref ref : refs) {
+			try {
+				ref.getUpdateIndex();
+				fail("FS doesn't implement ref versioning");
+			} catch (UnsupportedOperationException e) {
+				// ok
+			}
+		}
 	}
 
 	@Test
@@ -359,6 +358,24 @@ public class RefDirectoryTest extends LocalDiskRepositoryTestCase {
 	}
 
 	@Test
+	public void testGetRefs_ExcludingPrefixes() throws IOException {
+		writeLooseRef("refs/heads/A", A);
+		writeLooseRef("refs/heads/B", B);
+		writeLooseRef("refs/tags/tag", A);
+		writeLooseRef("refs/something/something", B);
+		writeLooseRef("refs/aaa/aaa", A);
+
+		Set<String> toExclude = new HashSet<>();
+		toExclude.add("refs/aaa/");
+		toExclude.add("refs/heads/");
+		List<Ref> refs = refdir.getRefsByPrefixWithExclusions(RefDatabase.ALL, toExclude);
+
+		assertEquals(2, refs.size());
+		assertTrue(refs.contains(refdir.exactRef("refs/tags/tag")));
+		assertTrue(refs.contains(refdir.exactRef("refs/something/something")));
+	}
+
+	@Test
 	public void testFirstExactRef_IgnoresGarbageRef() throws IOException {
 		writeLooseRef("refs/heads/A", A);
 		write(new File(diskRepo.getDirectory(), "refs/heads/bad"), "FAIL\n");
@@ -396,15 +413,15 @@ public class RefDirectoryTest extends LocalDiskRepositoryTestCase {
 
 	@Test
 	public void testReadNotExistingBranchConfig() throws IOException {
-		assertNull("find branch config", refdir.getRef("config"));
-		assertNull("find branch config", refdir.getRef("refs/heads/config"));
+		assertNull("find branch config", refdir.findRef("config"));
+		assertNull("find branch config", refdir.findRef("refs/heads/config"));
 	}
 
 	@Test
 	public void testReadBranchConfig() throws IOException {
 		writeLooseRef("refs/heads/config", A);
 
-		assertNotNull("find branch config", refdir.getRef("config"));
+		assertNotNull("find branch config", refdir.findRef("config"));
 	}
 
 	@Test
@@ -538,28 +555,34 @@ public class RefDirectoryTest extends LocalDiskRepositoryTestCase {
 	@Test
 	public void testGetRefs_LooseSorting_Bug_348834() throws IOException {
 		Map<String, Ref> refs;
+		final int[] count = new int[1];
+
+		ListenerHandle listener = Repository.getGlobalListenerList()
+				.addRefsChangedListener((RefsChangedEvent event) -> {
+					count[0]++;
+				});
+
+		// RefsChangedEvent on the first attempt to read a ref is not expected
+		// to be triggered (See Iea3a5035b0a1410b80b09cf53387b22b78b18018), so
+		// create an update and fire pending events to ensure subsequent events
+		// are fired.
+		writeLooseRef("refs/heads/test", A);
+		refs = refdir.getRefs(RefDatabase.ALL);
+		count[0] = 0;
+		int origSize = refs.size();
 
 		writeLooseRef("refs/heads/my/a+b", A);
 		writeLooseRef("refs/heads/my/a/b/c", B);
 
-		final int[] count = new int[1];
-
-		ListenerHandle listener = Repository.getGlobalListenerList()
-				.addRefsChangedListener(new RefsChangedListener() {
-
-					public void onRefsChanged(RefsChangedEvent event) {
-						count[0]++;
-					}
-				});
-
 		refs = refdir.getRefs(RefDatabase.ALL);
-		refs = refdir.getRefs(RefDatabase.ALL);
-		listener.remove();
-		assertEquals(1, count[0]); // Bug 348834 multiple RefsChangedEvents
-		assertEquals(2, refs.size());
+		assertEquals(1, count[0]);
+		assertEquals(2, refs.size() - origSize);
 		assertEquals(A, refs.get("refs/heads/my/a+b").getObjectId());
 		assertEquals(B, refs.get("refs/heads/my/a/b/c").getObjectId());
 
+		refs = refdir.getRefs(RefDatabase.ALL);
+		assertEquals(1, count[0]); // Bug 348834 multiple RefsChangedEvents
+		listener.remove();
 	}
 
 	@Test
@@ -645,8 +668,9 @@ public class RefDirectoryTest extends LocalDiskRepositoryTestCase {
 		assertEquals(B, all.get(HEAD).getObjectId());
 	}
 
+	@Repeat(n = 100, abortOnFailure = false)
 	@Test
-	public void testGetRef_DiscoversModifiedLoose() throws IOException {
+	public void testFindRef_DiscoversModifiedLoose() throws IOException {
 		Map<String, Ref> all;
 
 		writeLooseRef("refs/heads/master", A);
@@ -655,7 +679,7 @@ public class RefDirectoryTest extends LocalDiskRepositoryTestCase {
 
 		writeLooseRef("refs/heads/master", B);
 
-		Ref master = refdir.getRef("refs/heads/master");
+		Ref master = refdir.findRef("refs/heads/master");
 		assertEquals(B, master.getObjectId());
 	}
 
@@ -690,7 +714,7 @@ public class RefDirectoryTest extends LocalDiskRepositoryTestCase {
 	}
 
 	@Test
-	public void testGetRef_DiscoversDeletedLoose() throws IOException {
+	public void testFindRef_DiscoversDeletedLoose() throws IOException {
 		Map<String, Ref> all;
 
 		writeLooseRef("refs/heads/master", A);
@@ -698,7 +722,7 @@ public class RefDirectoryTest extends LocalDiskRepositoryTestCase {
 		assertEquals(A, all.get(HEAD).getObjectId());
 
 		deleteLooseRef("refs/heads/master");
-		assertNull(refdir.getRef("refs/heads/master"));
+		assertNull(refdir.findRef("refs/heads/master"));
 		assertTrue(refdir.getRefs(RefDatabase.ALL).isEmpty());
 	}
 
@@ -858,7 +882,7 @@ public class RefDirectoryTest extends LocalDiskRepositoryTestCase {
 	}
 
 	@Test
-	public void testGetRef_CycleInSymbolicRef() throws IOException {
+	public void testFindRef_CycleInSymbolicRef() throws IOException {
 		Ref r;
 
 		writeLooseRef("refs/1", "ref: refs/2\n");
@@ -868,7 +892,7 @@ public class RefDirectoryTest extends LocalDiskRepositoryTestCase {
 		writeLooseRef("refs/5", "ref: refs/end\n");
 		writeLooseRef("refs/end", A);
 
-		r = refdir.getRef("1");
+		r = refdir.findRef("1");
 		assertEquals("refs/1", r.getName());
 		assertEquals(A, r.getObjectId());
 		assertTrue(r.isSymbolic());
@@ -876,12 +900,12 @@ public class RefDirectoryTest extends LocalDiskRepositoryTestCase {
 		writeLooseRef("refs/5", "ref: refs/6\n");
 		writeLooseRef("refs/6", "ref: refs/end\n");
 
-		r = refdir.getRef("1");
+		r = refdir.findRef("1");
 		assertNull("missing 1 due to cycle", r);
 
 		writeLooseRef("refs/heads/1", B);
 
-		r = refdir.getRef("1");
+		r = refdir.findRef("1");
 		assertEquals("refs/heads/1", r.getName());
 		assertEquals(B, r.getObjectId());
 		assertFalse(r.isSymbolic());
@@ -922,16 +946,16 @@ public class RefDirectoryTest extends LocalDiskRepositoryTestCase {
 	}
 
 	@Test
-	public void testGetRef_PackedNotPeeled_WrongSort() throws IOException {
+	public void testFindRef_PackedNotPeeled_WrongSort() throws IOException {
 		writePackedRefs("" + //
 				v1_0.name() + " refs/tags/v1.0\n" + //
 				B.name() + " refs/heads/other\n" + //
 				A.name() + " refs/heads/master\n");
 
-		final Ref head = refdir.getRef(HEAD);
-		final Ref master = refdir.getRef("refs/heads/master");
-		final Ref other = refdir.getRef("refs/heads/other");
-		final Ref tag = refdir.getRef("refs/tags/v1.0");
+		final Ref head = refdir.findRef(HEAD);
+		final Ref master = refdir.findRef("refs/heads/master");
+		final Ref other = refdir.findRef("refs/heads/other");
+		final Ref tag = refdir.findRef("refs/tags/v1.0");
 
 		assertEquals(A, master.getObjectId());
 		assertFalse(master.isPeeled());
@@ -1021,7 +1045,7 @@ public class RefDirectoryTest extends LocalDiskRepositoryTestCase {
 		assertEquals(v0_1.getId(), all.get("refs/tags/v0.1").getObjectId());
 
 		all = refdir.getRefs(RefDatabase.ALL);
-		refdir.pack(new ArrayList<String>(all.keySet()));
+		refdir.pack(new ArrayList<>(all.keySet()));
 
 		all = refdir.getRefs(RefDatabase.ALL);
 		assertEquals(5, all.size());
@@ -1036,22 +1060,22 @@ public class RefDirectoryTest extends LocalDiskRepositoryTestCase {
 	}
 
 	@Test
-	public void testGetRef_EmptyDatabase() throws IOException {
+	public void testFindRef_EmptyDatabase() throws IOException {
 		Ref r;
 
-		r = refdir.getRef(HEAD);
+		r = refdir.findRef(HEAD);
 		assertTrue(r.isSymbolic());
 		assertSame(LOOSE, r.getStorage());
 		assertEquals("refs/heads/master", r.getTarget().getName());
 		assertSame(NEW, r.getTarget().getStorage());
 		assertNull(r.getTarget().getObjectId());
 
-		assertNull(refdir.getRef("refs/heads/master"));
-		assertNull(refdir.getRef("refs/tags/v1.0"));
-		assertNull(refdir.getRef("FETCH_HEAD"));
-		assertNull(refdir.getRef("NOT.A.REF.NAME"));
-		assertNull(refdir.getRef("master"));
-		assertNull(refdir.getRef("v1.0"));
+		assertNull(refdir.findRef("refs/heads/master"));
+		assertNull(refdir.findRef("refs/tags/v1.0"));
+		assertNull(refdir.findRef("FETCH_HEAD"));
+		assertNull(refdir.findRef("NOT.A.REF.NAME"));
+		assertNull(refdir.findRef("master"));
+		assertNull(refdir.findRef("v1.0"));
 	}
 
 	@Test
@@ -1074,7 +1098,29 @@ public class RefDirectoryTest extends LocalDiskRepositoryTestCase {
 	}
 
 	@Test
-	public void testGetRef_FetchHead() throws IOException {
+	public void testGetAdditionalRefs_OrigHead() throws IOException {
+		writeLooseRef("ORIG_HEAD", A);
+
+		List<Ref> refs = refdir.getAdditionalRefs();
+		assertEquals(1, refs.size());
+
+		Ref r = refs.get(0);
+		assertFalse(r.isSymbolic());
+		assertEquals(A, r.getObjectId());
+		assertEquals("ORIG_HEAD", r.getName());
+		assertFalse(r.isPeeled());
+		assertNull(r.getPeeledObjectId());
+	}
+
+	@Test
+	public void testGetAdditionalRefs_OrigHeadBranch() throws IOException {
+		writeLooseRef("refs/heads/ORIG_HEAD", A);
+		List<Ref> refs = refdir.getAdditionalRefs();
+		assertArrayEquals(new Ref[0], refs.toArray());
+	}
+
+	@Test
+	public void testFindRef_FetchHead() throws IOException {
 		// This is an odd special case where we need to make sure we read
 		// exactly the first 40 bytes of the file and nothing further on
 		// that line, or the remainder of the file.
@@ -1082,7 +1128,7 @@ public class RefDirectoryTest extends LocalDiskRepositoryTestCase {
 				+ "\tnot-for-merge"
 				+ "\tbranch 'master' of git://egit.eclipse.org/jgit\n");
 
-		Ref r = refdir.getRef("FETCH_HEAD");
+		Ref r = refdir.findRef("FETCH_HEAD");
 		assertFalse(r.isSymbolic());
 		assertEquals(A, r.getObjectId());
 		assertEquals("FETCH_HEAD", r.getName());
@@ -1108,12 +1154,12 @@ public class RefDirectoryTest extends LocalDiskRepositoryTestCase {
 	}
 
 	@Test
-	public void testGetRef_AnyHeadWithGarbage() throws IOException {
+	public void testFindRef_AnyHeadWithGarbage() throws IOException {
 		write(new File(diskRepo.getDirectory(), "refs/heads/A"), A.name()
 				+ "012345 . this is not a standard reference\n"
 				+ "#and even more junk\n");
 
-		Ref r = refdir.getRef("refs/heads/A");
+		Ref r = refdir.findRef("refs/heads/A");
 		assertFalse(r.isSymbolic());
 		assertEquals(A, r.getObjectId());
 		assertEquals("refs/heads/A", r.getName());
@@ -1129,11 +1175,11 @@ public class RefDirectoryTest extends LocalDiskRepositoryTestCase {
 	}
 
 	@Test
-	public void testGetRef_CorruptSymbolicReference() throws IOException {
+	public void testFindRef_CorruptSymbolicReference() throws IOException {
 		String name = "refs/heads/A";
 		writeLooseRef(name, "ref: \n");
 		try {
-			refdir.getRef(name);
+			refdir.findRef(name);
 			fail("read an invalid reference");
 		} catch (IOException err) {
 			String msg = err.getMessage();
@@ -1150,12 +1196,12 @@ public class RefDirectoryTest extends LocalDiskRepositoryTestCase {
 	}
 
 	@Test
-	public void testGetRef_CorruptObjectIdReference() throws IOException {
+	public void testFindRef_CorruptObjectIdReference() throws IOException {
 		String name = "refs/heads/A";
 		String content = "zoo" + A.name();
 		writeLooseRef(name, content + "\n");
 		try {
-			refdir.getRef(name);
+			refdir.findRef(name);
 			fail("read an invalid reference");
 		} catch (IOException err) {
 			String msg = err.getMessage();
@@ -1190,8 +1236,8 @@ public class RefDirectoryTest extends LocalDiskRepositoryTestCase {
 		writeLooseRef("refs/tags/v1_0", v1_0);
 		writeLooseRef("refs/tags/current", "ref: refs/tags/v1_0\n");
 
-		final Ref tag = refdir.getRef("refs/tags/v1_0");
-		final Ref cur = refdir.getRef("refs/tags/current");
+		final Ref tag = refdir.findRef("refs/tags/v1_0");
+		final Ref cur = refdir.findRef("refs/tags/current");
 
 		assertEquals(v1_0, tag.getObjectId());
 		assertFalse(tag.isSymbolic());
@@ -1223,14 +1269,14 @@ public class RefDirectoryTest extends LocalDiskRepositoryTestCase {
 
 		// reuses cached peeling later, but not immediately due to
 		// the implementation so we have to fetch it once.
-		final Ref tag_p2 = refdir.getRef("refs/tags/v1_0");
+		final Ref tag_p2 = refdir.findRef("refs/tags/v1_0");
 		assertFalse(tag_p2.isSymbolic());
 		assertTrue(tag_p2.isPeeled());
 		assertEquals(v1_0, tag_p2.getObjectId());
 		assertEquals(v1_0.getObject(), tag_p2.getPeeledObjectId());
 
-		assertSame(tag_p2, refdir.getRef("refs/tags/v1_0"));
-		assertSame(tag_p2, refdir.getRef("refs/tags/current").getTarget());
+		assertSame(tag_p2, refdir.findRef("refs/tags/v1_0"));
+		assertSame(tag_p2, refdir.findRef("refs/tags/current").getTarget());
 		assertSame(tag_p2, refdir.peel(tag_p2));
 	}
 
@@ -1238,7 +1284,7 @@ public class RefDirectoryTest extends LocalDiskRepositoryTestCase {
 	public void testPeelCommit() throws IOException {
 		writeLooseRef("refs/heads/master", A);
 
-		Ref master = refdir.getRef("refs/heads/master");
+		Ref master = refdir.findRef("refs/heads/master");
 		assertEquals(A, master.getObjectId());
 		assertFalse(master.isPeeled());
 		assertNull(master.getPeeledObjectId());
@@ -1251,7 +1297,7 @@ public class RefDirectoryTest extends LocalDiskRepositoryTestCase {
 
 		// reuses cached peeling later, but not immediately due to
 		// the implementation so we have to fetch it once.
-		Ref master_p2 = refdir.getRef("refs/heads/master");
+		Ref master_p2 = refdir.findRef("refs/heads/master");
 		assertNotSame(master, master_p2);
 		assertEquals(A, master_p2.getObjectId());
 		assertTrue(master_p2.isPeeled());
@@ -1265,150 +1311,53 @@ public class RefDirectoryTest extends LocalDiskRepositoryTestCase {
 		final RefDatabase refDb = newRepo.getRefDatabase();
 		File packedRefs = new File(newRepo.getDirectory(), "packed-refs");
 		assertTrue(packedRefs.createNewFile());
-		final AtomicReference<StackOverflowError> error = new AtomicReference<StackOverflowError>();
-		final AtomicReference<IOException> exception = new AtomicReference<IOException>();
+		final AtomicReference<StackOverflowError> error = new AtomicReference<>();
+		final AtomicReference<IOException> exception = new AtomicReference<>();
 		final AtomicInteger changeCount = new AtomicInteger();
-		newRepo.getListenerList().addRefsChangedListener(
-				new RefsChangedListener() {
-
-					public void onRefsChanged(RefsChangedEvent event) {
-						try {
-							refDb.getRefs("ref");
-							changeCount.incrementAndGet();
-						} catch (StackOverflowError soe) {
-							error.set(soe);
-						} catch (IOException ioe) {
-							exception.set(ioe);
-						}
+		newRepo.getListenerList()
+				.addRefsChangedListener((RefsChangedEvent event) -> {
+					try {
+						refDb.getRefsByPrefix("ref");
+						changeCount.incrementAndGet();
+					} catch (StackOverflowError soe) {
+						error.set(soe);
+					} catch (IOException ioe) {
+						exception.set(ioe);
 					}
 				});
-		refDb.getRefs("ref");
-		refDb.getRefs("ref");
+		refDb.getRefsByPrefix("ref");
+		refDb.getRefsByPrefix("ref");
 		assertNull(error.get());
 		assertNull(exception.get());
 		assertEquals(1, changeCount.get());
 	}
 
 	@Test
-	public void testBatchRefUpdateSimpleNoForce() throws IOException {
+	public void testPackedRefsLockFailure() throws Exception {
 		writeLooseRef("refs/heads/master", A);
-		writeLooseRef("refs/heads/masters", B);
-		List<ReceiveCommand> commands = Arrays.asList(
-				newCommand(A, B, "refs/heads/master",
-						ReceiveCommand.Type.UPDATE),
-				newCommand(B, A, "refs/heads/masters",
-						ReceiveCommand.Type.UPDATE_NONFASTFORWARD));
-		BatchRefUpdate batchUpdate = refdir.newBatchUpdate();
-		batchUpdate.addCommand(commands);
-		batchUpdate.execute(new RevWalk(diskRepo), new StrictWorkMonitor());
-		Map<String, Ref> refs = refdir.getRefs(RefDatabase.ALL);
-		assertEquals(ReceiveCommand.Result.OK, commands.get(0).getResult());
-		assertEquals(ReceiveCommand.Result.REJECTED_NONFASTFORWARD, commands
-				.get(1).getResult());
-		assertEquals("[HEAD, refs/heads/master, refs/heads/masters]", refs
-				.keySet().toString());
-		assertEquals(B.getId(), refs.get("refs/heads/master").getObjectId());
-		assertEquals(B.getId(), refs.get("refs/heads/masters").getObjectId());
+		refdir.setRetrySleepMs(Arrays.asList(0, 0));
+		LockFile myLock = refdir.lockPackedRefs();
+		try {
+			refdir.pack(Arrays.asList("refs/heads/master"));
+			fail("expected LockFailedException");
+		} catch (LockFailedException e) {
+			assertEquals(refdir.packedRefsFile.getPath(), e.getFile().getPath());
+		} finally {
+			myLock.unlock();
+		}
+		Ref ref = refdir.findRef("refs/heads/master");
+		assertEquals(Storage.LOOSE, ref.getStorage());
 	}
 
-	@Test
-	public void testBatchRefUpdateSimpleForce() throws IOException {
-		writeLooseRef("refs/heads/master", A);
-		writeLooseRef("refs/heads/masters", B);
-		List<ReceiveCommand> commands = Arrays.asList(
-				newCommand(A, B, "refs/heads/master",
-						ReceiveCommand.Type.UPDATE),
-				newCommand(B, A, "refs/heads/masters",
-						ReceiveCommand.Type.UPDATE_NONFASTFORWARD));
-		BatchRefUpdate batchUpdate = refdir.newBatchUpdate();
-		batchUpdate.setAllowNonFastForwards(true);
-		batchUpdate.addCommand(commands);
-		batchUpdate.execute(new RevWalk(diskRepo), new StrictWorkMonitor());
-		Map<String, Ref> refs = refdir.getRefs(RefDatabase.ALL);
-		assertEquals(ReceiveCommand.Result.OK, commands.get(0).getResult());
-		assertEquals(ReceiveCommand.Result.OK, commands.get(1).getResult());
-		assertEquals("[HEAD, refs/heads/master, refs/heads/masters]", refs
-				.keySet().toString());
-		assertEquals(B.getId(), refs.get("refs/heads/master").getObjectId());
-		assertEquals(A.getId(), refs.get("refs/heads/masters").getObjectId());
+	void writePackedRef(String name, AnyObjectId id) throws IOException {
+		writePackedRefs(id.name() + " " + name + "\n");
 	}
 
-	@Test
-	public void testBatchRefUpdateNonFastForwardDoesNotDoExpensiveMergeCheck()
-			throws IOException {
-		writeLooseRef("refs/heads/master", B);
-		List<ReceiveCommand> commands = Arrays.asList(
-				newCommand(B, A, "refs/heads/master",
-						ReceiveCommand.Type.UPDATE_NONFASTFORWARD));
-		BatchRefUpdate batchUpdate = refdir.newBatchUpdate();
-		batchUpdate.setAllowNonFastForwards(true);
-		batchUpdate.addCommand(commands);
-		batchUpdate.execute(new RevWalk(diskRepo) {
-			@Override
-			public boolean isMergedInto(RevCommit base, RevCommit tip) {
-				throw new AssertionError("isMergedInto() should not be called");
-			}
-		}, new StrictWorkMonitor());
-		Map<String, Ref> refs = refdir.getRefs(RefDatabase.ALL);
-		assertEquals(ReceiveCommand.Result.OK, commands.get(0).getResult());
-		assertEquals(A.getId(), refs.get("refs/heads/master").getObjectId());
-	}
-
-	@Test
-	public void testBatchRefUpdateConflict() throws IOException {
-		writeLooseRef("refs/heads/master", A);
-		writeLooseRef("refs/heads/masters", B);
-		List<ReceiveCommand> commands = Arrays.asList(
-				newCommand(A, B, "refs/heads/master",
-						ReceiveCommand.Type.UPDATE),
-				newCommand(null, A, "refs/heads/master/x",
-						ReceiveCommand.Type.CREATE),
-				newCommand(null, A, "refs/heads", ReceiveCommand.Type.CREATE));
-		BatchRefUpdate batchUpdate = refdir.newBatchUpdate();
-		batchUpdate.setAllowNonFastForwards(true);
-		batchUpdate.addCommand(commands);
-		batchUpdate
-				.execute(new RevWalk(diskRepo), NullProgressMonitor.INSTANCE);
-		Map<String, Ref> refs = refdir.getRefs(RefDatabase.ALL);
-		assertEquals(ReceiveCommand.Result.OK, commands.get(0).getResult());
-		assertEquals(ReceiveCommand.Result.LOCK_FAILURE, commands.get(1)
-				.getResult());
-		assertEquals(ReceiveCommand.Result.LOCK_FAILURE, commands.get(2)
-				.getResult());
-		assertEquals("[HEAD, refs/heads/master, refs/heads/masters]", refs
-				.keySet().toString());
-		assertEquals(B.getId(), refs.get("refs/heads/master").getObjectId());
-		assertEquals(B.getId(), refs.get("refs/heads/masters").getObjectId());
-	}
-
-	@Test
-	public void testBatchRefUpdateConflictThanksToDelete() throws IOException {
-		writeLooseRef("refs/heads/master", A);
-		writeLooseRef("refs/heads/masters", B);
-		List<ReceiveCommand> commands = Arrays.asList(
-				newCommand(A, B, "refs/heads/master",
-						ReceiveCommand.Type.UPDATE),
-				newCommand(null, A, "refs/heads/masters/x",
-						ReceiveCommand.Type.CREATE),
-				newCommand(B, null, "refs/heads/masters",
-						ReceiveCommand.Type.DELETE));
-		BatchRefUpdate batchUpdate = refdir.newBatchUpdate();
-		batchUpdate.setAllowNonFastForwards(true);
-		batchUpdate.addCommand(commands);
-		batchUpdate.execute(new RevWalk(diskRepo), new StrictWorkMonitor());
-		Map<String, Ref> refs = refdir.getRefs(RefDatabase.ALL);
-		assertEquals(ReceiveCommand.Result.OK, commands.get(0).getResult());
-		assertEquals(ReceiveCommand.Result.OK, commands.get(1).getResult());
-		assertEquals(ReceiveCommand.Result.OK, commands.get(2).getResult());
-		assertEquals("[HEAD, refs/heads/master, refs/heads/masters/x]", refs
-				.keySet().toString());
-		assertEquals(A.getId(), refs.get("refs/heads/masters/x").getObjectId());
-	}
-
-	private static ReceiveCommand newCommand(RevCommit a, RevCommit b,
-			String string, Type update) {
-		return new ReceiveCommand(a != null ? a.getId() : null,
-				b != null ? b.getId() : null, string, update);
+	void writePackedRefs(String content) throws IOException {
+		File pr = new File(diskRepo.getDirectory(), "packed-refs");
+		write(pr, content);
+		FS fs = diskRepo.getFS();
+		fs.setLastModified(pr.toPath(), Instant.now().minusSeconds(3600));
 	}
 
 	private void writeLooseRef(String name, AnyObjectId id) throws IOException {
@@ -1419,46 +1368,8 @@ public class RefDirectoryTest extends LocalDiskRepositoryTestCase {
 		write(new File(diskRepo.getDirectory(), name), content);
 	}
 
-	private void writePackedRef(String name, AnyObjectId id) throws IOException {
-		writePackedRefs(id.name() + " " + name + "\n");
-	}
-
-	private void writePackedRefs(String content) throws IOException {
-		File pr = new File(diskRepo.getDirectory(), "packed-refs");
-		write(pr, content);
-
-		final long now = System.currentTimeMillis();
-		final int oneHourAgo = 3600 * 1000;
-		pr.setLastModified(now - oneHourAgo);
-	}
-
 	private void deleteLooseRef(String name) {
 		File path = new File(diskRepo.getDirectory(), name);
 		assertTrue("deleted " + name, path.delete());
-	}
-
-	private static final class StrictWorkMonitor implements ProgressMonitor {
-		private int lastWork, totalWork;
-
-		public void start(int totalTasks) {
-			// empty
-		}
-
-		public void beginTask(String title, int totalWork) {
-			this.totalWork = totalWork;
-			lastWork = 0;
-		}
-
-		public void update(int completed) {
-			lastWork += completed;
-		}
-
-		public void endTask() {
-			assertEquals("Units of work recorded", totalWork, lastWork);
-		}
-
-		public boolean isCancelled() {
-			return false;
-		}
 	}
 }

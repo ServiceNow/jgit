@@ -1,65 +1,37 @@
 /*
- * Copyright (C) 2014, Andrey Loskutov <loskutov@gmx.de>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2014, 2021 Andrey Loskutov <loskutov@gmx.de> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 package org.eclipse.jgit.ignore;
 
+import static org.eclipse.jgit.ignore.IMatcher.NO_MATCH;
+import static org.eclipse.jgit.ignore.internal.Strings.isDirectoryPattern;
 import static org.eclipse.jgit.ignore.internal.Strings.stripTrailing;
-import static org.eclipse.jgit.ignore.internal.IMatcher.NO_MATCH;
+import static org.eclipse.jgit.ignore.internal.Strings.stripTrailingWhitespace;
+
+import java.text.MessageFormat;
+
 import org.eclipse.jgit.errors.InvalidPatternException;
-import org.eclipse.jgit.ignore.internal.IMatcher;
 import org.eclipse.jgit.ignore.internal.PathMatcher;
+import org.eclipse.jgit.internal.JGitText;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
  * "Fast" (compared with IgnoreRule) git ignore rule implementation supporting
- * also double star <code>**<code> pattern.
+ * also double star {@code **} pattern.
  * <p>
  * This class is immutable and thread safe.
  *
  * @since 3.6
  */
 public class FastIgnoreRule {
-	private final static Logger LOG = LoggerFactory
+	private static final Logger LOG = LoggerFactory
 			.getLogger(FastIgnoreRule.class);
 
 	/**
@@ -67,13 +39,14 @@ public class FastIgnoreRule {
 	 */
 	public static final char PATH_SEPARATOR = '/';
 
-	private final IMatcher matcher;
+	private IMatcher matcher;
 
-	private final boolean inverse;
+	private boolean inverse;
 
-	private final boolean dirOnly;
+	private boolean dirOnly;
 
 	/**
+	 * Constructor for FastIgnoreRule
 	 *
 	 * @param pattern
 	 *            ignore pattern as described in <a href=
@@ -82,8 +55,23 @@ public class FastIgnoreRule {
 	 *            (comment), this rule doesn't match anything.
 	 */
 	public FastIgnoreRule(String pattern) {
-		if (pattern == null)
+		this();
+		try {
+			parse(pattern);
+		} catch (InvalidPatternException e) {
+			LOG.error(MessageFormat.format(JGitText.get().badIgnorePattern,
+					e.getPattern()), e);
+		}
+	}
+
+	FastIgnoreRule() {
+		matcher = IMatcher.NO_MATCH;
+	}
+
+	void parse(String pattern) throws InvalidPatternException {
+		if (pattern == null) {
 			throw new IllegalArgumentException("Pattern must not be null!"); //$NON-NLS-1$
+		}
 		if (pattern.length() == 0) {
 			dirOnly = false;
 			inverse = false;
@@ -111,23 +99,17 @@ public class FastIgnoreRule {
 				pattern = pattern.substring(1);
 			}
 		}
-		dirOnly = pattern.charAt(pattern.length() - 1) == PATH_SEPARATOR;
+		dirOnly = isDirectoryPattern(pattern);
 		if (dirOnly) {
+			pattern = stripTrailingWhitespace(pattern);
 			pattern = stripTrailing(pattern, PATH_SEPARATOR);
 			if (pattern.length() == 0) {
 				this.matcher = NO_MATCH;
 				return;
 			}
 		}
-		IMatcher m;
-		try {
-			m = PathMatcher.createPathMatcher(pattern,
-					Character.valueOf(PATH_SEPARATOR), dirOnly);
-		} catch (InvalidPatternException e) {
-			m = NO_MATCH;
-			LOG.error(e.getMessage(), e);
-		}
-		this.matcher = m;
+		this.matcher = PathMatcher.createPathMatcher(pattern,
+				Character.valueOf(PATH_SEPARATOR), dirOnly);
 	}
 
 	/**
@@ -147,24 +129,51 @@ public class FastIgnoreRule {
 	 *         result.
 	 */
 	public boolean isMatch(String path, boolean directory) {
+		return isMatch(path, directory, false);
+	}
+
+	/**
+	 * Returns true if a match was made. <br>
+	 * This function does NOT return the actual ignore status of the target!
+	 * Please consult {@link #getResult()} for the negation status. The actual
+	 * ignore status may be true or false depending on whether this rule is an
+	 * ignore rule or a negation rule.
+	 *
+	 * @param path
+	 *            Name pattern of the file, relative to the base directory of
+	 *            this rule
+	 * @param directory
+	 *            Whether the target file is a directory or not
+	 * @param pathMatch
+	 *            {@code true} if the match is for the full path: see
+	 *            {@link IMatcher#matches(String, int, int)}
+	 * @return True if a match was made. This does not necessarily mean that the
+	 *         target is ignored. Call {@link #getResult() getResult()} for the
+	 *         result.
+	 * @since 4.11
+	 */
+	public boolean isMatch(String path, boolean directory, boolean pathMatch) {
 		if (path == null)
 			return false;
 		if (path.length() == 0)
 			return false;
-		boolean match = matcher.matches(path, directory);
+		boolean match = matcher.matches(path, directory, pathMatch);
 		return match;
 	}
 
 	/**
-	 * @return True if the pattern is just a file name and not a path
+	 * Whether the pattern is just a file name and not a path
+	 *
+	 * @return {@code true} if the pattern is just a file name and not a path
 	 */
 	public boolean getNameOnly() {
 		return !(matcher instanceof PathMatcher);
 	}
 
 	/**
+	 * Whether the pattern should match directories only
 	 *
-	 * @return True if the pattern should match directories only
+	 * @return {@code true} if the pattern should match directories only
 	 */
 	public boolean dirOnly() {
 		return dirOnly;
@@ -189,13 +198,17 @@ public class FastIgnoreRule {
 	}
 
 	/**
-	 * @return true if the rule never matches (comment line or broken pattern)
+	 * Whether the rule never matches
+	 *
+	 * @return {@code true} if the rule never matches (comment line or broken
+	 *         pattern)
 	 * @since 4.1
 	 */
 	public boolean isEmpty() {
 		return matcher == NO_MATCH;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public String toString() {
 		StringBuilder sb = new StringBuilder();
@@ -208,6 +221,7 @@ public class FastIgnoreRule {
 
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public int hashCode() {
 		final int prime = 31;
@@ -218,6 +232,7 @@ public class FastIgnoreRule {
 		return result;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public boolean equals(Object obj) {
 		if (this == obj)

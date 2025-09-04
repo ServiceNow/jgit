@@ -2,52 +2,18 @@
  * Copyright (C) 2009, Google Inc.
  * Copyright (C) 2008, Imran M Yousuf <imyousuf@smartitengineering.com>
  * Copyright (C) 2007-2008, Robin Rosenberg <robin.rosenberg@dewire.com>
- * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.transport;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -58,12 +24,15 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.security.MessageDigest;
 import java.text.MessageFormat;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.zip.Deflater;
 
 import org.eclipse.jgit.errors.TooLargeObjectInPackException;
 import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.internal.storage.file.ObjectDirectoryPackParser;
-import org.eclipse.jgit.internal.storage.file.PackFile;
+import org.eclipse.jgit.internal.storage.file.Pack;
 import org.eclipse.jgit.junit.JGitTestUtil;
 import org.eclipse.jgit.junit.RepositoryTestCase;
 import org.eclipse.jgit.junit.TestRepository;
@@ -94,22 +63,62 @@ public class PackParserTest extends RepositoryTestCase {
 	@Test
 	public void test1() throws  IOException {
 		File packFile = JGitTestUtil.getTestResourceFile("pack-34be9032ac282b11fa9babdc2b2a93ca996c9c2f.pack");
-		final InputStream is = new FileInputStream(packFile);
-		try {
+		try (InputStream is = new FileInputStream(packFile)) {
 			ObjectDirectoryPackParser p = (ObjectDirectoryPackParser) index(is);
 			p.parse(NullProgressMonitor.INSTANCE);
-			PackFile file = p.getPackFile();
+			Pack pack = p.getPack();
 
-			assertTrue(file.hasObject(ObjectId.fromString("4b825dc642cb6eb9a060e54bf8d69288fbee4904")));
-			assertTrue(file.hasObject(ObjectId.fromString("540a36d136cf413e4b064c2b0e0a4db60f77feab")));
-			assertTrue(file.hasObject(ObjectId.fromString("5b6e7c66c276e7610d4a73c70ec1a1f7c1003259")));
-			assertTrue(file.hasObject(ObjectId.fromString("6ff87c4664981e4397625791c8ea3bbb5f2279a3")));
-			assertTrue(file.hasObject(ObjectId.fromString("82c6b885ff600be425b4ea96dee75dca255b69e7")));
-			assertTrue(file.hasObject(ObjectId.fromString("902d5476fa249b7abc9d84c611577a81381f0327")));
-			assertTrue(file.hasObject(ObjectId.fromString("aabf2ffaec9b497f0950352b3e582d73035c2035")));
-			assertTrue(file.hasObject(ObjectId.fromString("c59759f143fb1fe21c197981df75a7ee00290799")));
-		} finally {
-			is.close();
+			assertTrue(pack.hasObject(ObjectId.fromString("4b825dc642cb6eb9a060e54bf8d69288fbee4904")));
+			assertTrue(pack.hasObject(ObjectId.fromString("540a36d136cf413e4b064c2b0e0a4db60f77feab")));
+			assertTrue(pack.hasObject(ObjectId.fromString("5b6e7c66c276e7610d4a73c70ec1a1f7c1003259")));
+			assertTrue(pack.hasObject(ObjectId.fromString("6ff87c4664981e4397625791c8ea3bbb5f2279a3")));
+			assertTrue(pack.hasObject(ObjectId.fromString("82c6b885ff600be425b4ea96dee75dca255b69e7")));
+			assertTrue(pack.hasObject(ObjectId.fromString("902d5476fa249b7abc9d84c611577a81381f0327")));
+			assertTrue(pack.hasObject(ObjectId.fromString("aabf2ffaec9b497f0950352b3e582d73035c2035")));
+			assertTrue(pack.hasObject(ObjectId.fromString("c59759f143fb1fe21c197981df75a7ee00290799")));
+		}
+	}
+
+	@Test
+	public void testParsePack1ReadsObjectSizes() throws IOException {
+		File packFile = JGitTestUtil.getTestResourceFile(
+				"pack-34be9032ac282b11fa9babdc2b2a93ca996c9c2f.pack");
+
+		// Sizes from git cat-file -s after unpacking in a local repo
+		Map<String, Long> expected = new HashMap<>();
+		// Commits
+		expected.put("540a36d136cf413e4b064c2b0e0a4db60f77feab",
+				Long.valueOf(191));
+		expected.put("c59759f143fb1fe21c197981df75a7ee00290799",
+				Long.valueOf(240));
+		expected.put("82c6b885ff600be425b4ea96dee75dca255b69e7",
+				Long.valueOf(245));
+
+		// Trees
+		expected.put("4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+				Long.valueOf(0)); // empty
+		expected.put("902d5476fa249b7abc9d84c611577a81381f0327",
+				Long.valueOf(35));
+		expected.put("aabf2ffaec9b497f0950352b3e582d73035c2035",
+				Long.valueOf(35));
+
+		// Blobs
+		expected.put("6ff87c4664981e4397625791c8ea3bbb5f2279a3",
+				Long.valueOf(18787));
+
+		// Deltas
+		expected.put("5b6e7c66c276e7610d4a73c70ec1a1f7c1003259",
+				Long.valueOf(18009)); // delta-oid blob
+
+
+		try (InputStream is = new FileInputStream(packFile)) {
+			ObjectDirectoryPackParser p = (ObjectDirectoryPackParser) index(is);
+			p.parse(NullProgressMonitor.INSTANCE);
+			List<PackedObjectInfo> parsedObjects = p.getSortedObjectList(null);
+			for (PackedObjectInfo objInfo: parsedObjects) {
+				assertEquals(objInfo.getName(), objInfo.getFullSize(),
+						expected.get(objInfo.getName()).longValue());
+			}
 		}
 	}
 
@@ -122,34 +131,67 @@ public class PackParserTest extends RepositoryTestCase {
 	@Test
 	public void test2() throws  IOException {
 		File packFile = JGitTestUtil.getTestResourceFile("pack-df2982f284bbabb6bdb59ee3fcc6eb0983e20371.pack");
-		final InputStream is = new FileInputStream(packFile);
-		try {
+		try (InputStream is = new FileInputStream(packFile)) {
 			ObjectDirectoryPackParser p = (ObjectDirectoryPackParser) index(is);
 			p.parse(NullProgressMonitor.INSTANCE);
-			PackFile file = p.getPackFile();
+			Pack pack = p.getPack();
 
-			assertTrue(file.hasObject(ObjectId.fromString("02ba32d3649e510002c21651936b7077aa75ffa9")));
-			assertTrue(file.hasObject(ObjectId.fromString("0966a434eb1a025db6b71485ab63a3bfbea520b6")));
-			assertTrue(file.hasObject(ObjectId.fromString("09efc7e59a839528ac7bda9fa020dc9101278680")));
-			assertTrue(file.hasObject(ObjectId.fromString("0a3d7772488b6b106fb62813c4d6d627918d9181")));
-			assertTrue(file.hasObject(ObjectId.fromString("1004d0d7ac26fbf63050a234c9b88a46075719d3")));
-			assertTrue(file.hasObject(ObjectId.fromString("10da5895682013006950e7da534b705252b03be6")));
-			assertTrue(file.hasObject(ObjectId.fromString("1203b03dc816ccbb67773f28b3c19318654b0bc8")));
-			assertTrue(file.hasObject(ObjectId.fromString("15fae9e651043de0fd1deef588aa3fbf5a7a41c6")));
-			assertTrue(file.hasObject(ObjectId.fromString("16f9ec009e5568c435f473ba3a1df732d49ce8c3")));
-			assertTrue(file.hasObject(ObjectId.fromString("1fd7d579fb6ae3fe942dc09c2c783443d04cf21e")));
-			assertTrue(file.hasObject(ObjectId.fromString("20a8ade77639491ea0bd667bf95de8abf3a434c8")));
-			assertTrue(file.hasObject(ObjectId.fromString("2675188fd86978d5bc4d7211698b2118ae3bf658")));
+			assertTrue(pack.hasObject(ObjectId.fromString("02ba32d3649e510002c21651936b7077aa75ffa9")));
+			assertTrue(pack.hasObject(ObjectId.fromString("0966a434eb1a025db6b71485ab63a3bfbea520b6")));
+			assertTrue(pack.hasObject(ObjectId.fromString("09efc7e59a839528ac7bda9fa020dc9101278680")));
+			assertTrue(pack.hasObject(ObjectId.fromString("0a3d7772488b6b106fb62813c4d6d627918d9181")));
+			assertTrue(pack.hasObject(ObjectId.fromString("1004d0d7ac26fbf63050a234c9b88a46075719d3")));
+			assertTrue(pack.hasObject(ObjectId.fromString("10da5895682013006950e7da534b705252b03be6")));
+			assertTrue(pack.hasObject(ObjectId.fromString("1203b03dc816ccbb67773f28b3c19318654b0bc8")));
+			assertTrue(pack.hasObject(ObjectId.fromString("15fae9e651043de0fd1deef588aa3fbf5a7a41c6")));
+			assertTrue(pack.hasObject(ObjectId.fromString("16f9ec009e5568c435f473ba3a1df732d49ce8c3")));
+			assertTrue(pack.hasObject(ObjectId.fromString("1fd7d579fb6ae3fe942dc09c2c783443d04cf21e")));
+			assertTrue(pack.hasObject(ObjectId.fromString("20a8ade77639491ea0bd667bf95de8abf3a434c8")));
+			assertTrue(pack.hasObject(ObjectId.fromString("2675188fd86978d5bc4d7211698b2118ae3bf658")));
 			// and lots more...
-		} finally {
-			is.close();
+		}
+	}
+
+	@Test
+	public void testParsePack2ReadsObjectSizes() throws IOException {
+		File packFile = JGitTestUtil.getTestResourceFile(
+				"pack-df2982f284bbabb6bdb59ee3fcc6eb0983e20371.pack");
+		Map<String, Long> expected = new HashMap<>();
+		// Deltified commit
+		expected.put("d0114ab8ac326bab30e3a657a0397578c5a1af88",
+				Long.valueOf(222));
+		// Delta of delta of commit
+		expected.put("f73b95671f326616d66b2afb3bdfcdbbce110b44",
+				Long.valueOf(221));
+		// Deltified tree
+		expected.put("be9b45333b66013bde1c7314efc50fabd9b39c6d",
+				Long.valueOf(94));
+
+		try (InputStream is = new FileInputStream(packFile)) {
+			ObjectDirectoryPackParser p = (ObjectDirectoryPackParser) index(is);
+			p.parse(NullProgressMonitor.INSTANCE);
+			List<PackedObjectInfo> parsedObjects = p.getSortedObjectList(null);
+			// Check only the interesting objects
+			int assertedObjs = 0;
+			for (PackedObjectInfo objInfo : parsedObjects) {
+				if (!expected.containsKey(objInfo.getName())) {
+					continue;
+				}
+				assertEquals(objInfo.getName(), objInfo.getFullSize(),
+						expected.get(objInfo.getName()).longValue());
+				assertedObjs += 1;
+			}
+			assertEquals(assertedObjs, expected.size());
 		}
 	}
 
 	@Test
 	public void testTinyThinPack() throws Exception {
-		TestRepository d = new TestRepository<Repository>(db);
-		RevBlob a = d.blob("a");
+		RevBlob a;
+		try (TestRepository d = new TestRepository<Repository>(db)) {
+			db.incrementOpen();
+			a = d.blob("a");
+		}
 
 		TemporaryBuffer.Heap pack = new TemporaryBuffer.Heap(1024);
 
@@ -169,8 +211,10 @@ public class PackParserTest extends RepositoryTestCase {
 	@Test
 	public void testPackWithDuplicateBlob() throws Exception {
 		final byte[] data = Constants.encode("0123456789abcdefg");
-		TestRepository<Repository> d = new TestRepository<Repository>(db);
-		assertTrue(db.hasObject(d.blob(data)));
+		try (TestRepository<Repository> d = new TestRepository<>(db)) {
+			db.incrementOpen();
+			assertTrue(db.getObjectDatabase().has(d.blob(data)));
+		}
 
 		TemporaryBuffer.Heap pack = new TemporaryBuffer.Heap(1024);
 		packHeader(pack, 1);
@@ -185,9 +229,51 @@ public class PackParserTest extends RepositoryTestCase {
 	}
 
 	@Test
+	public void testParseOfsDeltaFullSize() throws Exception {
+		final byte[] data = Constants.encode("0123456789");
+		try (TestRepository<Repository> d = new TestRepository<>(db)) {
+			db.incrementOpen();
+			assertTrue(db.getObjectDatabase().has(d.blob(data)));
+		}
+
+		TemporaryBuffer.Heap pack = new TemporaryBuffer.Heap(1024);
+		packHeader(pack, 2);
+		pack.write((Constants.OBJ_BLOB) << 4 | 10); // offset 12
+		deflate(pack, data);
+		pack.write((Constants.OBJ_OFS_DELTA) << 4 | 4); // offset 31
+		pack.write(19);
+		deflate(pack, new byte[] { 0xA, 0xB, 0x1, 'b' });
+		digest(pack);
+
+		PackParser p = index(new ByteArrayInputStream(pack.toByteArray()));
+		p.parse(NullProgressMonitor.INSTANCE);
+
+		List<PackedObjectInfo> sortedObjectList = p.getSortedObjectList(null);
+		assertEquals(sortedObjectList.size(), 2);
+
+		// Deltified comes first because they are sorted by SHA1
+		PackedObjectInfo deltifiedObj = sortedObjectList.get(0);
+		assertEquals(deltifiedObj.getName(),
+				"16646543f87fb53e30b032eec7dfc88f2e717966");
+		assertEquals(deltifiedObj.getOffset(), 31);
+		assertEquals(deltifiedObj.getType(), Constants.OBJ_BLOB);
+		assertEquals(deltifiedObj.getFullSize(), 11);
+
+		PackedObjectInfo baseObj = sortedObjectList.get(1);
+		assertEquals(baseObj.getName(),
+				"ad471007bd7f5983d273b9584e5629230150fd54");
+		assertEquals(baseObj.getOffset(), 12);
+		assertEquals(baseObj.getType(), Constants.OBJ_BLOB);
+		assertEquals(baseObj.getFullSize(), 10);
+	}
+
+	@Test
 	public void testPackWithTrailingGarbage() throws Exception {
-		TestRepository d = new TestRepository<Repository>(db);
-		RevBlob a = d.blob("a");
+		RevBlob a;
+		try (TestRepository d = new TestRepository<Repository>(db)) {
+			db.incrementOpen();
+			a = d.blob("a");
+		}
 
 		TemporaryBuffer.Heap pack = new TemporaryBuffer.Heap(1024);
 		packHeader(pack, 1);
@@ -213,9 +299,11 @@ public class PackParserTest extends RepositoryTestCase {
 
 	@Test
 	public void testMaxObjectSizeFullBlob() throws Exception {
-		TestRepository d = new TestRepository<Repository>(db);
 		final byte[] data = Constants.encode("0123456789");
-		d.blob(data);
+		try (TestRepository d = new TestRepository<Repository>(db)) {
+			db.incrementOpen();
+			d.blob(data);
+		}
 
 		TemporaryBuffer.Heap pack = new TemporaryBuffer.Heap(1024);
 
@@ -245,8 +333,11 @@ public class PackParserTest extends RepositoryTestCase {
 
 	@Test
 	public void testMaxObjectSizeDeltaBlock() throws Exception {
-		TestRepository d = new TestRepository<Repository>(db);
-		RevBlob a = d.blob("a");
+		RevBlob a;
+		try (TestRepository d = new TestRepository<Repository>(db)) {
+			db.incrementOpen();
+			a = d.blob("a");
+		}
 
 		TemporaryBuffer.Heap pack = new TemporaryBuffer.Heap(1024);
 
@@ -270,14 +361,17 @@ public class PackParserTest extends RepositoryTestCase {
 			fail("PackParser should have failed");
 		} catch (TooLargeObjectInPackException e) {
 			assertTrue(e.getMessage().contains("13")); // max obj size
-			assertFalse(e.getMessage().contains("14")); // no delta size
+			assertTrue(e.getMessage().contains("14")); // delta size
 		}
 	}
 
 	@Test
 	public void testMaxObjectSizeDeltaResultSize() throws Exception {
-		TestRepository d = new TestRepository<Repository>(db);
-		RevBlob a = d.blob("0123456789");
+		RevBlob a;
+		try (TestRepository d = new TestRepository<Repository>(db)) {
+			db.incrementOpen();
+			a = d.blob("0123456789");
+		}
 
 		TemporaryBuffer.Heap pack = new TemporaryBuffer.Heap(1024);
 
@@ -306,8 +400,11 @@ public class PackParserTest extends RepositoryTestCase {
 
 	@Test
 	public void testNonMarkingInputStream() throws Exception {
-		TestRepository d = new TestRepository<Repository>(db);
-		RevBlob a = d.blob("a");
+		RevBlob a;
+		try (TestRepository d = new TestRepository<Repository>(db)) {
+			db.incrementOpen();
+			a = d.blob("a");
+		}
 
 		TemporaryBuffer.Heap pack = new TemporaryBuffer.Heap(1024);
 		packHeader(pack, 1);
@@ -344,8 +441,11 @@ public class PackParserTest extends RepositoryTestCase {
 
 	@Test
 	public void testDataAfterPackFooterSingleRead() throws Exception {
-		TestRepository d = new TestRepository<Repository>(db);
-		RevBlob a = d.blob("a");
+		RevBlob a;
+		try (TestRepository d = new TestRepository<Repository>(db)) {
+			db.incrementOpen();
+			a = d.blob("a");
+		}
 
 		TemporaryBuffer.Heap pack = new TemporaryBuffer.Heap(32*1024);
 		packHeader(pack, 1);
@@ -402,9 +502,12 @@ public class PackParserTest extends RepositoryTestCase {
 
 	@Test
 	public void testDataAfterPackFooterSplitHeaderRead() throws Exception {
-		TestRepository d = new TestRepository<Repository>(db);
 		final byte[] data = Constants.encode("a");
-		RevBlob b = d.blob(data);
+		RevBlob b;
+		try (TestRepository d = new TestRepository<Repository>(db)) {
+			db.incrementOpen();
+			b = d.blob(data);
+		}
 
 		int objects = 248;
 		TemporaryBuffer.Heap pack = new TemporaryBuffer.Heap(32 * 1024);

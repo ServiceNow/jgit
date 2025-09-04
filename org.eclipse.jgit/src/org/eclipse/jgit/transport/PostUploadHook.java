@@ -42,11 +42,11 @@
 
 package org.eclipse.jgit.transport;
 
-import org.eclipse.jgit.internal.storage.pack.PackWriter;
 import org.eclipse.jgit.storage.pack.PackStatistics;
 
 /**
- * Hook invoked by {@link UploadPack} after the pack has been uploaded.
+ * Hook invoked by {@link org.eclipse.jgit.transport.UploadPack} after the pack
+ * has been uploaded.
  * <p>
  * Implementors of the interface are responsible for associating the current
  * thread to a particular connection, if they need to also include connection
@@ -57,18 +57,17 @@ import org.eclipse.jgit.storage.pack.PackStatistics;
  */
 public interface PostUploadHook {
 	/** A simple no-op hook. */
-	public static final PostUploadHook NULL = new PostUploadHook() {
-		public void onPostUpload(PackStatistics stats) {
-			// Do nothing.
-		}
+	PostUploadHook NULL = (PackStatistics stats) -> {
+		// Do nothing.
 	};
 
 	/**
 	 * Notifies the hook that a pack has been sent.
 	 *
 	 * @param stats
-	 *            the statistics gathered by {@link PackWriter} for the uploaded
-	 *            pack
+	 *            the statistics gathered by
+	 *            {@link org.eclipse.jgit.internal.storage.pack.PackWriter} for
+	 *            the uploaded pack
 	 */
-	public void onPostUpload(PackStatistics stats);
+	void onPostUpload(PackStatistics stats);
 }

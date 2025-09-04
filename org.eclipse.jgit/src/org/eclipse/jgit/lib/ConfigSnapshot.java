@@ -6,46 +6,13 @@
  * Copyright (C) 2009, JetBrains s.r.o.
  * Copyright (C) 2007-2008, Robin Rosenberg <robin.rosenberg@dewire.com>
  * Copyright (C) 2006-2008, Shawn O. Pearce <spearce@spearce.org>
- * Copyright (C) 2008, Thad Hughes <thadh@thad.corp.google.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, Thad Hughes <thadh@thad.corp.google.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.lib;
@@ -78,7 +45,7 @@ class ConfigSnapshot {
 
 	ConfigSnapshot(List<ConfigLine> entries, ConfigSnapshot base) {
 		entryList = entries;
-		cache = new ConcurrentHashMap<Object, Object>(16, 0.75f, 1);
+		cache = new ConcurrentHashMap<>(16, 0.75f, 1);
 		baseState = base;
 	}
 
@@ -112,7 +79,7 @@ class ConfigSnapshot {
 		if (idx < 0)
 			idx = -(idx + 1);
 
-		Map<String, String> m = new LinkedHashMap<String, String>();
+		Map<String, String> m = new LinkedHashMap<>();
 		while (idx < s.size()) {
 			ConfigLine e = s.get(idx++);
 			if (!e.match(section, subsection))
@@ -187,7 +154,7 @@ class ConfigSnapshot {
 	}
 
 	private static List<ConfigLine> sort(List<ConfigLine> in) {
-		List<ConfigLine> sorted = new ArrayList<ConfigLine>(in.size());
+		List<ConfigLine> sorted = new ArrayList<>(in.size());
 		for (ConfigLine line : in) {
 			if (line.section != null && line.name != null)
 				sorted.add(line);
@@ -217,6 +184,7 @@ class ConfigSnapshot {
 	}
 
 	private static class LineComparator implements Comparator<ConfigLine> {
+		@Override
 		public int compare(ConfigLine a, ConfigLine b) {
 			return compare2(
 					a.section, a.subsection, a.name,
@@ -236,8 +204,8 @@ class ConfigSnapshot {
 		final Map<String, Set<String>> subsections;
 
 		SectionNames(ConfigSnapshot cfg) {
-			Map<String, String> sec = new LinkedHashMap<String, String>();
-			Map<String, Set<String>> sub = new HashMap<String, Set<String>>();
+			Map<String, String> sec = new LinkedHashMap<>();
+			Map<String, Set<String>> sub = new HashMap<>();
 			while (cfg != null) {
 				for (ConfigLine e : cfg.entryList) {
 					if (e.section == null)
@@ -252,7 +220,7 @@ class ConfigSnapshot {
 
 					Set<String> m = sub.get(l1);
 					if (m == null) {
-						m = new LinkedHashSet<String>();
+						m = new LinkedHashSet<>();
 						sub.put(l1, m);
 					}
 					m.add(e.subsection);
@@ -285,15 +253,19 @@ class ConfigSnapshot {
 		@Override
 		public Iterator<String> iterator() {
 			final Iterator<String> i = names.values().iterator();
-			return new Iterator<String>() {
+			return new Iterator<>() {
+
+				@Override
 				public boolean hasNext() {
 					return i.hasNext();
 				}
 
+				@Override
 				public String next() {
 					return i.next();
 				}
 
+				@Override
 				public void remove() {
 					throw new UnsupportedOperationException();
 				}

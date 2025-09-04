@@ -1,46 +1,13 @@
 /*
  * Copyright (C) 2009, Google Inc.
  * Copyright (C) 2009, Robin Rosenberg <robin.rosenberg@dewire.com>
- * Copyright (C) 2009, Yann Simon <yann.simon.fr@gmail.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2009, Yann Simon <yann.simon.fr@gmail.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.junit;
@@ -50,23 +17,28 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.TimeZone;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.jgit.errors.ConfigInvalidException;
 import org.eclipse.jgit.lib.Config;
 import org.eclipse.jgit.lib.Constants;
+import org.eclipse.jgit.lib.StoredConfig;
 import org.eclipse.jgit.storage.file.FileBasedConfig;
 import org.eclipse.jgit.util.FS;
 import org.eclipse.jgit.util.SystemReader;
+import org.eclipse.jgit.util.time.MonotonicClock;
+import org.eclipse.jgit.util.time.ProposedTimestamp;
 
 /**
- * Mock {@link SystemReader} for tests.
+ * Mock {@link org.eclipse.jgit.util.SystemReader} for tests.
  */
 public class MockSystemReader extends SystemReader {
-	private final class MockConfig extends FileBasedConfig {
+	private static final class MockConfig extends FileBasedConfig {
 		private MockConfig(File cfgLocation, FS fs) {
 			super(cfgLocation, fs);
 		}
@@ -77,19 +49,73 @@ public class MockSystemReader extends SystemReader {
 		}
 
 		@Override
+		public void save() throws IOException {
+			// Do nothing
+		}
+
+		@Override
 		public boolean isOutdated() {
 			return false;
+		}
+
+		@Override
+		public String toString() {
+			return "MockConfig";
 		}
 	}
 
 	long now = 1250379778668L; // Sat Aug 15 20:12:58 GMT-03:30 2009
 
-	final Map<String, String> values = new HashMap<String, String>();
+	final Map<String, String> values = new HashMap<>();
 
-	FileBasedConfig userGitConfig;
+	private FileBasedConfig userGitConfig;
+
+	private FileBasedConfig jgitConfig;
 
 	FileBasedConfig systemGitConfig;
 
+	/**
+	 * Set the user-level git config
+	 *
+	 * @param userGitConfig
+	 *            set another user-level git config
+	 * @return the old user-level git config
+	 * @since 5.1.9
+	 */
+	public FileBasedConfig setUserGitConfig(FileBasedConfig userGitConfig) {
+		FileBasedConfig old = this.userGitConfig;
+		this.userGitConfig = userGitConfig;
+		return old;
+	}
+
+	/**
+	 * Set the jgit config stored at $XDG_CONFIG_HOME/jgit/config
+	 *
+	 * @param jgitConfig
+	 *            set the jgit configuration
+	 * @since 5.5
+	 */
+	public void setJGitConfig(FileBasedConfig jgitConfig) {
+		this.jgitConfig = jgitConfig;
+	}
+
+	/**
+	 * Set the system-level git config
+	 *
+	 * @param systemGitConfig
+	 *            the new system-level git config
+	 * @return the old system-level config
+	 * @since 5.1.9
+	 */
+	public FileBasedConfig setSystemGitConfig(FileBasedConfig systemGitConfig) {
+		FileBasedConfig old = this.systemGitConfig;
+		this.systemGitConfig = systemGitConfig;
+		return old;
+	}
+
+	/**
+	 * Constructor for <code>MockSystemReader</code>
+	 */
 	public MockSystemReader() {
 		init(Constants.OS_USER_NAME_KEY);
 		init(Constants.GIT_AUTHOR_NAME_KEY);
@@ -98,38 +124,52 @@ public class MockSystemReader extends SystemReader {
 		init(Constants.GIT_COMMITTER_EMAIL_KEY);
 		setProperty(Constants.OS_USER_DIR, ".");
 		userGitConfig = new MockConfig(null, null);
+		jgitConfig = new MockConfig(null, null);
 		systemGitConfig = new MockConfig(null, null);
 		setCurrentPlatform();
 	}
 
-	private void init(final String n) {
+	private void init(String n) {
 		setProperty(n, n);
 	}
 
+	/**
+	 * Clear properties
+	 */
 	public void clearProperties() {
 		values.clear();
 	}
 
+	/**
+	 * Set a property
+	 *
+	 * @param key
+	 * @param value
+	 */
 	public void setProperty(String key, String value) {
 		values.put(key, value);
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public String getenv(String variable) {
 		return values.get(variable);
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public String getProperty(String key) {
 		return values.get(key);
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public FileBasedConfig openUserConfig(Config parent, FS fs) {
-		assert parent == null || parent == systemGitConfig;
+		assert parent == null || parent == systemGitConfig || parent instanceof FileBasedConfig;
 		return userGitConfig;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public FileBasedConfig openSystemConfig(Config parent, FS fs) {
 		assert parent == null;
@@ -137,13 +177,52 @@ public class MockSystemReader extends SystemReader {
 	}
 
 	@Override
+	public StoredConfig getUserConfig()
+			throws IOException, ConfigInvalidException {
+		return userGitConfig;
+	}
+
+	@Override
+	public FileBasedConfig getJGitConfig() {
+		return jgitConfig;
+	}
+
+	@Override
+	public StoredConfig getSystemConfig()
+			throws IOException, ConfigInvalidException {
+		return systemGitConfig;
+	}
+
+	/** {@inheritDoc} */
+	@Override
 	public String getHostname() {
 		return "fake.host.example.com";
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public long getCurrentTime() {
 		return now;
+	}
+
+	/** {@inheritDoc} */
+	@Override
+	public MonotonicClock getClock() {
+		return () -> {
+			long t = getCurrentTime();
+			return new ProposedTimestamp() {
+
+				@Override
+				public long read(TimeUnit unit) {
+					return unit.convert(t, TimeUnit.MILLISECONDS);
+				}
+
+				@Override
+				public void blockUntil(Duration maxWait) {
+					// Do not wait.
+				}
+			};
+		};
 	}
 
 	/**
@@ -153,30 +232,35 @@ public class MockSystemReader extends SystemReader {
 	 *            number of seconds to add to the current time.
 	 * @since 4.2
 	 */
-	public void tick(final int secDelta) {
+	public void tick(int secDelta) {
 		now += secDelta * 1000L;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public int getTimezone(long when) {
 		return getTimeZone().getOffset(when) / (60 * 1000);
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public TimeZone getTimeZone() {
 		return TimeZone.getTimeZone("GMT-03:30");
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public Locale getLocale() {
 		return Locale.US;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public SimpleDateFormat getSimpleDateFormat(String pattern) {
 		return new SimpleDateFormat(pattern, getLocale());
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public DateFormat getDateTimeInstance(int dateStyle, int timeStyle) {
 		return DateFormat
@@ -231,4 +315,15 @@ public class MockSystemReader extends SystemReader {
 			e.printStackTrace();
 		}
 	}
+
+	@Override
+	public String toString() {
+		return "MockSystemReader";
+	}
+
+	@Override
+	public FileBasedConfig openJGitConfig(Config parent, FS fs) {
+		return jgitConfig;
+	}
+
 }

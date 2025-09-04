@@ -1,49 +1,17 @@
 /*
  * Copyright (C) 2008-2009, Google Inc.
- * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.dircache;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.eclipse.jgit.lib.FileMode.TREE;
 import static org.eclipse.jgit.lib.TreeFormatter.entrySize;
 
@@ -62,13 +30,14 @@ import org.eclipse.jgit.util.MutableInteger;
 import org.eclipse.jgit.util.RawParseUtils;
 
 /**
- * Single tree record from the 'TREE' {@link DirCache} extension.
+ * Single tree record from the 'TREE' {@link org.eclipse.jgit.dircache.DirCache}
+ * extension.
  * <p>
  * A valid cache tree record contains the object id of a tree object and the
- * total number of {@link DirCacheEntry} instances (counted recursively) from
- * the DirCache contained within the tree. This information facilitates faster
- * traversal of the index and quicker generation of tree objects prior to
- * creating a new commit.
+ * total number of {@link org.eclipse.jgit.dircache.DirCacheEntry} instances
+ * (counted recursively) from the DirCache contained within the tree. This
+ * information facilitates faster traversal of the index and quicker generation
+ * of tree objects prior to creating a new commit.
  * <p>
  * An invalid cache tree record indicates a known subtree whose file entries
  * have changed in ways that cause the tree to no longer have a known object id.
@@ -79,24 +48,26 @@ public class DirCacheTree {
 
 	private static final DirCacheTree[] NO_CHILDREN = {};
 
-	private static final Comparator<DirCacheTree> TREE_CMP = new Comparator<DirCacheTree>() {
-		public int compare(final DirCacheTree o1, final DirCacheTree o2) {
-			final byte[] a = o1.encodedName;
-			final byte[] b = o2.encodedName;
-			final int aLen = a.length;
-			final int bLen = b.length;
-			int cPos;
-			for (cPos = 0; cPos < aLen && cPos < bLen; cPos++) {
-				final int cmp = (a[cPos] & 0xff) - (b[cPos] & 0xff);
-				if (cmp != 0)
-					return cmp;
+	private static final Comparator<DirCacheTree> TREE_CMP = (DirCacheTree o1,
+			DirCacheTree o2) -> {
+		final byte[] a = o1.encodedName;
+		final byte[] b = o2.encodedName;
+		final int aLen = a.length;
+		final int bLen = b.length;
+		int cPos;
+		for (cPos = 0; cPos < aLen && cPos < bLen; cPos++) {
+			final int cmp = (a[cPos] & 0xff) - (b[cPos] & 0xff);
+			if (cmp != 0) {
+				return cmp;
 			}
-			if (aLen == bLen)
-				return 0;
-			if (aLen < bLen)
-				return '/' - (b[cPos] & 0xff);
-			return (a[cPos] & 0xff) - '/';
 		}
+		if (aLen == bLen) {
+			return 0;
+		}
+		if (aLen < bLen) {
+			return '/' - (b[cPos] & 0xff);
+		}
+		return (a[cPos] & 0xff) - '/';
 	};
 
 	/** Tree this tree resides in; null if we are the root. */
@@ -183,7 +154,7 @@ public class DirCacheTree {
 		childCnt = subcnt;
 	}
 
-	void write(final byte[] tmp, final OutputStream os) throws IOException {
+	void write(byte[] tmp, OutputStream os) throws IOException {
 		int ptr = tmp.length;
 		tmp[--ptr] = '\n';
 		ptr = RawParseUtils.formatBase10(tmp, ptr, childCnt);
@@ -204,10 +175,11 @@ public class DirCacheTree {
 	/**
 	 * Determine if this cache is currently valid.
 	 * <p>
-	 * A valid cache tree knows how many {@link DirCacheEntry} instances from
-	 * the parent {@link DirCache} reside within this tree (recursively
-	 * enumerated). It also knows the object id of the tree, as the tree should
-	 * be readily available from the repository's object database.
+	 * A valid cache tree knows how many
+	 * {@link org.eclipse.jgit.dircache.DirCacheEntry} instances from the parent
+	 * {@link org.eclipse.jgit.dircache.DirCache} reside within this tree
+	 * (recursively enumerated). It also knows the object id of the tree, as the
+	 * tree should be readily available from the repository's object database.
 	 *
 	 * @return true if this tree is knows key details about itself; false if the
 	 *         tree needs to be regenerated.
@@ -245,11 +217,19 @@ public class DirCacheTree {
 	 *            index of the child to obtain.
 	 * @return the child tree.
 	 */
-	public DirCacheTree getChild(final int i) {
+	public DirCacheTree getChild(int i) {
 		return children[i];
 	}
 
-	ObjectId getObjectId() {
+	/**
+	 * Get the tree's ObjectId.
+	 * <p>
+	 * If {@link #isValid()} returns false this method will return null.
+	 *
+	 * @return ObjectId of this tree or null.
+	 * @since 4.3
+	 */
+	public ObjectId getObjectId() {
 		return id;
 	}
 
@@ -265,7 +245,7 @@ public class DirCacheTree {
 	 */
 	public String getNameString() {
 		final ByteBuffer bb = ByteBuffer.wrap(encodedName);
-		return Constants.CHARSET.decode(bb).toString();
+		return UTF_8.decode(bb).toString();
 	}
 
 	/**
@@ -300,12 +280,12 @@ public class DirCacheTree {
 	 *            number of bytes of <code>cache[cacheIdx].path</code> that
 	 *            matches this tree's path. The value at array position
 	 *            <code>cache[cacheIdx].path[pathOff-1]</code> is always '/' if
-	 *            <code>pathOff</code> is > 0.
+	 *            <code>pathOff</code> is &gt; 0.
 	 * @param ow
 	 *            the writer to use when serializing to the store.
 	 * @return identity of this tree.
 	 * @throws UnmergedPathException
-	 *             one or more paths contain higher-order stages (stage > 0),
+	 *             one or more paths contain higher-order stages (stage &gt; 0),
 	 *             which cannot be stored in a tree object.
 	 * @throws IOException
 	 *             an unexpected error occurred writing to the object store.
@@ -378,7 +358,7 @@ public class DirCacheTree {
 		return size;
 	}
 
-	private void appendName(final StringBuilder r) {
+	private void appendName(StringBuilder r) {
 		if (parent != null) {
 			parent.appendName(r);
 			r.append(getNameString());
@@ -393,7 +373,7 @@ public class DirCacheTree {
 		return encodedName.length;
 	}
 
-	final boolean contains(final byte[] a, int aOff, final int aLen) {
+	final boolean contains(byte[] a, int aOff, int aLen) {
 		final byte[] e = encodedName;
 		final int eLen = e.length;
 		for (int eOff = 0; eOff < eLen && aOff < aLen; eOff++, aOff++)
@@ -421,7 +401,7 @@ public class DirCacheTree {
 	 *            number of bytes of <code>cache[cacheIdx].path</code> that
 	 *            matches this tree's path. The value at array position
 	 *            <code>cache[cacheIdx].path[pathOff-1]</code> is always '/' if
-	 *            <code>pathOff</code> is > 0.
+	 *            <code>pathOff</code> is &gt; 0.
 	 */
 	void validate(final DirCacheEntry[] cache, final int cCnt, int cIdx,
 			final int pathOff) {
@@ -492,7 +472,7 @@ public class DirCacheTree {
 			removeChild(childCnt - 1);
 	}
 
-	private void insertChild(final int stIdx, final DirCacheTree st) {
+	private void insertChild(int stIdx, DirCacheTree st) {
 		final DirCacheTree[] c = children;
 		if (childCnt + 1 <= c.length) {
 			if (stIdx < childCnt)
@@ -513,14 +493,14 @@ public class DirCacheTree {
 		childCnt++;
 	}
 
-	private void removeChild(final int stIdx) {
+	private void removeChild(int stIdx) {
 		final int n = --childCnt;
 		if (stIdx < n)
 			System.arraycopy(children, stIdx + 1, children, stIdx, n - stIdx);
 		children[n] = null;
 	}
 
-	static boolean peq(final byte[] a, final byte[] b, int aLen) {
+	static boolean peq(byte[] a, byte[] b, int aLen) {
 		if (b.length < aLen)
 			return false;
 		for (aLen--; aLen >= 0; aLen--)
@@ -529,7 +509,7 @@ public class DirCacheTree {
 		return true;
 	}
 
-	private static int namecmp(final byte[] a, int aPos, final DirCacheTree ct) {
+	private static int namecmp(byte[] a, int aPos, DirCacheTree ct) {
 		if (ct == null)
 			return -1;
 		final byte[] b = ct.encodedName;
@@ -546,7 +526,7 @@ public class DirCacheTree {
 		return aLen - bLen;
 	}
 
-	private static int slash(final byte[] a, int aPos) {
+	private static int slash(byte[] a, int aPos) {
 		final int aLen = a.length;
 		for (; aPos < aLen; aPos++)
 			if (a[aPos] == '/')
@@ -554,6 +534,7 @@ public class DirCacheTree {
 		return -1;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public String toString() {
 		return getNameString();

@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2012 Christian Halstrick
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2012 Christian Halstrick and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 package org.eclipse.jgit.util;
 
@@ -55,7 +22,7 @@ import java.util.Map;
 import org.eclipse.jgit.internal.JGitText;
 
 /**
- * Parses strings with time and date specifications into {@link Date}.
+ * Parses strings with time and date specifications into {@link java.util.Date}.
  *
  * When git needs to parse strings specified by the user this parser can be
  * used. One example is the parsing of the config parameter gc.pruneexpire. The
@@ -73,10 +40,11 @@ public class GitDateParser {
 	// be cached. Since they are also not threadsafe they are cached using
 	// ThreadLocal.
 	private static ThreadLocal<Map<Locale, Map<ParseableSimpleDateFormat, SimpleDateFormat>>> formatCache =
-			new ThreadLocal<Map<Locale, Map<ParseableSimpleDateFormat, SimpleDateFormat>>>() {
+			new ThreadLocal<>() {
 
+		@Override
 		protected Map<Locale, Map<ParseableSimpleDateFormat, SimpleDateFormat>> initialValue() {
-			return new HashMap<Locale, Map<ParseableSimpleDateFormat, SimpleDateFormat>>();
+			return new HashMap<>();
 		}
 	};
 
@@ -90,7 +58,7 @@ public class GitDateParser {
 		Map<ParseableSimpleDateFormat, SimpleDateFormat> map = cache
 				.get(locale);
 		if (map == null) {
-			map = new HashMap<ParseableSimpleDateFormat, SimpleDateFormat>();
+			map = new HashMap<>();
 			cache.put(locale, map);
 			return getNewSimpleDateFormat(f, locale, map);
 		}
@@ -125,7 +93,7 @@ public class GitDateParser {
 		DEFAULT("EEE MMM dd HH:mm:ss yyyy Z"), // //$NON-NLS-1$
 		LOCAL("EEE MMM dd HH:mm:ss yyyy"); //$NON-NLS-1$
 
-		String formatStr;
+		private final String formatStr;
 
 		private ParseableSimpleDateFormat(String formatStr) {
 			this.formatStr = formatStr;
@@ -133,16 +101,17 @@ public class GitDateParser {
 	}
 
 	/**
-	 * Parses a string into a {@link Date} using the default locale. Since this
-	 * parser also supports relative formats (e.g. "yesterday") the caller can
-	 * specify the reference date. These types of strings can be parsed:
+	 * Parses a string into a {@link java.util.Date} using the default locale.
+	 * Since this parser also supports relative formats (e.g. "yesterday") the
+	 * caller can specify the reference date. These types of strings can be
+	 * parsed:
 	 * <ul>
 	 * <li>"never"</li>
 	 * <li>"now"</li>
 	 * <li>"yesterday"</li>
 	 * <li>"(x) years|months|weeks|days|hours|minutes|seconds ago"<br>
-	 * Multiple specs can be combined like in "2 weeks 3 days ago". Instead of
-	 * ' ' one can use '.' to seperate the words</li>
+	 * Multiple specs can be combined like in "2 weeks 3 days ago". Instead of '
+	 * ' one can use '.' to separate the words</li>
 	 * <li>"yyyy-MM-dd HH:mm:ss Z" (ISO)</li>
 	 * <li>"EEE, dd MMM yyyy HH:mm:ss Z" (RFC)</li>
 	 * <li>"yyyy-MM-dd"</li>
@@ -160,11 +129,12 @@ public class GitDateParser {
 	 *            formats. E.g. if baseDate is "25.8.2012" then parsing of the
 	 *            string "1 week ago" would result in a date corresponding to
 	 *            "18.8.2012". This is used when a JGit command calls this
-	 *            parser often but wants a consistent starting point for calls.<br>
+	 *            parser often but wants a consistent starting point for
+	 *            calls.<br>
 	 *            If set to <code>null</code> then the current time will be used
 	 *            instead.
-	 * @return the parsed {@link Date}
-	 * @throws ParseException
+	 * @return the parsed {@link java.util.Date}
+	 * @throws java.text.ParseException
 	 *             if the given dateStr was not recognized
 	 */
 	public static Date parse(String dateStr, Calendar now)
@@ -173,16 +143,17 @@ public class GitDateParser {
 	}
 
 	/**
-	 * Parses a string into a {@link Date} using the given locale. Since this
-	 * parser also supports relative formats (e.g. "yesterday") the caller can
-	 * specify the reference date. These types of strings can be parsed:
+	 * Parses a string into a {@link java.util.Date} using the given locale.
+	 * Since this parser also supports relative formats (e.g. "yesterday") the
+	 * caller can specify the reference date. These types of strings can be
+	 * parsed:
 	 * <ul>
 	 * <li>"never"</li>
 	 * <li>"now"</li>
 	 * <li>"yesterday"</li>
 	 * <li>"(x) years|months|weeks|days|hours|minutes|seconds ago"<br>
-	 * Multiple specs can be combined like in "2 weeks 3 days ago". Instead of
-	 * ' ' one can use '.' to seperate the words</li>
+	 * Multiple specs can be combined like in "2 weeks 3 days ago". Instead of '
+	 * ' one can use '.' to separate the words</li>
 	 * <li>"yyyy-MM-dd HH:mm:ss Z" (ISO)</li>
 	 * <li>"EEE, dd MMM yyyy HH:mm:ss Z" (RFC)</li>
 	 * <li>"yyyy-MM-dd"</li>
@@ -200,13 +171,14 @@ public class GitDateParser {
 	 *            formats. E.g. if baseDate is "25.8.2012" then parsing of the
 	 *            string "1 week ago" would result in a date corresponding to
 	 *            "18.8.2012". This is used when a JGit command calls this
-	 *            parser often but wants a consistent starting point for calls.<br>
+	 *            parser often but wants a consistent starting point for
+	 *            calls.<br>
 	 *            If set to <code>null</code> then the current time will be used
 	 *            instead.
 	 * @param locale
 	 *            locale to be used to parse the date string
-	 * @return the parsed {@link Date}
-	 * @throws ParseException
+	 * @return the parsed {@link java.util.Date}
+	 * @throws java.text.ParseException
 	 *             if the given dateStr was not recognized
 	 * @since 3.2
 	 */
@@ -247,12 +219,13 @@ public class GitDateParser {
 	}
 
 	// tries to parse a string with a relative time specification
+	@SuppressWarnings("nls")
 	private static Date parse_relative(String dateStr, Calendar now) {
 		Calendar cal;
 		SystemReader sysRead = SystemReader.getInstance();
 
 		// check for the static words "yesterday" or "now"
-		if ("now".equals(dateStr)) { //$NON-NLS-1$
+		if ("now".equals(dateStr)) {
 			return ((now == null) ? new Date(sysRead.getCurrentTime()) : now
 					.getTime());
 		}
@@ -264,7 +237,7 @@ public class GitDateParser {
 		} else
 			cal = (Calendar) now.clone();
 
-		if ("yesterday".equals(dateStr)) { //$NON-NLS-1$
+		if ("yesterday".equals(dateStr)) {
 			cal.add(Calendar.DATE, -1);
 			cal.set(Calendar.HOUR_OF_DAY, 0);
 			cal.set(Calendar.MINUTE, 0);
@@ -275,12 +248,12 @@ public class GitDateParser {
 		}
 
 		// parse constructs like "3 days ago", "5.week.2.day.ago"
-		String[] parts = dateStr.split("\\.| "); //$NON-NLS-1$
+		String[] parts = dateStr.split("\\.| ");
 		int partsLength = parts.length;
 		// check we have an odd number of parts (at least 3) and that the last
 		// part is "ago"
 		if (partsLength < 3 || (partsLength & 1) == 0
-				|| !"ago".equals(parts[parts.length - 1])) //$NON-NLS-1$
+				|| !"ago".equals(parts[parts.length - 1]))
 			return null;
 		int number;
 		for (int i = 0; i < parts.length - 2; i += 2) {
@@ -289,27 +262,41 @@ public class GitDateParser {
 			} catch (NumberFormatException e) {
 				return null;
 			}
-			if ("year".equals(parts[i + 1]) || "years".equals(parts[i + 1])) //$NON-NLS-1$ //$NON-NLS-2$
-				cal.add(Calendar.YEAR, -number);
-			else if ("month".equals(parts[i + 1]) //$NON-NLS-1$
-					|| "months".equals(parts[i + 1])) //$NON-NLS-1$
-				cal.add(Calendar.MONTH, -number);
-			else if ("week".equals(parts[i + 1]) //$NON-NLS-1$
-					|| "weeks".equals(parts[i + 1])) //$NON-NLS-1$
-				cal.add(Calendar.WEEK_OF_YEAR, -number);
-			else if ("day".equals(parts[i + 1]) || "days".equals(parts[i + 1])) //$NON-NLS-1$ //$NON-NLS-2$
-				cal.add(Calendar.DATE, -number);
-			else if ("hour".equals(parts[i + 1]) //$NON-NLS-1$
-					|| "hours".equals(parts[i + 1])) //$NON-NLS-1$
-				cal.add(Calendar.HOUR_OF_DAY, -number);
-			else if ("minute".equals(parts[i + 1]) //$NON-NLS-1$
-					|| "minutes".equals(parts[i + 1])) //$NON-NLS-1$
-				cal.add(Calendar.MINUTE, -number);
-			else if ("second".equals(parts[i + 1]) //$NON-NLS-1$
-					|| "seconds".equals(parts[i + 1])) //$NON-NLS-1$
-				cal.add(Calendar.SECOND, -number);
-			else
+			if (parts[i + 1] == null){
 				return null;
+			}
+			switch (parts[i + 1]) {
+			case "year":
+			case "years":
+				cal.add(Calendar.YEAR, -number);
+				break;
+			case "month":
+			case "months":
+				cal.add(Calendar.MONTH, -number);
+				break;
+			case "week":
+			case "weeks":
+				cal.add(Calendar.WEEK_OF_YEAR, -number);
+				break;
+			case "day":
+			case "days":
+				cal.add(Calendar.DATE, -number);
+				break;
+			case "hour":
+			case "hours":
+				cal.add(Calendar.HOUR_OF_DAY, -number);
+				break;
+			case "minute":
+			case "minutes":
+				cal.add(Calendar.MINUTE, -number);
+				break;
+			case "second":
+			case "seconds":
+				cal.add(Calendar.SECOND, -number);
+				break;
+			default:
+				return null;
+			}
 		}
 		return cal.getTime();
 	}

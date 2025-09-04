@@ -1,45 +1,12 @@
 /*
  * Copyright (C) 2012, Research In Motion Limited
- * Copyright (C) 2012, Christian Halstrick <christian.halstrick@sap.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2012, Christian Halstrick <christian.halstrick@sap.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 /*
@@ -61,7 +28,9 @@ import org.eclipse.jgit.errors.IncorrectObjectTypeException;
 import org.eclipse.jgit.errors.NoMergeBaseException;
 import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.lib.CommitBuilder;
+import org.eclipse.jgit.lib.Config;
 import org.eclipse.jgit.lib.ObjectId;
+import org.eclipse.jgit.lib.ObjectInserter;
 import org.eclipse.jgit.lib.PersonIdent;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.revwalk.RevCommit;
@@ -81,6 +50,7 @@ import org.eclipse.jgit.treewalk.WorkingTreeIterator;
  * - uses "Lists" instead of Arrays for chained types
  *
  * - recursively merges the merge bases together to compute a usable base
+ *
  * @since 3.0
  */
 public class RecursiveMerger extends ResolveMerger {
@@ -95,7 +65,9 @@ public class RecursiveMerger extends ResolveMerger {
 	 * inCore
 	 *
 	 * @param local
+	 *            a {@link org.eclipse.jgit.lib.Repository} object.
 	 * @param inCore
+	 *            a boolean.
 	 */
 	protected RecursiveMerger(Repository local, boolean inCore) {
 		super(local, inCore);
@@ -104,19 +76,31 @@ public class RecursiveMerger extends ResolveMerger {
 	/**
 	 * Normal recursive merge, implies not inCore
 	 *
-	 * @param local
+	 * @param local a {@link org.eclipse.jgit.lib.Repository} object.
 	 */
 	protected RecursiveMerger(Repository local) {
 		this(local, false);
 	}
 
 	/**
+	 * Normal recursive merge, implies inCore.
+	 *
+	 * @param inserter
+	 *            an {@link org.eclipse.jgit.lib.ObjectInserter} object.
+	 * @param config
+	 *            the repository configuration
+	 * @since 4.8
+	 */
+	protected RecursiveMerger(ObjectInserter inserter, Config config) {
+		super(inserter, config);
+	}
+
+	/**
+	 * {@inheritDoc}
+	 * <p>
 	 * Get a single base commit for two given commits. If the two source commits
 	 * have more than one base commit recursively merge the base commits
 	 * together until you end up with a single base commit.
-	 *
-	 * @throws IOException
-	 * @throws IncorrectObjectTypeException
 	 */
 	@Override
 	protected RevCommit getBaseCommit(RevCommit a, RevCommit b)
@@ -138,7 +122,7 @@ public class RecursiveMerger extends ResolveMerger {
 	 * @return the merge base of two commits. If a criss-cross merge required a
 	 *         synthetic merge base this commit is visible only the merger's
 	 *         RevWalk and will not be in the repository.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 * @throws IncorrectObjectTypeException
 	 *             one of the input objects is not a commit.
 	 * @throws NoMergeBaseException
@@ -147,7 +131,7 @@ public class RecursiveMerger extends ResolveMerger {
 	 */
 	protected RevCommit getBaseCommit(RevCommit a, RevCommit b, int callDepth)
 			throws IOException {
-		ArrayList<RevCommit> baseCommits = new ArrayList<RevCommit>();
+		ArrayList<RevCommit> baseCommits = new ArrayList<>();
 		walk.reset();
 		walk.setRevFilter(RevFilter.MERGE_BASE);
 		walk.markStart(a);
@@ -181,7 +165,7 @@ public class RecursiveMerger extends ResolveMerger {
 			dircache = DirCache.read(reader, currentBase.getTree());
 			inCore = true;
 
-			List<RevCommit> parents = new ArrayList<RevCommit>();
+			List<RevCommit> parents = new ArrayList<>();
 			parents.add(currentBase);
 			for (int commitIdx = 1; commitIdx < baseCommits.size(); commitIdx++) {
 				RevCommit nextBase = baseCommits.get(commitIdx);
@@ -211,9 +195,6 @@ public class RecursiveMerger extends ResolveMerger {
 			inCore = oldIncore;
 			dircache = oldDircache;
 			workingTreeIterator = oldWTreeIt;
-			toBeCheckedOut.clear();
-			toBeDeleted.clear();
-			modifiedFiles.clear();
 			unmergedPaths.clear();
 			mergeResults.clear();
 			failingPaths.clear();

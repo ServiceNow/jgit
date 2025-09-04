@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2010, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.internal.storage.pack;
@@ -46,7 +13,6 @@ package org.eclipse.jgit.internal.storage.pack;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
@@ -78,7 +44,7 @@ final class DeltaTask implements Callable<Object> {
 		Block(int threads, PackConfig config, ObjectReader reader,
 				DeltaCache dc, ThreadSafeProgressMonitor pm,
 				ObjectToPack[] list, int begin, int end) {
-			this.tasks = new ArrayList<DeltaTask>(threads);
+			this.tasks = new ArrayList<>(threads);
 			this.threads = threads;
 			this.config = config;
 			this.templateReader = reader;
@@ -176,7 +142,7 @@ final class DeltaTask implements Callable<Object> {
 		}
 
 		private ArrayList<WeightedPath> computeTopPaths() {
-			ArrayList<WeightedPath> topPaths = new ArrayList<WeightedPath>(
+			ArrayList<WeightedPath> topPaths = new ArrayList<>(
 					threads);
 			int cp = beginIndex;
 			int ch = list[cp].getPathHash();
@@ -212,11 +178,8 @@ final class DeltaTask implements Callable<Object> {
 			}
 
 			// Sort by starting index to identify gaps later.
-			Collections.sort(topPaths, new Comparator<WeightedPath>() {
-				public int compare(WeightedPath a, WeightedPath b) {
-					return a.slice.beginIndex - b.slice.beginIndex;
-				}
-			});
+			Collections.sort(topPaths, (WeightedPath a,
+					WeightedPath b) -> a.slice.beginIndex - b.slice.beginIndex);
 
 			bytesPerUnit = 1;
 			while (MAX_METER <= (totalWeight / bytesPerUnit)) {
@@ -244,6 +207,7 @@ final class DeltaTask implements Callable<Object> {
 			this.slice = s;
 		}
 
+		@Override
 		public int compareTo(WeightedPath o) {
 			int cmp = Long.signum(weight - o.weight);
 			if (cmp != 0) {
@@ -275,7 +239,7 @@ final class DeltaTask implements Callable<Object> {
 
 	DeltaTask(Block b) {
 		this.block = b;
-		this.slices = new LinkedList<Slice>();
+		this.slices = new LinkedList<>();
 	}
 
 	void add(Slice s) {
@@ -290,6 +254,8 @@ final class DeltaTask implements Callable<Object> {
 		slices.add(s);
 	}
 
+	/** {@inheritDoc} */
+	@Override
 	public Object call() throws Exception {
 		or = block.templateReader.newReader();
 		try {

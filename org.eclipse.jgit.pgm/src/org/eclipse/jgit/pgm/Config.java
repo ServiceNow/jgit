@@ -42,9 +42,9 @@ import java.io.IOException;
 import java.util.Set;
 
 import org.eclipse.jgit.errors.ConfigInvalidException;
-import org.eclipse.jgit.errors.NotSupportedException;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.StoredConfig;
+import org.eclipse.jgit.pgm.internal.CLIText;
 import org.eclipse.jgit.storage.file.FileBasedConfig;
 import org.eclipse.jgit.util.FS;
 import org.eclipse.jgit.util.StringUtils;
@@ -68,13 +68,17 @@ class Config extends TextBuiltin {
 	@Option(name = "--file", aliases = { "-f" }, metaVar = "metaVar_file", usage = "usage_configFile")
 	private File configFile;
 
+	/** {@inheritDoc} */
 	@Override
-	protected void run() throws Exception {
-		if (list)
+	protected void run() {
+		if (!list) {
+			throw die(CLIText.get().configOnlyListOptionSupported);
+		}
+		try {
 			list();
-		else
-			throw new NotSupportedException(
-					"only --list option is currently supported");
+		} catch (IOException | ConfigInvalidException e) {
+			throw die(e.getMessage(), e);
+		}
 	}
 
 	private void list() throws IOException, ConfigInvalidException {

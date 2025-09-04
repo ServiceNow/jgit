@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2009, Christian Halstrick <christian.halstrick@sap.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2009, Christian Halstrick <christian.halstrick@sap.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.merge;
@@ -47,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
+import org.eclipse.jgit.annotations.NonNull;
 import org.eclipse.jgit.diff.DiffAlgorithm;
 import org.eclipse.jgit.diff.Edit;
 import org.eclipse.jgit.diff.EditList;
@@ -57,14 +25,19 @@ import org.eclipse.jgit.merge.MergeChunk.ConflictState;
 
 /**
  * Provides the merge algorithm which does a three-way merge on content provided
- * as RawText. By default {@link HistogramDiff} is used as diff algorithm.
+ * as RawText. By default {@link org.eclipse.jgit.diff.HistogramDiff} is used as
+ * diff algorithm.
  */
 public final class MergeAlgorithm {
+
 	private final DiffAlgorithm diffAlg;
 
+	@NonNull
+	private ContentMergeStrategy strategy = ContentMergeStrategy.CONFLICT;
+
 	/**
-	 * Creates a new MergeAlgorithm which uses {@link HistogramDiff} as diff
-	 * algorithm
+	 * Creates a new MergeAlgorithm which uses
+	 * {@link org.eclipse.jgit.diff.HistogramDiff} as diff algorithm
 	 */
 	public MergeAlgorithm() {
 		this(new HistogramDiff());
@@ -80,16 +53,43 @@ public final class MergeAlgorithm {
 		this.diffAlg = diff;
 	}
 
+	/**
+	 * Retrieves the {@link ContentMergeStrategy}.
+	 *
+	 * @return the {@link ContentMergeStrategy} in effect
+	 * @since 5.12
+	 */
+	@NonNull
+	public ContentMergeStrategy getContentMergeStrategy() {
+		return strategy;
+	}
+
+	/**
+	 * Sets the {@link ContentMergeStrategy}.
+	 *
+	 * @param strategy
+	 *            {@link ContentMergeStrategy} to set; if {@code null}, set
+	 *            {@link ContentMergeStrategy#CONFLICT}
+	 * @since 5.12
+	 */
+	public void setContentMergeStrategy(ContentMergeStrategy strategy) {
+		this.strategy = strategy == null ? ContentMergeStrategy.CONFLICT
+				: strategy;
+	}
+
 	// An special edit which acts as a sentinel value by marking the end the
 	// list of edits
-	private final static Edit END_EDIT = new Edit(Integer.MAX_VALUE,
+	private static final Edit END_EDIT = new Edit(Integer.MAX_VALUE,
 			Integer.MAX_VALUE);
+
+	@SuppressWarnings("ReferenceEquality")
+	private static boolean isEndEdit(Edit edit) {
+		return edit == END_EDIT;
+	}
 
 	/**
 	 * Does the three way merge between a common base and two sequences.
 	 *
-	 * @param <S>
-	 *            type of sequence.
 	 * @param cmp comparison method for this execution.
 	 * @param base the common base sequence
 	 * @param ours the first sequence to be merged
@@ -98,39 +98,64 @@ public final class MergeAlgorithm {
 	 */
 	public <S extends Sequence> MergeResult<S> merge(
 			SequenceComparator<S> cmp, S base, S ours, S theirs) {
-		List<S> sequences = new ArrayList<S>(3);
+		List<S> sequences = new ArrayList<>(3);
 		sequences.add(base);
 		sequences.add(ours);
 		sequences.add(theirs);
-		MergeResult<S> result = new MergeResult<S>(sequences);
+		MergeResult<S> result = new MergeResult<>(sequences);
 
 		if (ours.size() == 0) {
 			if (theirs.size() != 0) {
 				EditList theirsEdits = diffAlg.diff(cmp, base, theirs);
 				if (!theirsEdits.isEmpty()) {
-					// we deleted, they modified -> Let their complete content
-					// conflict with empty text
-					result.add(1, 0, 0, ConflictState.FIRST_CONFLICTING_RANGE);
-					result.add(2, 0, theirs.size(),
-							ConflictState.NEXT_CONFLICTING_RANGE);
-				} else
+					// we deleted, they modified
+					switch (strategy) {
+					case OURS:
+						result.add(1, 0, 0, ConflictState.NO_CONFLICT);
+						break;
+					case THEIRS:
+						result.add(2, 0, theirs.size(),
+								ConflictState.NO_CONFLICT);
+						break;
+					default:
+						// Let their complete content conflict with empty text
+						result.add(1, 0, 0,
+								ConflictState.FIRST_CONFLICTING_RANGE);
+						result.add(2, 0, theirs.size(),
+								ConflictState.NEXT_CONFLICTING_RANGE);
+						break;
+					}
+				} else {
 					// we deleted, they didn't modify -> Let our deletion win
 					result.add(1, 0, 0, ConflictState.NO_CONFLICT);
-			} else
+				}
+			} else {
 				// we and they deleted -> return a single chunk of nothing
 				result.add(1, 0, 0, ConflictState.NO_CONFLICT);
+			}
 			return result;
 		} else if (theirs.size() == 0) {
 			EditList oursEdits = diffAlg.diff(cmp, base, ours);
 			if (!oursEdits.isEmpty()) {
-				// we modified, they deleted -> Let our complete content
-				// conflict with empty text
-				result.add(1, 0, ours.size(),
-						ConflictState.FIRST_CONFLICTING_RANGE);
-				result.add(2, 0, 0, ConflictState.NEXT_CONFLICTING_RANGE);
-			} else
+				// we modified, they deleted
+				switch (strategy) {
+				case OURS:
+					result.add(1, 0, ours.size(), ConflictState.NO_CONFLICT);
+					break;
+				case THEIRS:
+					result.add(2, 0, 0, ConflictState.NO_CONFLICT);
+					break;
+				default:
+					// Let our complete content conflict with empty text
+					result.add(1, 0, ours.size(),
+							ConflictState.FIRST_CONFLICTING_RANGE);
+					result.add(2, 0, 0, ConflictState.NEXT_CONFLICTING_RANGE);
+					break;
+				}
+			} else {
 				// they deleted, we didn't modify -> Let their deletion win
 				result.add(2, 0, 0, ConflictState.NO_CONFLICT);
+			}
 			return result;
 		}
 
@@ -146,7 +171,7 @@ public final class MergeAlgorithm {
 		// iterate over all edits from base to ours and from base to theirs
 		// leave the loop when there are no edits more for ours or for theirs
 		// (or both)
-		while (theirsEdit != END_EDIT || oursEdit != END_EDIT) {
+		while (!isEndEdit(theirsEdit) || !isEndEdit(oursEdit)) {
 			if (oursEdit.getEndA() < theirsEdit.getBeginA()) {
 				// something was changed in ours not overlapping with any change
 				// from theirs. First add the common part in front of the edit
@@ -278,12 +303,26 @@ public final class MergeAlgorithm {
 
 				// Add the conflict (Only if there is a conflict left to report)
 				if (minBSize > 0 || BSizeDelta != 0) {
-					result.add(1, oursBeginB + commonPrefix, oursEndB
-							- commonSuffix,
-							ConflictState.FIRST_CONFLICTING_RANGE);
-					result.add(2, theirsBeginB + commonPrefix, theirsEndB
-							- commonSuffix,
-							ConflictState.NEXT_CONFLICTING_RANGE);
+					switch (strategy) {
+					case OURS:
+						result.add(1, oursBeginB + commonPrefix,
+								oursEndB - commonSuffix,
+								ConflictState.NO_CONFLICT);
+						break;
+					case THEIRS:
+						result.add(2, theirsBeginB + commonPrefix,
+								theirsEndB - commonSuffix,
+								ConflictState.NO_CONFLICT);
+						break;
+					default:
+						result.add(1, oursBeginB + commonPrefix,
+								oursEndB - commonSuffix,
+								ConflictState.FIRST_CONFLICTING_RANGE);
+						result.add(2, theirsBeginB + commonPrefix,
+								theirsEndB - commonSuffix,
+								ConflictState.NEXT_CONFLICTING_RANGE);
+						break;
+					}
 				}
 
 				// Add the common lines at end of conflict

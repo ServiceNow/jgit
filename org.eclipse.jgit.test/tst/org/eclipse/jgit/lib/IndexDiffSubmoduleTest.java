@@ -1,63 +1,37 @@
 /*
- * Copyright (C) 2014, Christian Halstrick <christian.halstrick@sap.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2014, Christian Halstrick <christian.halstrick@sap.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.lib;
 
+import static org.junit.Assert.assertArrayEquals;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.Set;
 
+import org.eclipse.jgit.api.CloneCommand;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.errors.NoWorkTreeException;
 import org.eclipse.jgit.internal.storage.file.FileRepository;
 import org.eclipse.jgit.junit.JGitTestUtil;
 import org.eclipse.jgit.junit.RepositoryTestCase;
+import org.eclipse.jgit.storage.file.FileBasedConfig;
 import org.eclipse.jgit.submodule.SubmoduleWalk.IgnoreSubmoduleMode;
 import org.eclipse.jgit.treewalk.FileTreeIterator;
 import org.junit.Before;
+import org.junit.Test;
 import org.junit.experimental.theories.DataPoints;
 import org.junit.experimental.theories.Theories;
 import org.junit.experimental.theories.Theory;
@@ -87,10 +61,9 @@ public class IndexDiffSubmoduleTest extends RepositoryTestCase {
 				.call();
 
 		submodule_db = (FileRepository) Git.wrap(db).submoduleAdd()
-				.setPath("submodule")
+				.setPath("modules/submodule")
 				.setURI(submoduleStandalone.getDirectory().toURI().toString())
 				.call();
-		submoduleStandalone.close();
 		submodule_trash = submodule_db.getWorkTree();
 		addRepoToClose(submodule_db);
 		writeTrashFile("fileInRoot", "root");
@@ -108,6 +81,59 @@ public class IndexDiffSubmoduleTest extends RepositoryTestCase {
 		assertFalse(indexDiff.diff());
 	}
 
+	private Repository cloneWithoutCloningSubmodule() throws Exception {
+		File directory = createTempDirectory(
+				"testCloneWithoutCloningSubmodules");
+		CloneCommand clone = Git.cloneRepository();
+		clone.setDirectory(directory);
+		clone.setCloneSubmodules(false);
+		clone.setURI(db.getDirectory().toURI().toString());
+		Git git2 = clone.call();
+		addRepoToClose(git2.getRepository());
+		return git2.getRepository();
+	}
+
+	@Theory
+	public void testCleanAfterClone(IgnoreSubmoduleMode mode) throws Exception {
+		Repository db2 = cloneWithoutCloningSubmodule();
+		IndexDiff indexDiff = new IndexDiff(db2, Constants.HEAD,
+				new FileTreeIterator(db2));
+		indexDiff.setIgnoreSubmoduleMode(mode);
+		boolean changed = indexDiff.diff();
+		assertFalse(changed);
+	}
+
+	@Theory
+	public void testMissingIfDirectoryGone(IgnoreSubmoduleMode mode)
+			throws Exception {
+		recursiveDelete(submodule_trash);
+		IndexDiff indexDiff = new IndexDiff(db, Constants.HEAD,
+				new FileTreeIterator(db));
+		indexDiff.setIgnoreSubmoduleMode(mode);
+		boolean hasChanges = indexDiff.diff();
+		if (mode != IgnoreSubmoduleMode.ALL) {
+			assertTrue(hasChanges);
+			assertEquals("[modules/submodule]",
+					indexDiff.getMissing().toString());
+		} else {
+			assertFalse(hasChanges);
+		}
+	}
+
+	@Theory
+	public void testSubmoduleReplacedByFile(IgnoreSubmoduleMode mode)
+			throws Exception {
+		recursiveDelete(submodule_trash);
+		writeTrashFile("modules/submodule", "nonsense");
+		IndexDiff indexDiff = new IndexDiff(db, Constants.HEAD,
+				new FileTreeIterator(db));
+		indexDiff.setIgnoreSubmoduleMode(mode);
+		assertTrue(indexDiff.diff());
+		assertEquals("[]", indexDiff.getMissing().toString());
+		assertEquals("[]", indexDiff.getUntracked().toString());
+		assertEquals("[modules/submodule]", indexDiff.getModified().toString());
+	}
+
 	@Theory
 	public void testDirtyRootWorktree(IgnoreSubmoduleMode mode)
 			throws IOException {
@@ -119,6 +145,31 @@ public class IndexDiffSubmoduleTest extends RepositoryTestCase {
 		assertTrue(indexDiff.diff());
 	}
 
+	private void assertDiff(IndexDiff indexDiff, IgnoreSubmoduleMode mode,
+			IgnoreSubmoduleMode... expectedEmptyModes) throws IOException {
+		boolean diffResult = indexDiff.diff();
+		Set<String> submodulePaths = indexDiff
+				.getPathsWithIndexMode(FileMode.GITLINK);
+		boolean emptyExpected = false;
+		for (IgnoreSubmoduleMode empty : expectedEmptyModes) {
+			if (mode.equals(empty)) {
+				emptyExpected = true;
+				break;
+			}
+		}
+		if (emptyExpected) {
+			assertFalse("diff should be false with mode=" + mode,
+					diffResult);
+			assertEquals("should have no paths with FileMode.GITLINK", 0,
+					submodulePaths.size());
+		} else {
+			assertTrue("diff should be true with mode=" + mode,
+					diffResult);
+			assertTrue("submodule path should have FileMode.GITLINK",
+					submodulePaths.contains("modules/submodule"));
+		}
+	}
+
 	@Theory
 	public void testDirtySubmoduleWorktree(IgnoreSubmoduleMode mode)
 			throws IOException {
@@ -126,13 +177,8 @@ public class IndexDiffSubmoduleTest extends RepositoryTestCase {
 		IndexDiff indexDiff = new IndexDiff(db, Constants.HEAD,
 				new FileTreeIterator(db));
 		indexDiff.setIgnoreSubmoduleMode(mode);
-		if (mode.equals(IgnoreSubmoduleMode.ALL)
-				|| mode.equals(IgnoreSubmoduleMode.DIRTY))
-			assertFalse("diff should be false with mode=" + mode,
-					indexDiff.diff());
-		else
-			assertTrue("diff should be true with mode=" + mode,
-					indexDiff.diff());
+		assertDiff(indexDiff, mode, IgnoreSubmoduleMode.ALL,
+				IgnoreSubmoduleMode.DIRTY);
 	}
 
 	@Theory
@@ -146,12 +192,7 @@ public class IndexDiffSubmoduleTest extends RepositoryTestCase {
 		IndexDiff indexDiff = new IndexDiff(db, Constants.HEAD,
 				new FileTreeIterator(db));
 		indexDiff.setIgnoreSubmoduleMode(mode);
-		if (mode.equals(IgnoreSubmoduleMode.ALL))
-			assertFalse("diff should be false with mode=" + mode,
-					indexDiff.diff());
-		else
-			assertTrue("diff should be true with mode=" + mode,
-					indexDiff.diff());
+		assertDiff(indexDiff, mode, IgnoreSubmoduleMode.ALL);
 	}
 
 	@Theory
@@ -164,13 +205,8 @@ public class IndexDiffSubmoduleTest extends RepositoryTestCase {
 		IndexDiff indexDiff = new IndexDiff(db, Constants.HEAD,
 				new FileTreeIterator(db));
 		indexDiff.setIgnoreSubmoduleMode(mode);
-		if (mode.equals(IgnoreSubmoduleMode.ALL)
-				|| mode.equals(IgnoreSubmoduleMode.DIRTY))
-			assertFalse("diff should be false with mode=" + mode,
-					indexDiff.diff());
-		else
-			assertTrue("diff should be true with mode=" + mode,
-					indexDiff.diff());
+		assertDiff(indexDiff, mode, IgnoreSubmoduleMode.ALL,
+				IgnoreSubmoduleMode.DIRTY);
 	}
 
 	@Theory
@@ -184,13 +220,8 @@ public class IndexDiffSubmoduleTest extends RepositoryTestCase {
 		IndexDiff indexDiff = new IndexDiff(db, Constants.HEAD,
 				new FileTreeIterator(db));
 		indexDiff.setIgnoreSubmoduleMode(mode);
-		if (mode.equals(IgnoreSubmoduleMode.ALL)
-				|| mode.equals(IgnoreSubmoduleMode.DIRTY))
-			assertFalse("diff should be false with mode=" + mode,
-					indexDiff.diff());
-		else
-			assertTrue("diff should be true with mode=" + mode,
-					indexDiff.diff());
+		assertDiff(indexDiff, mode, IgnoreSubmoduleMode.ALL,
+				IgnoreSubmoduleMode.DIRTY);
 	}
 
 	@Theory
@@ -201,13 +232,111 @@ public class IndexDiffSubmoduleTest extends RepositoryTestCase {
 		IndexDiff indexDiff = new IndexDiff(db, Constants.HEAD,
 				new FileTreeIterator(db));
 		indexDiff.setIgnoreSubmoduleMode(mode);
-		if (mode.equals(IgnoreSubmoduleMode.ALL)
-				|| mode.equals(IgnoreSubmoduleMode.DIRTY)
-				|| mode.equals(IgnoreSubmoduleMode.UNTRACKED))
-			assertFalse("diff should be false with mode=" + mode,
-					indexDiff.diff());
-		else
-			assertTrue("diff should be true with mode=" + mode,
-					indexDiff.diff());
+		assertDiff(indexDiff, mode, IgnoreSubmoduleMode.ALL,
+				IgnoreSubmoduleMode.DIRTY, IgnoreSubmoduleMode.UNTRACKED);
+	}
+
+	@Theory
+	public void testSubmoduleReplacedByMovedFile(IgnoreSubmoduleMode mode)
+			throws Exception {
+		Git git = Git.wrap(db);
+		git.rm().setCached(true).addFilepattern("modules/submodule").call();
+		recursiveDelete(submodule_trash);
+		JGitTestUtil.deleteTrashFile(db, "fileInRoot");
+		// Move the fileInRoot file
+		writeTrashFile("modules/submodule/fileInRoot", "root");
+		git.rm().addFilepattern("fileInRoot").addFilepattern("modules/").call();
+		git.add().addFilepattern("modules/").call();
+		IndexDiff indexDiff = new IndexDiff(db, Constants.HEAD,
+				new FileTreeIterator(db));
+		indexDiff.setIgnoreSubmoduleMode(mode);
+		assertTrue(indexDiff.diff());
+		String[] removed = indexDiff.getRemoved().toArray(new String[0]);
+		Arrays.sort(removed);
+		if (IgnoreSubmoduleMode.ALL.equals(mode)) {
+			assertArrayEquals(new String[] { "fileInRoot" }, removed);
+		} else {
+			assertArrayEquals(
+					new String[] { "fileInRoot", "modules/submodule" },
+					removed);
+		}
+		assertEquals("[modules/submodule/fileInRoot]",
+				indexDiff.getAdded().toString());
+	}
+
+	@Test
+	public void testIndexDiffTwoSubmodules() throws Exception {
+		// Create a second submodule
+		try (Repository submodule2 = createWorkRepository()) {
+			JGitTestUtil.writeTrashFile(submodule2, "fileInSubmodule2",
+					"submodule2");
+			Git subGit = Git.wrap(submodule2);
+			subGit.add().addFilepattern("fileInSubmodule2").call();
+			subGit.commit().setMessage("add file to submodule2").call();
+
+			try (Repository sub2 = Git.wrap(db)
+					.submoduleAdd().setPath("modules/submodule2")
+					.setURI(submodule2.getDirectory().toURI().toString())
+					.call()) {
+				writeTrashFile("fileInRoot", "root+");
+				Git rootGit = Git.wrap(db);
+				rootGit.add().addFilepattern("fileInRoot").call();
+				rootGit.commit().setMessage("add submodule2 and root file")
+						.call();
+				// Now change files in both submodules
+				JGitTestUtil.writeTrashFile(submodule_db, "fileInSubmodule",
+						"submodule changed");
+				JGitTestUtil.writeTrashFile(sub2, "fileInSubmodule2",
+						"submodule2 changed");
+				// Set up .gitmodules
+				FileBasedConfig gitmodules = new FileBasedConfig(
+						new File(db.getWorkTree(), Constants.DOT_GIT_MODULES),
+						db.getFS());
+				gitmodules.load();
+				gitmodules.setString(ConfigConstants.CONFIG_SUBMODULE_SECTION,
+						"modules/submodule", ConfigConstants.CONFIG_KEY_IGNORE,
+						"all");
+				gitmodules.setString(ConfigConstants.CONFIG_SUBMODULE_SECTION,
+						"modules/submodule2", ConfigConstants.CONFIG_KEY_IGNORE,
+						"none");
+				gitmodules.save();
+				IndexDiff indexDiff = new IndexDiff(db, Constants.HEAD,
+						new FileTreeIterator(db));
+				assertTrue(indexDiff.diff());
+				String[] modified = indexDiff.getModified()
+						.toArray(new String[0]);
+				Arrays.sort(modified);
+				assertEquals("[.gitmodules, modules/submodule2]",
+						Arrays.toString(modified));
+				// Try again with "dirty"
+				gitmodules.setString(ConfigConstants.CONFIG_SUBMODULE_SECTION,
+						"modules/submodule", ConfigConstants.CONFIG_KEY_IGNORE,
+						"dirty");
+				gitmodules.save();
+				indexDiff = new IndexDiff(db, Constants.HEAD,
+						new FileTreeIterator(db));
+				assertTrue(indexDiff.diff());
+				modified = indexDiff.getModified().toArray(new String[0]);
+				Arrays.sort(modified);
+				assertEquals("[.gitmodules, modules/submodule2]",
+						Arrays.toString(modified));
+				// Test the config override
+				StoredConfig cfg = db.getConfig();
+				cfg.setString(ConfigConstants.CONFIG_SUBMODULE_SECTION,
+						"modules/submodule", ConfigConstants.CONFIG_KEY_IGNORE,
+						"none");
+				cfg.setString(ConfigConstants.CONFIG_SUBMODULE_SECTION,
+						"modules/submodule2", ConfigConstants.CONFIG_KEY_IGNORE,
+						"all");
+				cfg.save();
+				indexDiff = new IndexDiff(db, Constants.HEAD,
+						new FileTreeIterator(db));
+				assertTrue(indexDiff.diff());
+				modified = indexDiff.getModified().toArray(new String[0]);
+				Arrays.sort(modified);
+				assertEquals("[.gitmodules, modules/submodule]",
+						Arrays.toString(modified));
+			}
+		}
 	}
 }

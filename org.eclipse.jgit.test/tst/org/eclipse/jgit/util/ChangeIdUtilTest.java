@@ -1,51 +1,17 @@
 /*
  * Copyright (C) 2010, Robin Rosenberg
- * Copyright (C) 2009, Google, Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2009, Google, Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 package org.eclipse.jgit.util;
 
 import static org.junit.Assert.assertEquals;
 
-import java.io.IOException;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.jgit.junit.MockSystemReader;
@@ -113,7 +79,7 @@ public class ChangeIdUtilTest {
 	}
 
 	@Test
-	public void testId() throws IOException {
+	public void testId() {
 		String msg = "A\nMessage\n";
 		ObjectId id = ChangeIdUtil.computeChangeId(treeId, parentId, p, q, msg);
 		assertEquals("73f3751208ac92cbb76f9a26ac4a0d9d472e381b", ObjectId
@@ -584,23 +550,6 @@ public class ChangeIdUtilTest {
 						SOB1));
 	}
 
-	public void notestCommitDashV() throws Exception {
-		assertEquals("a\n" + //
-				"\n" + //
-				"Change-Id: I7fc3876fee63c766a2063df97fbe04a2dddd8d7c\n" + //
-				SOB1 + //
-				SOB2, //
-				call("a\n" + //
-						"\n" + //
-						SOB1 + //
-						SOB2 + //
-						"\n" + //
-						"# on branch master\n" + //
-						"diff --git a/src b/src\n" + //
-						"new file mode 100644\n" + //
-						"index 0000000..c78b7f0\n"));
-	}
-
 	@Test
 	public void testWithEndingURL() throws Exception {
 		assertEquals("a\n" + //
@@ -698,15 +647,15 @@ public class ChangeIdUtilTest {
 				"\n"));
 	}
 
-	private void hookDoesNotModify(final String in) throws Exception {
+	private void hookDoesNotModify(String in) throws Exception {
 		assertEquals(in, call(in));
 	}
 
-	private String call(final String body) throws Exception {
+	private String call(String body) throws Exception {
 		return call(body, false);
 	}
 
-	private String call(final String body, boolean replaceExisting) throws Exception {
+	private String call(String body, boolean replaceExisting) throws Exception {
 		ObjectId computeChangeId = ChangeIdUtil.computeChangeId(treeId1,
 				parentId1, author, committer, body);
 		if (computeChangeId == null)

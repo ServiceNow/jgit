@@ -1,55 +1,27 @@
 /*
- * Copyright (C) 2012, Christian Halstrick <christian.halstrick@sap.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2012, Christian Halstrick <christian.halstrick@sap.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.internal.storage.file;
 
-import static java.lang.Integer.valueOf;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.lessThanOrEqualTo;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CyclicBarrier;
@@ -70,6 +42,7 @@ import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.storage.file.FileBasedConfig;
 import org.junit.Test;
 
+@SuppressWarnings("boxing")
 public class GcPackRefsTest extends GcTestCase {
 	@Test
 	public void looseRefPacked() throws Exception {
@@ -81,30 +54,38 @@ public class GcPackRefsTest extends GcTestCase {
 	}
 
 	@Test
+	public void emptyRefDirectoryDeleted() throws Exception {
+		String ref = "dir/ref";
+		tr.branch(ref).commit().create();
+		String name = repo.findRef(ref).getName();
+		Path dir = repo.getDirectory().toPath().resolve(name).getParent();
+		assertNotNull(dir);
+		gc.packRefs();
+		assertFalse(Files.exists(dir));
+	}
+
+	@Test
 	public void concurrentOnlyOneWritesPackedRefs() throws Exception {
 		RevBlob a = tr.blob("a");
 		tr.lightweightTag("t", a);
 
-		final CyclicBarrier syncPoint = new CyclicBarrier(2);
+		CyclicBarrier syncPoint = new CyclicBarrier(2);
 
-		Callable<Integer> packRefs = new Callable<Integer>() {
-
-			/** @return 0 for success, 1 in case of error when writing pack */
-			public Integer call() throws Exception {
-				syncPoint.await();
-				try {
-					gc.packRefs();
-					return valueOf(0);
-				} catch (IOException e) {
-					return valueOf(1);
-				}
+		// Returns 0 for success, 1 in case of error when writing pack.
+		Callable<Integer> packRefs = () -> {
+			syncPoint.await();
+			try {
+				gc.packRefs();
+				return 0;
+			} catch (IOException e) {
+				return 1;
 			}
 		};
 		ExecutorService pool = Executors.newFixedThreadPool(2);
 		try {
 			Future<Integer> p1 = pool.submit(packRefs);
 			Future<Integer> p2 = pool.submit(packRefs);
-			assertEquals(1, p1.get().intValue() + p2.get().intValue());
+			assertThat(p1.get() + p2.get(), lessThanOrEqualTo(1));
 		} finally {
 			pool.shutdown();
 			pool.awaitTermination(Long.MAX_VALUE, TimeUnit.SECONDS);
@@ -118,7 +99,7 @@ public class GcPackRefsTest extends GcTestCase {
 		tr.lightweightTag("t1", a);
 		tr.lightweightTag("t2", a);
 		LockFile refLock = new LockFile(new File(repo.getDirectory(),
-				"refs/tags/t1"), repo.getFS());
+				"refs/tags/t1"));
 		try {
 			refLock.lock();
 			gc.packRefs();
@@ -141,39 +122,34 @@ public class GcPackRefsTest extends GcTestCase {
 		final CyclicBarrier packRefsDone = new CyclicBarrier(2);
 		ExecutorService pool = Executors.newFixedThreadPool(2);
 		try {
-			Future<Result> result = pool.submit(new Callable<Result>() {
-
-				public Result call() throws Exception {
-					RefUpdate update = new RefDirectoryUpdate(
-							(RefDirectory) repo.getRefDatabase(),
-							repo.exactRef("refs/tags/t")) {
-						@Override
-						public boolean isForceUpdate() {
-							try {
-								refUpdateLockedRef.await();
-								packRefsDone.await();
-							} catch (InterruptedException e) {
-								Thread.currentThread().interrupt();
-							} catch (BrokenBarrierException e) {
-								Thread.currentThread().interrupt();
-							}
-							return super.isForceUpdate();
+			Future<Result> result = pool.submit(() -> {
+				RefUpdate update = new RefDirectoryUpdate(
+						(RefDirectory) repo.getRefDatabase(),
+						repo.exactRef("refs/tags/t")) {
+					@Override
+					public boolean isForceUpdate() {
+						try {
+							refUpdateLockedRef.await();
+							packRefsDone.await();
+						} catch (InterruptedException
+								| BrokenBarrierException e) {
+							Thread.currentThread().interrupt();
 						}
-					};
-					update.setForceUpdate(true);
-					update.setNewObjectId(b);
-					return update.update();
-				}
+						return super.isForceUpdate();
+					}
+				};
+				update.setForceUpdate(true);
+				update.setNewObjectId(b);
+				return update.update();
 			});
 
-			pool.submit(new Callable<Void>() {
-				public Void call() throws Exception {
-					refUpdateLockedRef.await();
-					gc.packRefs();
-					packRefsDone.await();
-					return null;
-				}
+			Future<Result> result2 = pool.submit(() -> {
+				refUpdateLockedRef.await();
+				gc.packRefs();
+				packRefsDone.await();
+				return null;
 			});
+			assertNull(result2.get());
 
 			assertSame(result.get(), Result.FORCED);
 

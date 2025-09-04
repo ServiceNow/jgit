@@ -1,51 +1,18 @@
 /*
- * Copyright (C) 2008, 2014 Shawn O. Pearce <spearce@spearce.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, 2014 Shawn O. Pearce <spearce@spearce.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.revplot;
 
 import org.eclipse.jgit.lib.AnyObjectId;
-import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.lib.Ref;
+import org.eclipse.jgit.revwalk.RevCommit;
 
 /**
  * A commit reference to a commit in the DAG.
@@ -79,7 +46,7 @@ public class PlotCommit<L extends PlotLane> extends RevCommit {
 	 * @param id
 	 *            the identity of this commit.
 	 */
-	protected PlotCommit(final AnyObjectId id) {
+	protected PlotCommit(AnyObjectId id) {
 		super(id);
 		forkingOffLanes = NO_LANES;
 		passingLanes = NO_LANES;
@@ -88,41 +55,48 @@ public class PlotCommit<L extends PlotLane> extends RevCommit {
 		refs = NO_REFS;
 	}
 
-	void addForkingOffLane(final PlotLane f) {
+	void addForkingOffLane(PlotLane f) {
 		forkingOffLanes = addLane(f, forkingOffLanes);
 	}
 
-	void addPassingLane(final PlotLane c) {
+	void addPassingLane(PlotLane c) {
 		passingLanes = addLane(c, passingLanes);
 	}
 
-	void addMergingLane(final PlotLane m) {
+	void addMergingLane(PlotLane m) {
 		mergingLanes = addLane(m, mergingLanes);
 	}
 
-	private static PlotLane[] addLane(final PlotLane l, PlotLane[] lanes) {
+	private static PlotLane[] addLane(PlotLane l, PlotLane[] lanes) {
 		final int cnt = lanes.length;
-		if (cnt == 0)
+		switch (cnt) {
+		case 0:
 			lanes = new PlotLane[] { l };
-		else if (cnt == 1)
+			break;
+		case 1:
 			lanes = new PlotLane[] { lanes[0], l };
-		else {
+			break;
+		default:
 			final PlotLane[] n = new PlotLane[cnt + 1];
 			System.arraycopy(lanes, 0, n, 0, cnt);
 			n[cnt] = l;
 			lanes = n;
+			break;
 		}
 		return lanes;
 	}
 
-	void addChild(final PlotCommit c) {
+	void addChild(PlotCommit c) {
 		final int cnt = children.length;
-		if (cnt == 0)
+		switch (cnt) {
+		case 0:
 			children = new PlotCommit[] { c };
-		else if (cnt == 1) {
+			break;
+		case 1:
 			if (!c.getId().equals(children[0].getId()))
 				children = new PlotCommit[] { children[0], c };
-		} else {
+			break;
+		default:
 			for (PlotCommit pc : children)
 				if (c.getId().equals(pc.getId()))
 					return;
@@ -130,6 +104,7 @@ public class PlotCommit<L extends PlotLane> extends RevCommit {
 			System.arraycopy(children, 0, n, 0, cnt);
 			n[cnt] = c;
 			children = n;
+			break;
 		}
 	}
 
@@ -149,10 +124,10 @@ public class PlotCommit<L extends PlotLane> extends RevCommit {
 	 *            child index to obtain. Must be in the range 0 through
 	 *            {@link #getChildCount()}-1.
 	 * @return the specified child.
-	 * @throws ArrayIndexOutOfBoundsException
+	 * @throws java.lang.ArrayIndexOutOfBoundsException
 	 *             an invalid child index was specified.
 	 */
-	public final PlotCommit getChild(final int nth) {
+	public final PlotCommit getChild(int nth) {
 		return children[nth];
 	}
 
@@ -163,8 +138,9 @@ public class PlotCommit<L extends PlotLane> extends RevCommit {
 	 *            the commit to test.
 	 * @return true if the given commit built on top of this commit.
 	 */
-	public final boolean isChild(final PlotCommit c) {
-		for (final PlotCommit a : children)
+	@SuppressWarnings("ReferenceEquality")
+	public final boolean isChild(PlotCommit c) {
+		for (PlotCommit a : children)
 			if (a == c)
 				return true;
 		return false;
@@ -186,10 +162,10 @@ public class PlotCommit<L extends PlotLane> extends RevCommit {
 	 *            ref index to obtain. Must be in the range 0 through
 	 *            {@link #getRefCount()}-1.
 	 * @return the specified ref.
-	 * @throws ArrayIndexOutOfBoundsException
+	 * @throws java.lang.ArrayIndexOutOfBoundsException
 	 *             an invalid ref index was specified.
 	 */
-	public final Ref getRef(final int nth) {
+	public final Ref getRef(int nth) {
 		return refs[nth];
 	}
 
@@ -203,6 +179,7 @@ public class PlotCommit<L extends PlotLane> extends RevCommit {
 		return (L) lane;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public void reset() {
 		forkingOffLanes = NO_LANES;

@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2011, GitHub Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2011, GitHub Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 package org.eclipse.jgit.api;
 
@@ -53,14 +20,16 @@ import java.util.List;
 import org.eclipse.jgit.junit.RepositoryTestCase;
 import org.eclipse.jgit.lib.PersonIdent;
 import org.eclipse.jgit.lib.Ref;
+import org.eclipse.jgit.merge.MergeStrategy;
 import org.eclipse.jgit.revwalk.RevCommit;
+import org.eclipse.jgit.revwalk.filter.RevFilter;
 import org.junit.Test;
 
 public class LogCommandTest extends RepositoryTestCase {
 
 	@Test
 	public void logAllCommits() throws Exception {
-		List<RevCommit> commits = new ArrayList<RevCommit>();
+		List<RevCommit> commits = new ArrayList<>();
 		Git git = Git.wrap(db);
 
 		writeTrashFile("Test.txt", "Hello world");
@@ -92,7 +61,7 @@ public class LogCommandTest extends RepositoryTestCase {
 
     @Test
     public void logAllCommitsWithTag() throws Exception {
-		List<RevCommit> commits = new ArrayList<RevCommit>();
+		List<RevCommit> commits = new ArrayList<>();
 		Git git = Git.wrap(db);
 
 		writeTrashFile("Test.txt", "Hello world");
@@ -114,14 +83,14 @@ public class LogCommandTest extends RepositoryTestCase {
 		Iterator<RevCommit> log = git.log().all().call().iterator();
 		assertTrue(log.hasNext());
 		RevCommit commit = log.next();
-		tag = db.peel(tag);
+		tag = db.getRefDatabase().peel(tag);
 
 		assertEquals(commit.getName(), tag.getPeeledObjectId().getName());
 		assertTrue(commits.contains(commit));
 	}
 
 	private List<RevCommit> createCommits(Git git) throws Exception {
-		List<RevCommit> commits = new ArrayList<RevCommit>();
+		List<RevCommit> commits = new ArrayList<>();
 		writeTrashFile("Test.txt", "Hello world");
 		git.add().addFilepattern("Test.txt").call();
 		commits.add(git.commit().setMessage("commit#1").call());
@@ -210,4 +179,128 @@ public class LogCommandTest extends RepositoryTestCase {
 		assertEquals("commit#2", commit.getShortMessage());
 		assertFalse(log.hasNext());
 	}
+
+	@Test
+	public void logOnlyMergeCommits() throws Exception {
+		setCommitsAndMerge();
+		Git git = Git.wrap(db);
+
+		Iterable<RevCommit> commits = git.log().all().call();
+		Iterator<RevCommit> i = commits.iterator();
+		RevCommit commit = i.next();
+		assertEquals("merge s0 with m1", commit.getFullMessage());
+		commit = i.next();
+		assertEquals("s0", commit.getFullMessage());
+		commit = i.next();
+		assertEquals("m1", commit.getFullMessage());
+		commit = i.next();
+		assertEquals("m0", commit.getFullMessage());
+		assertFalse(i.hasNext());
+
+		commits = git.log().setRevFilter(RevFilter.ONLY_MERGES).call();
+		i = commits.iterator();
+		commit = i.next();
+		assertEquals("merge s0 with m1", commit.getFullMessage());
+		assertFalse(i.hasNext());
+	}
+
+	@Test
+	public void logNoMergeCommits() throws Exception {
+		setCommitsAndMerge();
+		Git git = Git.wrap(db);
+
+		Iterable<RevCommit> commits = git.log().all().call();
+		Iterator<RevCommit> i = commits.iterator();
+		RevCommit commit = i.next();
+		assertEquals("merge s0 with m1", commit.getFullMessage());
+		commit = i.next();
+		assertEquals("s0", commit.getFullMessage());
+		commit = i.next();
+		assertEquals("m1", commit.getFullMessage());
+		commit = i.next();
+		assertEquals("m0", commit.getFullMessage());
+		assertFalse(i.hasNext());
+
+		commits = git.log().setRevFilter(RevFilter.NO_MERGES).call();
+		i = commits.iterator();
+		commit = i.next();
+		assertEquals("m1", commit.getFullMessage());
+		commit = i.next();
+		assertEquals("s0", commit.getFullMessage());
+		commit = i.next();
+		assertEquals("m0", commit.getFullMessage());
+		assertFalse(i.hasNext());
+	}
+
+	/**
+	 * <pre>
+	 * A - B - C - M
+	 *      \     /
+	 *        -D(side)
+	 * </pre>
+	 */
+	@Test
+	public void addRangeWithMerge() throws Exception{
+		String fileA = "fileA";
+		String fileB = "fileB";
+		Git git = Git.wrap(db);
+
+		writeTrashFile(fileA, fileA);
+		git.add().addFilepattern(fileA).call();
+		git.commit().setMessage("commit a").call();
+
+		writeTrashFile(fileA, fileA);
+		git.add().addFilepattern(fileA).call();
+		RevCommit b = git.commit().setMessage("commit b").call();
+
+		writeTrashFile(fileA, fileA);
+		git.add().addFilepattern(fileA).call();
+		RevCommit c = git.commit().setMessage("commit c").call();
+
+		createBranch(b, "refs/heads/side");
+		checkoutBranch("refs/heads/side");
+
+		writeTrashFile(fileB, fileB);
+		git.add().addFilepattern(fileB).call();
+		RevCommit d = git.commit().setMessage("commit d").call();
+
+		checkoutBranch("refs/heads/master");
+		MergeResult m = git.merge().include(d.getId()).call();
+		assertEquals(MergeResult.MergeStatus.MERGED, m.getMergeStatus());
+
+		Iterator<RevCommit> rangeLog = git.log().addRange(b.getId(), m.getNewHead()).call().iterator();
+
+		RevCommit commit = rangeLog.next();
+		assertEquals(m.getNewHead(), commit.getId());
+		commit = rangeLog.next();
+		assertEquals(c.getId(), commit.getId());
+		commit = rangeLog.next();
+		assertEquals(d.getId(), commit.getId());
+		assertFalse(rangeLog.hasNext());
+	}
+
+	private void setCommitsAndMerge() throws Exception {
+		Git git = Git.wrap(db);
+		writeTrashFile("file1", "1\n2\n3\n4\n");
+		git.add().addFilepattern("file1").call();
+		RevCommit masterCommit0 = git.commit().setMessage("m0").call();
+
+		createBranch(masterCommit0, "refs/heads/side");
+		checkoutBranch("refs/heads/side");
+
+		writeTrashFile("file2", "1\n2\n3\n4\n5\n6\n7\n8\n");
+		git.add().addFilepattern("file2").call();
+		RevCommit c = git.commit().setMessage("s0").call();
+
+		checkoutBranch("refs/heads/master");
+
+		writeTrashFile("file3", "1\n2\n");
+		git.add().addFilepattern("file3").call();
+		git.commit().setMessage("m1").call();
+
+		git.merge().include(c.getId())
+				.setStrategy(MergeStrategy.RESOLVE)
+				.setMessage("merge s0 with m1").call();
+	}
+
 }

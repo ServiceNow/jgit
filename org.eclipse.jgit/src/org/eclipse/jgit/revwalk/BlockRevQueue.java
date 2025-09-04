@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.revwalk;
@@ -51,13 +18,21 @@ import org.eclipse.jgit.errors.MissingObjectException;
 abstract class BlockRevQueue extends AbstractRevQueue {
 	protected BlockFreeList free;
 
-	/** Create an empty revision queue. */
-	protected BlockRevQueue() {
+	/**
+	 * Create an empty revision queue.
+	 *
+	 * @param firstParent
+	 *            whether only first-parent links should be followed when
+	 *            walking
+	 */
+	protected BlockRevQueue(boolean firstParent) {
+		super(firstParent);
 		free = new BlockFreeList();
 	}
 
-	BlockRevQueue(final Generator s) throws MissingObjectException,
+	BlockRevQueue(Generator s) throws MissingObjectException,
 			IncorrectObjectTypeException, IOException {
+		super(s.firstParent);
 		free = new BlockFreeList();
 		outputType = s.outputType();
 		s.shareFreeList(this);
@@ -70,6 +45,8 @@ abstract class BlockRevQueue extends AbstractRevQueue {
 	}
 
 	/**
+	 * {@inheritDoc}
+	 * <p>
 	 * Reconfigure this queue to share the same free list as another.
 	 * <p>
 	 * Multiple revision queues can be connected to the same free list, making
@@ -79,11 +56,9 @@ abstract class BlockRevQueue extends AbstractRevQueue {
 	 * <p>
 	 * Free lists are not thread-safe. Applications must ensure that all queues
 	 * sharing the same free list are doing so from only a single thread.
-	 *
-	 * @param q
-	 *            the other queue we will steal entries from.
 	 */
-	public void shareFreeList(final BlockRevQueue q) {
+	@Override
+	public void shareFreeList(BlockRevQueue q) {
 		free = q.free;
 	}
 
@@ -99,7 +74,7 @@ abstract class BlockRevQueue extends AbstractRevQueue {
 			return b;
 		}
 
-		void freeBlock(final Block b) {
+		void freeBlock(Block b) {
 			b.next = next;
 			next = b;
 		}
@@ -136,11 +111,11 @@ abstract class BlockRevQueue extends AbstractRevQueue {
 			return headIndex > 0;
 		}
 
-		void add(final RevCommit c) {
+		void add(RevCommit c) {
 			commits[tailIndex++] = c;
 		}
 
-		void unpop(final RevCommit c) {
+		void unpop(RevCommit c) {
 			commits[--headIndex] = c;
 		}
 

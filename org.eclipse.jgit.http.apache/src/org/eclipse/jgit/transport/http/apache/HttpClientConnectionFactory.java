@@ -1,66 +1,111 @@
 /*
- * Copyright (C) 2013 Christian Halstrick <christian.halstrick@sap.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2013, 2020 Christian Halstrick <christian.halstrick@sap.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 package org.eclipse.jgit.transport.http.apache;
 
 import java.io.IOException;
 import java.net.Proxy;
 import java.net.URL;
+import java.security.GeneralSecurityException;
+import java.text.MessageFormat;
 
+import javax.net.ssl.HostnameVerifier;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSocket;
+import javax.net.ssl.TrustManager;
+
+import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
 import org.eclipse.jgit.transport.http.HttpConnection;
-import org.eclipse.jgit.transport.http.HttpConnectionFactory;
+import org.eclipse.jgit.transport.http.HttpConnectionFactory2;
+import org.eclipse.jgit.transport.http.NoCheckX509TrustManager;
+import org.eclipse.jgit.transport.http.apache.internal.HttpApacheText;
+import org.eclipse.jgit.util.HttpSupport;
 
 /**
- * A factory returning instances of {@link HttpClientConnection}
+ * A factory returning instances of {@link HttpClientConnection}.
  *
  * @since 3.3
  */
-public class HttpClientConnectionFactory implements HttpConnectionFactory {
+public class HttpClientConnectionFactory implements HttpConnectionFactory2 {
+
+	@Override
 	public HttpConnection create(URL url) throws IOException {
 		return new HttpClientConnection(url.toString());
 	}
 
-	public HttpConnection create(URL url, Proxy proxy)
-			throws IOException {
+	@Override
+	public HttpConnection create(URL url, Proxy proxy) throws IOException {
 		return new HttpClientConnection(url.toString(), proxy);
+	}
+
+	@Override
+	public GitSession newSession() {
+		return new HttpClientSession();
+	}
+
+	private static class HttpClientSession implements GitSession {
+
+		private SSLContext securityContext;
+
+		private SSLConnectionSocketFactory socketFactory;
+
+		private boolean isDefault;
+
+		@Override
+		public HttpClientConnection configure(HttpConnection connection,
+				boolean sslVerify)
+				throws IOException, GeneralSecurityException {
+			if (!(connection instanceof HttpClientConnection)) {
+				throw new IllegalArgumentException(MessageFormat.format(
+						HttpApacheText.get().httpWrongConnectionType,
+						HttpClientConnection.class.getName(),
+						connection.getClass().getName()));
+			}
+			HttpClientConnection conn = (HttpClientConnection) connection;
+			String scheme = conn.getURL().getProtocol();
+			if (!"https".equals(scheme)) { //$NON-NLS-1$
+				return conn;
+			}
+			if (securityContext == null || isDefault != sslVerify) {
+				isDefault = sslVerify;
+				HostnameVerifier verifier;
+				if (sslVerify) {
+					securityContext = SSLContext.getDefault();
+					verifier = SSLConnectionSocketFactory
+							.getDefaultHostnameVerifier();
+				} else {
+					securityContext = SSLContext.getInstance("TLS");
+					TrustManager[] trustAllCerts = {
+							new NoCheckX509TrustManager() };
+					securityContext.init(null, trustAllCerts, null);
+					verifier = (name, session) -> true;
+				}
+				socketFactory = new SSLConnectionSocketFactory(securityContext,
+						verifier) {
+
+					@Override
+					protected void prepareSocket(SSLSocket socket)
+							throws IOException {
+						super.prepareSocket(socket);
+						HttpSupport.configureTLS(socket);
+					}
+				};
+			}
+			conn.setSSLSocketFactory(socketFactory, isDefault);
+			return conn;
+		}
+
+		@Override
+		public void close() {
+			securityContext = null;
+			socketFactory = null;
+		}
+
 	}
 }

@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2010, Christian Halstrick <christian.halstrick@sap.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, Christian Halstrick <christian.halstrick@sap.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 package org.eclipse.jgit.treewalk.filter;
 
@@ -58,26 +25,33 @@ import org.eclipse.jgit.treewalk.TreeWalk;
 import org.eclipse.jgit.treewalk.WorkingTreeIterator;
 
 /**
- * A performance optimized variant of {@link TreeFilter#ANY_DIFF} which should
- * be used when among the walked trees there is a {@link DirCacheIterator} and a
- * {@link WorkingTreeIterator}. Please see the documentation of
- * {@link TreeFilter#ANY_DIFF} for a basic description of the semantics.
+ * A performance optimized variant of
+ * {@link org.eclipse.jgit.treewalk.filter.TreeFilter#ANY_DIFF} which should be
+ * used when among the walked trees there is a
+ * {@link org.eclipse.jgit.dircache.DirCacheIterator} and a
+ * {@link org.eclipse.jgit.treewalk.WorkingTreeIterator}. Please see the
+ * documentation of {@link org.eclipse.jgit.treewalk.filter.TreeFilter#ANY_DIFF}
+ * for a basic description of the semantics.
  * <p>
  * This filter tries to avoid computing content ids of the files in the
- * working-tree. In contrast to {@link TreeFilter#ANY_DIFF} this filter takes
- * care to first compare the entry from the {@link DirCacheIterator} with the
- * entries from all other iterators besides the {@link WorkingTreeIterator}.
- * Since all those entries have fast access to content ids that is very fast. If
- * a difference is detected in this step this filter decides to include that
- * path before even looking at the working-tree entry.
+ * working-tree. In contrast to
+ * {@link org.eclipse.jgit.treewalk.filter.TreeFilter#ANY_DIFF} this filter
+ * takes care to first compare the entry from the
+ * {@link org.eclipse.jgit.dircache.DirCacheIterator} with the entries from all
+ * other iterators besides the
+ * {@link org.eclipse.jgit.treewalk.WorkingTreeIterator}. Since all those
+ * entries have fast access to content ids that is very fast. If a difference is
+ * detected in this step this filter decides to include that path before even
+ * looking at the working-tree entry.
  * <p>
  * If no difference is found then we have to compare index and working-tree as
  * the last step. By making use of
- * {@link WorkingTreeIterator#isModified(org.eclipse.jgit.dircache.DirCacheEntry, boolean, ObjectReader)}
+ * {@link org.eclipse.jgit.treewalk.WorkingTreeIterator#isModified(org.eclipse.jgit.dircache.DirCacheEntry, boolean, ObjectReader)}
  * we can avoid the computation of the content id if the file is not dirty.
  * <p>
- * Instances of this filter should not be used for multiple {@link TreeWalk}s.
- * Always construct a new instance of this filter for each TreeWalk.
+ * Instances of this filter should not be used for multiple
+ * {@link org.eclipse.jgit.treewalk.TreeWalk}s. Always construct a new instance
+ * of this filter for each TreeWalk.
  */
 public class IndexDiffFilter extends TreeFilter {
 	private final int dirCache;
@@ -86,22 +60,24 @@ public class IndexDiffFilter extends TreeFilter {
 
 	private final boolean honorIgnores;
 
-	private final Set<String> ignoredPaths = new HashSet<String>();
+	private final Set<String> ignoredPaths = new HashSet<>();
 
-	private final LinkedList<String> untrackedParentFolders = new LinkedList<String>();
+	private final LinkedList<String> untrackedParentFolders = new LinkedList<>();
 
-	private final LinkedList<String> untrackedFolders = new LinkedList<String>();
+	private final LinkedList<String> untrackedFolders = new LinkedList<>();
 
 	/**
 	 * Creates a new instance of this filter. Do not use an instance of this
 	 * filter in multiple treewalks.
 	 *
 	 * @param dirCacheIndex
-	 *            the index of the {@link DirCacheIterator} in the associated
-	 *            treewalk
+	 *            the index of the
+	 *            {@link org.eclipse.jgit.dircache.DirCacheIterator} in the
+	 *            associated treewalk
 	 * @param workingTreeIndex
-	 *            the index of the {@link WorkingTreeIterator} in the associated
-	 *            treewalk
+	 *            the index of the
+	 *            {@link org.eclipse.jgit.treewalk.WorkingTreeIterator} in the
+	 *            associated treewalk
 	 */
 	public IndexDiffFilter(int dirCacheIndex, int workingTreeIndex) {
 		this(dirCacheIndex, workingTreeIndex, true /* honor ignores */);
@@ -112,14 +88,16 @@ public class IndexDiffFilter extends TreeFilter {
 	 * filter in multiple treewalks.
 	 *
 	 * @param dirCacheIndex
-	 *            the index of the {@link DirCacheIterator} in the associated
-	 *            treewalk
+	 *            the index of the
+	 *            {@link org.eclipse.jgit.dircache.DirCacheIterator} in the
+	 *            associated treewalk
 	 * @param workingTreeIndex
-	 *            the index of the {@link WorkingTreeIterator} in the associated
-	 *            treewalk
+	 *            the index of the
+	 *            {@link org.eclipse.jgit.treewalk.WorkingTreeIterator} in the
+	 *            associated treewalk
 	 * @param honorIgnores
 	 *            true if the filter should skip working tree files that are
-	 *            declared as ignored by the standard exclude mechanisms..
+	 *            declared as ignored by the standard exclude mechanisms.
 	 */
 	public IndexDiffFilter(int dirCacheIndex, int workingTreeIndex,
 			boolean honorIgnores) {
@@ -128,6 +106,7 @@ public class IndexDiffFilter extends TreeFilter {
 		this.honorIgnores = honorIgnores;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public boolean include(TreeWalk tw) throws MissingObjectException,
 			IncorrectObjectTypeException, IOException {
@@ -200,10 +179,9 @@ public class IndexDiffFilter extends TreeFilter {
 				// If i is cnt then the path does not appear in any other tree,
 				// and this working tree entry can be safely ignored.
 				return i != cnt;
-			} else {
-				// In working tree and not ignored, and not in DirCache.
-				return true;
 			}
+			// In working tree and not ignored, and not in DirCache.
+			return true;
 		}
 
 		// Always include subtrees as WorkingTreeIterator cannot provide
@@ -239,14 +217,15 @@ public class IndexDiffFilter extends TreeFilter {
 	 */
 	private void copyUntrackedFolders(String currentPath) {
 		String pathToBeSaved = null;
-		while (!untrackedParentFolders.isEmpty()
-				&& !currentPath.startsWith(untrackedParentFolders.getFirst()
-						+ "/")) //$NON-NLS-1$
+		while (!untrackedParentFolders.isEmpty() && !currentPath
+				.startsWith(untrackedParentFolders.getFirst() + '/')) {
 			pathToBeSaved = untrackedParentFolders.removeFirst();
+		}
 		if (pathToBeSaved != null) {
-			while (!untrackedFolders.isEmpty()
-					&& untrackedFolders.getLast().startsWith(pathToBeSaved))
+			while (!untrackedFolders.isEmpty() && untrackedFolders.getLast()
+					.startsWith(pathToBeSaved + '/')) {
 				untrackedFolders.removeLast();
+			}
 			untrackedFolders.addLast(pathToBeSaved);
 		}
 	}
@@ -255,6 +234,7 @@ public class IndexDiffFilter extends TreeFilter {
 		return tw.getTree(workingTree, WorkingTreeIterator.class);
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public boolean shouldBeRecursive() {
 		// We cannot compare subtrees in the working tree, so encourage
@@ -262,11 +242,13 @@ public class IndexDiffFilter extends TreeFilter {
 		return true;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public TreeFilter clone() {
 		return this;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public String toString() {
 		return "INDEX_DIFF_FILTER"; //$NON-NLS-1$
@@ -286,13 +268,15 @@ public class IndexDiffFilter extends TreeFilter {
 	}
 
 	/**
+	 * <p>Getter for the field <code>untrackedFolders</code>.</p>
+	 *
 	 * @return all paths of folders which contain only untracked files/folders.
 	 *         If on the associated treewalk postorder traversal was turned on
-	 *         (see {@link TreeWalk#setPostOrderTraversal(boolean)}) then an
+	 *         (see {@link org.eclipse.jgit.treewalk.TreeWalk#setPostOrderTraversal(boolean)}) then an
 	 *         empty list will be returned.
 	 */
 	public List<String> getUntrackedFolders() {
-		LinkedList<String> ret = new LinkedList<String>(untrackedFolders);
+		LinkedList<String> ret = new LinkedList<>(untrackedFolders);
 		if (!untrackedParentFolders.isEmpty()) {
 			String toBeAdded = untrackedParentFolders.getLast();
 			while (!ret.isEmpty() && ret.getLast().startsWith(toBeAdded))

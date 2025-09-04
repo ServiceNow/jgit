@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2010, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.internal.storage.file;
@@ -93,6 +60,7 @@ public class UnpackedObjectTest extends LocalDiskRepositoryTestCase {
 		return rng;
 	}
 
+	@Override
 	@Before
 	public void setUp() throws Exception {
 		super.setUp();
@@ -105,6 +73,7 @@ public class UnpackedObjectTest extends LocalDiskRepositoryTestCase {
 		wc = (WindowCursor) repo.newObjectReader();
 	}
 
+	@Override
 	@After
 	public void tearDown() throws Exception {
 		if (wc != null)
@@ -128,31 +97,28 @@ public class UnpackedObjectTest extends LocalDiskRepositoryTestCase {
 		assertFalse("is not large", ol.isLarge());
 		assertTrue("same content", Arrays.equals(data, ol.getCachedBytes()));
 
-		ObjectStream in = ol.openStream();
-		assertNotNull("have stream", in);
-		assertEquals(type, in.getType());
-		assertEquals(data.length, in.getSize());
-		byte[] data2 = new byte[data.length];
-		IO.readFully(in, data2, 0, data.length);
-		assertTrue("same content", Arrays.equals(data2, data));
-		assertEquals("stream at EOF", -1, in.read());
-		in.close();
+		try (ObjectStream in = ol.openStream()) {
+			assertNotNull("have stream", in);
+			assertEquals(type, in.getType());
+			assertEquals(data.length, in.getSize());
+			byte[] data2 = new byte[data.length];
+			IO.readFully(in, data2, 0, data.length);
+			assertTrue("same content", Arrays.equals(data2, data));
+			assertEquals("stream at EOF", -1, in.read());
+		}
 	}
 
 	@Test
 	public void testStandardFormat_LargeObject() throws Exception {
 		final int type = Constants.OBJ_BLOB;
 		byte[] data = getRng().nextBytes(streamThreshold + 5);
-		ObjectId id = new ObjectInserter.Formatter().idFor(type, data);
+		ObjectId id = getId(type, data);
 		write(id, compressStandardFormat(type, data));
 
 		ObjectLoader ol;
 		{
-			FileInputStream fs = new FileInputStream(path(id));
-			try {
+			try (FileInputStream fs = new FileInputStream(path(id))) {
 				ol = UnpackedObject.open(fs, path(id), id, wc);
-			} finally {
-				fs.close();
 			}
 		}
 
@@ -169,15 +135,15 @@ public class UnpackedObjectTest extends LocalDiskRepositoryTestCase {
 					.getMessage());
 		}
 
-		ObjectStream in = ol.openStream();
-		assertNotNull("have stream", in);
-		assertEquals(type, in.getType());
-		assertEquals(data.length, in.getSize());
-		byte[] data2 = new byte[data.length];
-		IO.readFully(in, data2, 0, data.length);
-		assertTrue("same content", Arrays.equals(data2, data));
-		assertEquals("stream at EOF", -1, in.read());
-		in.close();
+		try (ObjectStream in = ol.openStream()) {
+			assertNotNull("have stream", in);
+			assertEquals(type, in.getType());
+			assertEquals(data.length, in.getSize());
+			byte[] data2 = new byte[data.length];
+			IO.readFully(in, data2, 0, data.length);
+			assertTrue("same content", Arrays.equals(data2, data));
+			assertEquals("stream at EOF", -1, in.read());
+		}
 	}
 
 	@Test
@@ -306,7 +272,7 @@ public class UnpackedObjectTest extends LocalDiskRepositoryTestCase {
 			throws Exception {
 		final int type = Constants.OBJ_BLOB;
 		byte[] data = getRng().nextBytes(streamThreshold + 5);
-		ObjectId id = new ObjectInserter.Formatter().idFor(type, data);
+		ObjectId id = getId(type, data);
 		byte[] gz = compressStandardFormat(type, data);
 		gz[gz.length - 1] = 0;
 		gz[gz.length - 2] = 0;
@@ -314,23 +280,13 @@ public class UnpackedObjectTest extends LocalDiskRepositoryTestCase {
 		write(id, gz);
 
 		ObjectLoader ol;
-		{
-			FileInputStream fs = new FileInputStream(path(id));
-			try {
-				ol = UnpackedObject.open(fs, path(id), id, wc);
-			} finally {
-				fs.close();
-			}
+		try (FileInputStream fs = new FileInputStream(path(id))) {
+			ol = UnpackedObject.open(fs, path(id), id, wc);
 		}
 
-		try {
-			byte[] tmp = new byte[data.length];
-			InputStream in = ol.openStream();
-			try {
-				IO.readFully(in, tmp, 0, tmp.length);
-			} finally {
-				in.close();
-			}
+		byte[] tmp = new byte[data.length];
+		try (InputStream in = ol.openStream()) {
+			IO.readFully(in, tmp, 0, tmp.length);
 			fail("Did not throw CorruptObjectException");
 		} catch (CorruptObjectException coe) {
 			assertEquals(MessageFormat.format(JGitText.get().objectIsCorrupt,
@@ -344,7 +300,7 @@ public class UnpackedObjectTest extends LocalDiskRepositoryTestCase {
 			throws Exception {
 		final int type = Constants.OBJ_BLOB;
 		byte[] data = getRng().nextBytes(streamThreshold + 5);
-		ObjectId id = new ObjectInserter.Formatter().idFor(type, data);
+		ObjectId id = getId(type, data);
 		byte[] gz = compressStandardFormat(type, data);
 		byte[] tr = new byte[gz.length - 1];
 		System.arraycopy(gz, 0, tr, 0, tr.length);
@@ -352,16 +308,12 @@ public class UnpackedObjectTest extends LocalDiskRepositoryTestCase {
 		write(id, tr);
 
 		ObjectLoader ol;
-		{
-			FileInputStream fs = new FileInputStream(path(id));
-			try {
-				ol = UnpackedObject.open(fs, path(id), id, wc);
-			} finally {
-				fs.close();
-			}
+		try (FileInputStream fs = new FileInputStream(path(id))) {
+			ol = UnpackedObject.open(fs, path(id), id, wc);
 		}
 
 		byte[] tmp = new byte[data.length];
+		@SuppressWarnings("resource") // We are testing that the close() method throws
 		InputStream in = ol.openStream();
 		IO.readFully(in, tmp, 0, tmp.length);
 		try {
@@ -379,7 +331,7 @@ public class UnpackedObjectTest extends LocalDiskRepositoryTestCase {
 			throws Exception {
 		final int type = Constants.OBJ_BLOB;
 		byte[] data = getRng().nextBytes(streamThreshold + 5);
-		ObjectId id = new ObjectInserter.Formatter().idFor(type, data);
+		ObjectId id = getId(type, data);
 		byte[] gz = compressStandardFormat(type, data);
 		byte[] tr = new byte[gz.length + 1];
 		System.arraycopy(gz, 0, tr, 0, gz.length);
@@ -387,16 +339,12 @@ public class UnpackedObjectTest extends LocalDiskRepositoryTestCase {
 		write(id, tr);
 
 		ObjectLoader ol;
-		{
-			FileInputStream fs = new FileInputStream(path(id));
-			try {
-				ol = UnpackedObject.open(fs, path(id), id, wc);
-			} finally {
-				fs.close();
-			}
+		try (FileInputStream fs = new FileInputStream(path(id))) {
+			ol = UnpackedObject.open(fs, path(id), id, wc);
 		}
 
 		byte[] tmp = new byte[data.length];
+		@SuppressWarnings("resource") // We are testing that the close() method throws
 		InputStream in = ol.openStream();
 		IO.readFully(in, tmp, 0, tmp.length);
 		try {
@@ -424,31 +372,27 @@ public class UnpackedObjectTest extends LocalDiskRepositoryTestCase {
 		assertFalse("is not large", ol.isLarge());
 		assertTrue("same content", Arrays.equals(data, ol.getCachedBytes()));
 
-		ObjectStream in = ol.openStream();
-		assertNotNull("have stream", in);
-		assertEquals(type, in.getType());
-		assertEquals(data.length, in.getSize());
-		byte[] data2 = new byte[data.length];
-		IO.readFully(in, data2, 0, data.length);
-		assertTrue("same content", Arrays.equals(data, ol.getCachedBytes()));
-		in.close();
+		try (ObjectStream in = ol.openStream()) {
+			assertNotNull("have stream", in);
+			assertEquals(type, in.getType());
+			assertEquals(data.length, in.getSize());
+			byte[] data2 = new byte[data.length];
+			IO.readFully(in, data2, 0, data.length);
+			assertTrue("same content",
+					Arrays.equals(data, ol.getCachedBytes()));
+		}
 	}
 
 	@Test
 	public void testPackFormat_LargeObject() throws Exception {
 		final int type = Constants.OBJ_BLOB;
 		byte[] data = getRng().nextBytes(streamThreshold + 5);
-		ObjectId id = new ObjectInserter.Formatter().idFor(type, data);
+		ObjectId id = getId(type, data);
 		write(id, compressPackFormat(type, data));
 
 		ObjectLoader ol;
-		{
-			FileInputStream fs = new FileInputStream(path(id));
-			try {
-				ol = UnpackedObject.open(fs, path(id), id, wc);
-			} finally {
-				fs.close();
-			}
+		try (FileInputStream fs = new FileInputStream(path(id))) {
+			ol = UnpackedObject.open(fs, path(id), id, wc);
 		}
 
 		assertNotNull("created loader", ol);
@@ -464,15 +408,15 @@ public class UnpackedObjectTest extends LocalDiskRepositoryTestCase {
 					.getMessage());
 		}
 
-		ObjectStream in = ol.openStream();
-		assertNotNull("have stream", in);
-		assertEquals(type, in.getType());
-		assertEquals(data.length, in.getSize());
-		byte[] data2 = new byte[data.length];
-		IO.readFully(in, data2, 0, data.length);
-		assertTrue("same content", Arrays.equals(data2, data));
-		assertEquals("stream at EOF", -1, in.read());
-		in.close();
+		try (ObjectStream in = ol.openStream()) {
+			assertNotNull("have stream", in);
+			assertEquals(type, in.getType());
+			assertEquals(data.length, in.getSize());
+			byte[] data2 = new byte[data.length];
+			IO.readFully(in, data2, 0, data.length);
+			assertTrue("same content", Arrays.equals(data2, data));
+			assertEquals("stream at EOF", -1, in.read());
+		}
 	}
 
 	@Test
@@ -571,11 +515,14 @@ public class UnpackedObjectTest extends LocalDiskRepositoryTestCase {
 	private void write(ObjectId id, byte[] data) throws IOException {
 		File path = path(id);
 		FileUtils.mkdirs(path.getParentFile());
-		FileOutputStream out = new FileOutputStream(path);
-		try {
+		try (FileOutputStream out = new FileOutputStream(path)) {
 			out.write(data);
-		} finally {
-			out.close();
+		}
+	}
+
+	private ObjectId getId(int type, byte[] data) {
+		try (ObjectInserter.Formatter formatter = new ObjectInserter.Formatter()) {
+			return formatter.idFor(type, data);
 		}
 	}
 }

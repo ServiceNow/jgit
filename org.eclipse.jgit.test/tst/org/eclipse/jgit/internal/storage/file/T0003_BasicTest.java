@@ -2,62 +2,32 @@
  * Copyright (C) 2007, Dave Watson <dwatson@mimvista.com>
  * Copyright (C) 2007-2010, Robin Rosenberg <robin.rosenberg@dewire.com>
  * Copyright (C) 2006-2008, Shawn O. Pearce <spearce@spearce.org>
- * Copyright (C) 2010, Chris Aniszczyk <caniszczyk@gmail.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, Chris Aniszczyk <caniszczyk@gmail.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.internal.storage.file;
 
+import static java.nio.charset.StandardCharsets.ISO_8859_1;
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNotSame;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileReader;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.time.Instant;
 
 import org.eclipse.jgit.errors.ConfigInvalidException;
 import org.eclipse.jgit.errors.IncorrectObjectTypeException;
@@ -67,7 +37,6 @@ import org.eclipse.jgit.lib.AnyObjectId;
 import org.eclipse.jgit.lib.CommitBuilder;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.FileMode;
-import org.eclipse.jgit.lib.FileTreeEntry;
 import org.eclipse.jgit.lib.ObjectDatabase;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectInserter;
@@ -75,7 +44,6 @@ import org.eclipse.jgit.lib.PersonIdent;
 import org.eclipse.jgit.lib.RefUpdate;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.lib.TagBuilder;
-import org.eclipse.jgit.lib.Tree;
 import org.eclipse.jgit.lib.TreeFormatter;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.revwalk.RevTag;
@@ -83,17 +51,18 @@ import org.eclipse.jgit.revwalk.RevWalk;
 import org.eclipse.jgit.storage.file.FileBasedConfig;
 import org.eclipse.jgit.storage.file.FileRepositoryBuilder;
 import org.eclipse.jgit.test.resources.SampleDataRepositoryTestCase;
+import org.eclipse.jgit.util.FS;
 import org.eclipse.jgit.util.FileUtils;
+import org.eclipse.jgit.util.IO;
 import org.junit.Test;
 
-@SuppressWarnings("deprecation")
 public class T0003_BasicTest extends SampleDataRepositoryTestCase {
 
 	@Test
 	public void test001_Initalize() {
 		final File gitdir = new File(trash, Constants.DOT_GIT);
 		final File hooks = new File(gitdir, "hooks");
-		final File objects = new File(gitdir, "objects");
+		final File objects = new File(gitdir, Constants.OBJECTS);
 		final File objects_pack = new File(objects, "pack");
 		final File objects_info = new File(objects, "info");
 		final File refs = new File(gitdir, "refs");
@@ -134,19 +103,20 @@ public class T0003_BasicTest extends SampleDataRepositoryTestCase {
 	@Test
 	public void test000_openrepo_default_gitDirSet() throws IOException {
 		File repo1Parent = new File(trash.getParentFile(), "r1");
-		Repository repo1initial = new FileRepository(new File(repo1Parent,
-				Constants.DOT_GIT));
-		repo1initial.create();
-		repo1initial.close();
+		try (Repository repo1initial = new FileRepository(
+				new File(repo1Parent, Constants.DOT_GIT))) {
+			repo1initial.create();
+		}
 
 		File theDir = new File(repo1Parent, Constants.DOT_GIT);
-		FileRepository r = (FileRepository) new FileRepositoryBuilder()
-				.setGitDir(theDir).build();
-		assertEqualsPath(theDir, r.getDirectory());
-		assertEqualsPath(repo1Parent, r.getWorkTree());
-		assertEqualsPath(new File(theDir, "index"), r.getIndexFile());
-		assertEqualsPath(new File(theDir, "objects"), r.getObjectDatabase()
-				.getDirectory());
+		try (FileRepository r = (FileRepository) new FileRepositoryBuilder()
+				.setGitDir(theDir).build()) {
+			assertEqualsPath(theDir, r.getDirectory());
+			assertEqualsPath(repo1Parent, r.getWorkTree());
+			assertEqualsPath(new File(theDir, "index"), r.getIndexFile());
+			assertEqualsPath(new File(theDir, Constants.OBJECTS),
+					r.getObjectDatabase().getDirectory());
+		}
 	}
 
 	/**
@@ -159,20 +129,21 @@ public class T0003_BasicTest extends SampleDataRepositoryTestCase {
 	public void test000_openrepo_default_gitDirAndWorkTreeSet()
 			throws IOException {
 		File repo1Parent = new File(trash.getParentFile(), "r1");
-		Repository repo1initial = new FileRepository(new File(repo1Parent,
-				Constants.DOT_GIT));
-		repo1initial.create();
-		repo1initial.close();
+		try (Repository repo1initial = new FileRepository(
+				new File(repo1Parent, Constants.DOT_GIT))) {
+			repo1initial.create();
+		}
 
 		File theDir = new File(repo1Parent, Constants.DOT_GIT);
-		FileRepository r = (FileRepository) new FileRepositoryBuilder()
+		try (FileRepository r = (FileRepository) new FileRepositoryBuilder()
 				.setGitDir(theDir).setWorkTree(repo1Parent.getParentFile())
-				.build();
-		assertEqualsPath(theDir, r.getDirectory());
-		assertEqualsPath(repo1Parent.getParentFile(), r.getWorkTree());
-		assertEqualsPath(new File(theDir, "index"), r.getIndexFile());
-		assertEqualsPath(new File(theDir, "objects"), r.getObjectDatabase()
-				.getDirectory());
+				.build()) {
+			assertEqualsPath(theDir, r.getDirectory());
+			assertEqualsPath(repo1Parent.getParentFile(), r.getWorkTree());
+			assertEqualsPath(new File(theDir, "index"), r.getIndexFile());
+			assertEqualsPath(new File(theDir, Constants.OBJECTS),
+					r.getObjectDatabase().getDirectory());
+		}
 	}
 
 	/**
@@ -184,19 +155,20 @@ public class T0003_BasicTest extends SampleDataRepositoryTestCase {
 	@Test
 	public void test000_openrepo_default_workDirSet() throws IOException {
 		File repo1Parent = new File(trash.getParentFile(), "r1");
-		Repository repo1initial = new FileRepository(new File(repo1Parent,
-				Constants.DOT_GIT));
-		repo1initial.create();
-		repo1initial.close();
+		try (Repository repo1initial = new FileRepository(
+				new File(repo1Parent, Constants.DOT_GIT))) {
+			repo1initial.create();
+		}
 
 		File theDir = new File(repo1Parent, Constants.DOT_GIT);
-		FileRepository r = (FileRepository) new FileRepositoryBuilder()
-				.setWorkTree(repo1Parent).build();
-		assertEqualsPath(theDir, r.getDirectory());
-		assertEqualsPath(repo1Parent, r.getWorkTree());
-		assertEqualsPath(new File(theDir, "index"), r.getIndexFile());
-		assertEqualsPath(new File(theDir, "objects"), r.getObjectDatabase()
-				.getDirectory());
+		try (FileRepository r = (FileRepository) new FileRepositoryBuilder()
+				.setWorkTree(repo1Parent).build()) {
+			assertEqualsPath(theDir, r.getDirectory());
+			assertEqualsPath(repo1Parent, r.getWorkTree());
+			assertEqualsPath(new File(theDir, "index"), r.getIndexFile());
+			assertEqualsPath(new File(theDir, Constants.OBJECTS),
+					r.getObjectDatabase().getDirectory());
+		}
 	}
 
 	/**
@@ -210,22 +182,23 @@ public class T0003_BasicTest extends SampleDataRepositoryTestCase {
 		File repo1Parent = new File(trash.getParentFile(), "r1");
 		File workdir = new File(trash.getParentFile(), "rw");
 		FileUtils.mkdir(workdir);
-		FileRepository repo1initial = new FileRepository(new File(repo1Parent,
-				Constants.DOT_GIT));
-		repo1initial.create();
-		final FileBasedConfig cfg = repo1initial.getConfig();
-		cfg.setString("core", null, "worktree", workdir.getAbsolutePath());
-		cfg.save();
-		repo1initial.close();
+		try (FileRepository repo1initial = new FileRepository(
+				new File(repo1Parent, Constants.DOT_GIT))) {
+			repo1initial.create();
+			final FileBasedConfig cfg = repo1initial.getConfig();
+			cfg.setString("core", null, "worktree", workdir.getAbsolutePath());
+			cfg.save();
+		}
 
 		File theDir = new File(repo1Parent, Constants.DOT_GIT);
-		FileRepository r = (FileRepository) new FileRepositoryBuilder()
-				.setGitDir(theDir).build();
-		assertEqualsPath(theDir, r.getDirectory());
-		assertEqualsPath(workdir, r.getWorkTree());
-		assertEqualsPath(new File(theDir, "index"), r.getIndexFile());
-		assertEqualsPath(new File(theDir, "objects"), r.getObjectDatabase()
-				.getDirectory());
+		try (FileRepository r = (FileRepository) new FileRepositoryBuilder()
+				.setGitDir(theDir).build()) {
+			assertEqualsPath(theDir, r.getDirectory());
+			assertEqualsPath(workdir, r.getWorkTree());
+			assertEqualsPath(new File(theDir, "index"), r.getIndexFile());
+			assertEqualsPath(new File(theDir, Constants.OBJECTS),
+					r.getObjectDatabase().getDirectory());
+		}
 	}
 
 	/**
@@ -239,22 +212,23 @@ public class T0003_BasicTest extends SampleDataRepositoryTestCase {
 		File repo1Parent = new File(trash.getParentFile(), "r1");
 		File workdir = new File(trash.getParentFile(), "rw");
 		FileUtils.mkdir(workdir);
-		FileRepository repo1initial = new FileRepository(new File(repo1Parent,
-				Constants.DOT_GIT));
-		repo1initial.create();
-		final FileBasedConfig cfg = repo1initial.getConfig();
-		cfg.setString("core", null, "worktree", "../../rw");
-		cfg.save();
-		repo1initial.close();
+		try (FileRepository repo1initial = new FileRepository(
+				new File(repo1Parent, Constants.DOT_GIT))) {
+			repo1initial.create();
+			final FileBasedConfig cfg = repo1initial.getConfig();
+			cfg.setString("core", null, "worktree", "../../rw");
+			cfg.save();
+		}
 
 		File theDir = new File(repo1Parent, Constants.DOT_GIT);
-		FileRepository r = (FileRepository) new FileRepositoryBuilder()
-				.setGitDir(theDir).build();
-		assertEqualsPath(theDir, r.getDirectory());
-		assertEqualsPath(workdir, r.getWorkTree());
-		assertEqualsPath(new File(theDir, "index"), r.getIndexFile());
-		assertEqualsPath(new File(theDir, "objects"), r.getObjectDatabase()
-				.getDirectory());
+		try (FileRepository r = (FileRepository) new FileRepositoryBuilder()
+				.setGitDir(theDir).build()) {
+			assertEqualsPath(theDir, r.getDirectory());
+			assertEqualsPath(workdir, r.getWorkTree());
+			assertEqualsPath(new File(theDir, "index"), r.getIndexFile());
+			assertEqualsPath(new File(theDir, Constants.OBJECTS),
+					r.getObjectDatabase().getDirectory());
+		}
 	}
 
 	/**
@@ -270,26 +244,24 @@ public class T0003_BasicTest extends SampleDataRepositoryTestCase {
 		File indexFile = new File(trash, "idx");
 		File objDir = new File(trash, "../obj");
 		File altObjDir = db.getObjectDatabase().getDirectory();
-		Repository repo1initial = new FileRepository(new File(repo1Parent,
-				Constants.DOT_GIT));
-		repo1initial.create();
-		repo1initial.close();
+		try (Repository repo1initial = new FileRepository(
+				new File(repo1Parent, Constants.DOT_GIT))) {
+			repo1initial.create();
+		}
 
 		File theDir = new File(repo1Parent, Constants.DOT_GIT);
-		FileRepository r = (FileRepository) new FileRepositoryBuilder() //
+		try (FileRepository r = (FileRepository) new FileRepositoryBuilder() //
 				.setGitDir(theDir).setObjectDirectory(objDir) //
 				.addAlternateObjectDirectory(altObjDir) //
 				.setIndexFile(indexFile) //
-				.build();
-		assertEqualsPath(theDir, r.getDirectory());
-		assertEqualsPath(theDir.getParentFile(), r.getWorkTree());
-		assertEqualsPath(indexFile, r.getIndexFile());
-		assertEqualsPath(objDir, r.getObjectDatabase().getDirectory());
-		assertNotNull(r.open(ObjectId
-				.fromString("6db9c2ebf75590eef973081736730a9ea169a0c4")));
-		// Must close or the default repo pack files created by this test gets
-		// locked via the alternate object directories on Windows.
-		r.close();
+				.build()) {
+			assertEqualsPath(theDir, r.getDirectory());
+			assertEqualsPath(theDir.getParentFile(), r.getWorkTree());
+			assertEqualsPath(indexFile, r.getIndexFile());
+			assertEqualsPath(objDir, r.getObjectDatabase().getDirectory());
+			assertNotNull(r.open(ObjectId
+					.fromString("6db9c2ebf75590eef973081736730a9ea169a0c4")));
+		}
 	}
 
 	protected void assertEqualsPath(File expected, File actual)
@@ -303,17 +275,20 @@ public class T0003_BasicTest extends SampleDataRepositoryTestCase {
 		// open when we create it we won't write the object file out as a loose
 		// object (as it already exists in the pack).
 		//
-		final Repository newdb = createBareRepository();
-		try (final ObjectInserter oi = newdb.newObjectInserter()) {
-			final ObjectId treeId = oi.insert(new TreeFormatter());
-			assertEquals("4b825dc642cb6eb9a060e54bf8d69288fbee4904",
-					treeId.name());
-		}
+		try (Repository newdb = createBareRepository()) {
+			try (ObjectInserter oi = newdb.newObjectInserter()) {
+				final ObjectId treeId = oi.insert(new TreeFormatter());
+				assertEquals("4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+						treeId.name());
+			}
 
-		final File o = new File(new File(new File(newdb.getDirectory(),
-				"objects"), "4b"), "825dc642cb6eb9a060e54bf8d69288fbee4904");
-		assertTrue("Exists " + o, o.isFile());
-		assertTrue("Read-only " + o, !o.canWrite());
+			final File o = new File(
+					new File(new File(newdb.getDirectory(), Constants.OBJECTS),
+							"4b"),
+					"825dc642cb6eb9a060e54bf8d69288fbee4904");
+			assertTrue("Exists " + o, o.isFile());
+			assertTrue("Read-only " + o, !o.canWrite());
+		}
 	}
 
 	@Test
@@ -323,9 +298,20 @@ public class T0003_BasicTest extends SampleDataRepositoryTestCase {
 		final ObjectId treeId = insertTree(new TreeFormatter());
 		assertEquals("4b825dc642cb6eb9a060e54bf8d69288fbee4904", treeId.name());
 		final File o = new File(new File(
-				new File(db.getDirectory(), "objects"), "4b"),
+				new File(db.getDirectory(), Constants.OBJECTS), "4b"),
 				"825dc642cb6eb9a060e54bf8d69288fbee4904");
 		assertFalse("Exists " + o, o.isFile());
+	}
+
+	@Test
+	public void test002_CreateBadTree() throws Exception {
+		// We won't create a tree entry with an empty filename
+		//
+		final TreeFormatter formatter = new TreeFormatter();
+		assertThrows(JGitText.get().invalidTreeZeroLengthName,
+				IllegalArgumentException.class,
+				() -> formatter.append("", FileMode.TREE, ObjectId.fromString(
+						"4b825dc642cb6eb9a060e54bf8d69288fbee4904")));
 	}
 
 	@Test
@@ -348,20 +334,25 @@ public class T0003_BasicTest extends SampleDataRepositoryTestCase {
 		assertEquals("a many line\ncomment\n to test", c.getString("user",
 				null, "defaultCheckInComment"));
 		c.save();
-		final FileReader fr = new FileReader(cfg);
-		final char[] cbuf = new char[configStr.length()];
-		fr.read(cbuf);
-		fr.close();
-		assertEquals(configStr, new String(cbuf));
+
+		// Saving normalizes out the weird "\\n\\\n" to a single escaped newline,
+		// and quotes the whole string.
+		final String expectedStr = "  [core];comment\n\tfilemode = yes\n"
+				+ "[user]\n"
+				+ "  email = A U Thor <thor@example.com> # Just an example...\n"
+				+ " name = \"A  Thor \\\\ \\\"\\t \"\n"
+				+ "    defaultCheckInComment = a many line\\ncomment\\n to test\n";
+		assertEquals(expectedStr, new String(IO.readFully(cfg), UTF_8));
 	}
 
 	@Test
 	public void test007_Open() throws IOException {
-		final FileRepository db2 = new FileRepository(db.getDirectory());
-		assertEquals(db.getDirectory(), db2.getDirectory());
-		assertEquals(db.getObjectDatabase().getDirectory(), db2
-				.getObjectDatabase().getDirectory());
-		assertNotSame(db.getConfig(), db2.getConfig());
+		try (FileRepository db2 = new FileRepository(db.getDirectory())) {
+			assertEquals(db.getDirectory(), db2.getDirectory());
+			assertEquals(db.getObjectDatabase().getDirectory(), db2
+					.getObjectDatabase().getDirectory());
+			assertNotSame(db.getConfig(), db2.getConfig());
+		}
 	}
 
 	@Test
@@ -372,8 +363,7 @@ public class T0003_BasicTest extends SampleDataRepositoryTestCase {
 				+ badvers + "\n";
 		write(cfg, configStr);
 
-		try {
-			new FileRepository(db.getDirectory());
+		try (FileRepository unused = new FileRepository(db.getDirectory())) {
 			fail("incorrectly opened a bad repository");
 		} catch (IllegalArgumentException ioe) {
 			assertNotNull(ioe.getMessage());
@@ -399,14 +389,11 @@ public class T0003_BasicTest extends SampleDataRepositoryTestCase {
 		// Verify the commit we just wrote is in the correct format.
 		ObjectDatabase odb = db.getObjectDatabase();
 		assertTrue("is ObjectDirectory", odb instanceof ObjectDirectory);
-		final XInputStream xis = new XInputStream(new FileInputStream(
-				((ObjectDirectory) odb).fileFor(cmtid)));
-		try {
+		try (XInputStream xis = new XInputStream(
+				new FileInputStream(((ObjectDirectory) odb).fileFor(cmtid)))) {
 			assertEquals(0x78, xis.readUInt8());
 			assertEquals(0x9c, xis.readUInt8());
 			assertEquals(0, 0x789c % 31);
-		} finally {
-			xis.close();
 		}
 
 		// Verify we can read it.
@@ -416,29 +403,6 @@ public class T0003_BasicTest extends SampleDataRepositoryTestCase {
 		assertEquals(c.getTreeId(), c2.getTree());
 		assertEquals(c.getAuthor(), c2.getAuthorIdent());
 		assertEquals(c.getCommitter(), c2.getCommitterIdent());
-	}
-
-	@Test
-	public void test012_SubtreeExternalSorting() throws IOException {
-		final ObjectId emptyBlob = insertEmptyBlob();
-		final Tree t = new Tree(db);
-		final FileTreeEntry e0 = t.addFile("a-");
-		final FileTreeEntry e1 = t.addFile("a-b");
-		final FileTreeEntry e2 = t.addFile("a/b");
-		final FileTreeEntry e3 = t.addFile("a=");
-		final FileTreeEntry e4 = t.addFile("a=b");
-
-		e0.setId(emptyBlob);
-		e1.setId(emptyBlob);
-		e2.setId(emptyBlob);
-		e3.setId(emptyBlob);
-		e4.setId(emptyBlob);
-
-		final Tree a = (Tree) t.findTreeMember("a");
-		a.setId(insertTree(a));
-		assertEquals(ObjectId
-				.fromString("b47a8f0a4190f7572e11212769090523e23eb1ea"),
-				insertTree(t));
 	}
 
 	@Test
@@ -464,9 +428,8 @@ public class T0003_BasicTest extends SampleDataRepositoryTestCase {
 	@Test
 	public void test021_createTreeTag() throws IOException {
 		final ObjectId emptyId = insertEmptyBlob();
-		final Tree almostEmptyTree = new Tree(db);
-		almostEmptyTree.addEntry(new FileTreeEntry(almostEmptyTree, emptyId,
-				"empty".getBytes(), false));
+		TreeFormatter almostEmptyTree = new TreeFormatter();
+		almostEmptyTree.append("empty", FileMode.REGULAR_FILE, emptyId);
 		final ObjectId almostEmptyTreeId = insertTree(almostEmptyTree);
 		final TagBuilder t = new TagBuilder();
 		t.setObjectId(almostEmptyTreeId, Constants.OBJ_TREE);
@@ -488,9 +451,8 @@ public class T0003_BasicTest extends SampleDataRepositoryTestCase {
 	@Test
 	public void test022_createCommitTag() throws IOException {
 		final ObjectId emptyId = insertEmptyBlob();
-		final Tree almostEmptyTree = new Tree(db);
-		almostEmptyTree.addEntry(new FileTreeEntry(almostEmptyTree, emptyId,
-				"empty".getBytes(), false));
+		TreeFormatter almostEmptyTree = new TreeFormatter();
+		almostEmptyTree.append("empty", FileMode.REGULAR_FILE, emptyId);
 		final ObjectId almostEmptyTreeId = insertTree(almostEmptyTree);
 		final CommitBuilder almostEmptyCommit = new CommitBuilder();
 		almostEmptyCommit.setAuthor(new PersonIdent(author, 1154236443000L,
@@ -520,9 +482,8 @@ public class T0003_BasicTest extends SampleDataRepositoryTestCase {
 	@Test
 	public void test023_createCommitNonAnullii() throws IOException {
 		final ObjectId emptyId = insertEmptyBlob();
-		final Tree almostEmptyTree = new Tree(db);
-		almostEmptyTree.addEntry(new FileTreeEntry(almostEmptyTree, emptyId,
-				"empty".getBytes(), false));
+		TreeFormatter almostEmptyTree = new TreeFormatter();
+		almostEmptyTree.append("empty", FileMode.REGULAR_FILE, emptyId);
 		final ObjectId almostEmptyTreeId = insertTree(almostEmptyTree);
 		CommitBuilder commit = new CommitBuilder();
 		commit.setTreeId(almostEmptyTreeId);
@@ -530,7 +491,7 @@ public class T0003_BasicTest extends SampleDataRepositoryTestCase {
 				4294967295000L, 60));
 		commit.setCommitter(new PersonIdent("Joe Hacker", "joe2@example.com",
 				4294967295000L, 60));
-		commit.setEncoding("UTF-8");
+		commit.setEncoding(UTF_8);
 		commit.setMessage("\u00dcbergeeks");
 		ObjectId cid = insertCommit(commit);
 		assertEquals("4680908112778718f37e686cbebcc912730b3154", cid.name());
@@ -542,9 +503,8 @@ public class T0003_BasicTest extends SampleDataRepositoryTestCase {
 	@Test
 	public void test024_createCommitNonAscii() throws IOException {
 		final ObjectId emptyId = insertEmptyBlob();
-		final Tree almostEmptyTree = new Tree(db);
-		almostEmptyTree.addEntry(new FileTreeEntry(almostEmptyTree, emptyId,
-				"empty".getBytes(), false));
+		TreeFormatter almostEmptyTree = new TreeFormatter();
+		almostEmptyTree.append("empty", FileMode.REGULAR_FILE, emptyId);
 		final ObjectId almostEmptyTreeId = insertTree(almostEmptyTree);
 		CommitBuilder commit = new CommitBuilder();
 		commit.setTreeId(almostEmptyTreeId);
@@ -552,27 +512,28 @@ public class T0003_BasicTest extends SampleDataRepositoryTestCase {
 				4294967295000L, 60));
 		commit.setCommitter(new PersonIdent("Joe Hacker", "joe2@example.com",
 				4294967295000L, 60));
-		commit.setEncoding("ISO-8859-1");
+		commit.setEncoding(ISO_8859_1);
 		commit.setMessage("\u00dcbergeeks");
 		ObjectId cid = insertCommit(commit);
 		assertEquals("2979b39d385014b33287054b87f77bcb3ecb5ebf", cid.name());
 	}
 
 	@Test
-	public void test025_computeSha1NoStore() throws IOException {
+	public void test025_computeSha1NoStore() {
 		byte[] data = "test025 some data, more than 16 bytes to get good coverage"
-				.getBytes("ISO-8859-1");
-		final ObjectId id = new ObjectInserter.Formatter().idFor(
-				Constants.OBJ_BLOB, data);
-		assertEquals("4f561df5ecf0dfbd53a0dc0f37262fef075d9dde", id.name());
+				.getBytes(ISO_8859_1);
+		try (ObjectInserter.Formatter formatter = new ObjectInserter.Formatter()) {
+			final ObjectId id = formatter.idFor(Constants.OBJ_BLOB, data);
+			assertEquals("4f561df5ecf0dfbd53a0dc0f37262fef075d9dde", id.name());
+		}
 	}
 
 	@Test
 	public void test026_CreateCommitMultipleparents() throws IOException {
 		final ObjectId treeId;
-		try (final ObjectInserter oi = db.newObjectInserter()) {
+		try (ObjectInserter oi = db.newObjectInserter()) {
 			final ObjectId blobId = oi.insert(Constants.OBJ_BLOB,
-					"and this is the data in me\n".getBytes(Constants.CHARSET
+					"and this is the data in me\n".getBytes(UTF_8
 							.name()));
 			TreeFormatter fmt = new TreeFormatter();
 			fmt.append("i-am-a-file", FileMode.REGULAR_FILE, blobId);
@@ -675,33 +636,39 @@ public class T0003_BasicTest extends SampleDataRepositoryTestCase {
 
 	@Test
 	public void test028_LockPackedRef() throws IOException {
+		ObjectId id1;
+		ObjectId id2;
+		try (ObjectInserter ins = db.newObjectInserter()) {
+			id1 = ins.insert(
+					Constants.OBJ_BLOB, "contents1".getBytes(UTF_8));
+			id2 = ins.insert(
+					Constants.OBJ_BLOB, "contents2".getBytes(UTF_8));
+			ins.flush();
+		}
+
 		writeTrashFile(".git/packed-refs",
-				"7f822839a2fe9760f386cbbbcb3f92c5fe81def7 refs/heads/foobar");
+				id1.name() + " refs/heads/foobar");
 		writeTrashFile(".git/HEAD", "ref: refs/heads/foobar\n");
 		BUG_WorkAroundRacyGitIssues("packed-refs");
 		BUG_WorkAroundRacyGitIssues("HEAD");
 
 		ObjectId resolve = db.resolve("HEAD");
-		assertEquals("7f822839a2fe9760f386cbbbcb3f92c5fe81def7", resolve.name());
+		assertEquals(id1, resolve);
 
 		RefUpdate lockRef = db.updateRef("HEAD");
-		ObjectId newId = ObjectId
-				.fromString("07f822839a2fe9760f386cbbbcb3f92c5fe81def");
-		lockRef.setNewObjectId(newId);
+		lockRef.setNewObjectId(id2);
 		assertEquals(RefUpdate.Result.FORCED, lockRef.forceUpdate());
 
 		assertTrue(new File(db.getDirectory(), "refs/heads/foobar").exists());
-		assertEquals(newId, db.resolve("refs/heads/foobar"));
+		assertEquals(id2, db.resolve("refs/heads/foobar"));
 
 		// Again. The ref already exists
 		RefUpdate lockRef2 = db.updateRef("HEAD");
-		ObjectId newId2 = ObjectId
-				.fromString("7f822839a2fe9760f386cbbbcb3f92c5fe81def7");
-		lockRef2.setNewObjectId(newId2);
+		lockRef2.setNewObjectId(id1);
 		assertEquals(RefUpdate.Result.FORCED, lockRef2.forceUpdate());
 
 		assertTrue(new File(db.getDirectory(), "refs/heads/foobar").exists());
-		assertEquals(newId2, db.resolve("refs/heads/foobar"));
+		assertEquals(id1, db.resolve("refs/heads/foobar"));
 	}
 
 	@Test
@@ -746,14 +713,6 @@ public class T0003_BasicTest extends SampleDataRepositoryTestCase {
 		return emptyId;
 	}
 
-	private ObjectId insertTree(Tree tree) throws IOException {
-		try (ObjectInserter oi = db.newObjectInserter()) {
-			ObjectId id = oi.insert(Constants.OBJ_TREE, tree.format());
-			oi.flush();
-			return id;
-		}
-	}
-
 	private ObjectId insertTree(TreeFormatter tree) throws IOException {
 		try (ObjectInserter oi = db.newObjectInserter()) {
 			ObjectId id = oi.insert(tree);
@@ -762,7 +721,7 @@ public class T0003_BasicTest extends SampleDataRepositoryTestCase {
 		}
 	}
 
-	private ObjectId insertCommit(final CommitBuilder builder)
+	private ObjectId insertCommit(CommitBuilder builder)
 			throws IOException, UnsupportedEncodingException {
 		try (ObjectInserter oi = db.newObjectInserter()) {
 			ObjectId id = oi.insert(builder);
@@ -779,7 +738,7 @@ public class T0003_BasicTest extends SampleDataRepositoryTestCase {
 		}
 	}
 
-	private ObjectId insertTag(final TagBuilder tag) throws IOException,
+	private ObjectId insertTag(TagBuilder tag) throws IOException,
 			UnsupportedEncodingException {
 		try (ObjectInserter oi = db.newObjectInserter()) {
 			ObjectId id = oi.insert(tag);
@@ -805,12 +764,14 @@ public class T0003_BasicTest extends SampleDataRepositoryTestCase {
 	 *
 	 * @param name
 	 *            the file in the repository to force a time change on.
+	 * @throws IOException
 	 */
-	private void BUG_WorkAroundRacyGitIssues(String name) {
+	private void BUG_WorkAroundRacyGitIssues(String name) throws IOException {
 		File path = new File(db.getDirectory(), name);
-		long old = path.lastModified();
+		FS fs = db.getFS();
+		Instant old = fs.lastModifiedInstant(path);
 		long set = 1250379778668L; // Sat Aug 15 20:12:58 GMT-03:30 2009
-		path.setLastModified(set);
-		assertTrue("time changed", old != path.lastModified());
+		fs.setLastModified(path.toPath(), Instant.ofEpochMilli(set));
+		assertFalse("time changed", old.equals(fs.lastModifiedInstant(path)));
 	}
 }

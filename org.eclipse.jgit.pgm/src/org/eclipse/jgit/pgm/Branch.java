@@ -1,51 +1,17 @@
 /*
- * Copyright (C) 2007-2008, Charles O'Farrell <charleso@charleso.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2007-2008, Charles O'Farrell <charleso@charleso.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.pgm;
 
 import java.io.IOException;
 import java.text.MessageFormat;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -55,6 +21,7 @@ import java.util.Map.Entry;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.ListBranchCommand;
 import org.eclipse.jgit.api.ListBranchCommand.ListMode;
+import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectReader;
@@ -65,14 +32,17 @@ import org.eclipse.jgit.lib.RefUpdate;
 import org.eclipse.jgit.lib.RefUpdate.Result;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.pgm.internal.CLIText;
-import org.eclipse.jgit.pgm.opt.CmdLineParser;
+import org.eclipse.jgit.pgm.opt.OptionWithValuesListHandler;
 import org.eclipse.jgit.revwalk.RevWalk;
 import org.kohsuke.args4j.Argument;
-import org.kohsuke.args4j.ExampleMode;
 import org.kohsuke.args4j.Option;
 
 @Command(common = true, usage = "usage_listCreateOrDeleteBranches")
 class Branch extends TextBuiltin {
+
+	private String otherBranch;
+	private boolean createForce;
+	private boolean rename;
 
 	@Option(name = "--remote", aliases = { "-r" }, usage = "usage_actOnRemoteTrackingBranches")
 	private boolean remote = false;
@@ -83,76 +53,158 @@ class Branch extends TextBuiltin {
 	@Option(name = "--contains", metaVar = "metaVar_commitish", usage = "usage_printOnlyBranchesThatContainTheCommit")
 	private String containsCommitish;
 
-	@Option(name = "--delete", aliases = { "-d" }, usage = "usage_deleteFullyMergedBranch")
-	private boolean delete = false;
+	private List<String> delete;
 
-	@Option(name = "--delete-force", aliases = { "-D" }, usage = "usage_deleteBranchEvenIfNotMerged")
-	private boolean deleteForce = false;
+	/**
+	 * Delete branches
+	 *
+	 * @param names
+	 *            a {@link java.util.List} of branch names.
+	 */
+	@Option(name = "--delete", aliases = {
+			"-d" }, metaVar = "metaVar_branchNames", usage = "usage_deleteFullyMergedBranch", handler = OptionWithValuesListHandler.class)
+	public void delete(List<String> names) {
+		if (names.isEmpty()) {
+			throw die(CLIText.get().branchNameRequired);
+		}
+		delete = names;
+	}
 
-	@Option(name = "--create-force", aliases = { "-f" }, usage = "usage_forceCreateBranchEvenExists")
-	private boolean createForce = false;
+	private List<String> deleteForce;
 
-	@Option(name = "-m", usage = "usage_moveRenameABranch")
-	private boolean rename = false;
+	/**
+	 * Forcefully delete branches
+	 *
+	 * @param names
+	 *            a {@link java.util.List} of branch names.
+	 */
+	@Option(name = "--delete-force", aliases = {
+			"-D" }, metaVar = "metaVar_branchNames", usage = "usage_deleteBranchEvenIfNotMerged", handler = OptionWithValuesListHandler.class)
+	public void deleteForce(List<String> names) {
+		if (names.isEmpty()) {
+			throw die(CLIText.get().branchNameRequired);
+		}
+		deleteForce = names;
+	}
+
+	/**
+	 * Forcefully create a list of branches
+	 *
+	 * @param branchAndStartPoint
+	 *            a branch name and a start point
+	 */
+	@Option(name = "--create-force", aliases = {
+			"-f" }, metaVar = "metaVar_branchAndStartPoint", usage = "usage_forceCreateBranchEvenExists", handler = OptionWithValuesListHandler.class)
+	public void createForce(List<String> branchAndStartPoint) {
+		createForce = true;
+		if (branchAndStartPoint.isEmpty()) {
+			throw die(CLIText.get().branchNameRequired);
+		}
+		if (branchAndStartPoint.size() > 2) {
+			throw die(CLIText.get().tooManyRefsGiven);
+		}
+		if (branchAndStartPoint.size() == 1) {
+			branch = branchAndStartPoint.get(0);
+		} else {
+			branch = branchAndStartPoint.get(0);
+			otherBranch = branchAndStartPoint.get(1);
+		}
+	}
+
+	/**
+	 * Move or rename a branch
+	 *
+	 * @param currentAndNew
+	 *            the current and the new branch name
+	 */
+	@Option(name = "--move", aliases = {
+			"-m" }, metaVar = "metaVar_oldNewBranchNames", usage = "usage_moveRenameABranch", handler = OptionWithValuesListHandler.class)
+	public void moveRename(List<String> currentAndNew) {
+		rename = true;
+		if (currentAndNew.isEmpty()) {
+			throw die(CLIText.get().branchNameRequired);
+		}
+		if (currentAndNew.size() > 2) {
+			throw die(CLIText.get().tooManyRefsGiven);
+		}
+		if (currentAndNew.size() == 1) {
+			branch = currentAndNew.get(0);
+		} else {
+			branch = currentAndNew.get(0);
+			otherBranch = currentAndNew.get(1);
+		}
+	}
 
 	@Option(name = "--verbose", aliases = { "-v" }, usage = "usage_beVerbose")
 	private boolean verbose = false;
 
-	@Argument
-	private List<String> branches = new ArrayList<String>();
+	@Argument(metaVar = "metaVar_name")
+	private String branch;
 
-	private final Map<String, Ref> printRefs = new LinkedHashMap<String, Ref>();
+	private final Map<String, Ref> printRefs = new LinkedHashMap<>();
 
 	/** Only set for verbose branch listing at-the-moment */
 	private RevWalk rw;
 
 	private int maxNameLength;
 
+	/** {@inheritDoc} */
 	@Override
-	protected void run() throws Exception {
-		if (delete || deleteForce)
-			delete(deleteForce);
-		else {
-			if (branches.size() > 2)
-				throw die(CLIText.get().tooManyRefsGiven + new CmdLineParser(this).printExample(ExampleMode.ALL));
-
+	protected void run() {
+		try {
+			if (delete != null || deleteForce != null) {
+				if (delete != null) {
+					delete(delete, false);
+				}
+				if (deleteForce != null) {
+					delete(deleteForce, true);
+				}
+				return;
+			}
 			if (rename) {
 				String src, dst;
-				if (branches.size() == 1) {
-					final Ref head = db.getRef(Constants.HEAD);
-					if (head != null && head.isSymbolic())
+				if (otherBranch == null) {
+					final Ref head = db.exactRef(Constants.HEAD);
+					if (head != null && head.isSymbolic()) {
 						src = head.getLeaf().getName();
-					else
+					} else {
 						throw die(CLIText.get().cannotRenameDetachedHEAD);
-					dst = branches.get(0);
+					}
+					dst = branch;
 				} else {
-					src = branches.get(0);
-					final Ref old = db.getRef(src);
-					if (old == null)
+					src = branch;
+					final Ref old = db.findRef(src);
+					if (old == null) {
 						throw die(MessageFormat.format(CLIText.get().doesNotExist, src));
-					if (!old.getName().startsWith(Constants.R_HEADS))
+					}
+					if (!old.getName().startsWith(Constants.R_HEADS)) {
 						throw die(MessageFormat.format(CLIText.get().notABranch, src));
+					}
 					src = old.getName();
-					dst = branches.get(1);
+					dst = otherBranch;
 				}
 
-				if (!dst.startsWith(Constants.R_HEADS))
+				if (!dst.startsWith(Constants.R_HEADS)) {
 					dst = Constants.R_HEADS + dst;
-				if (!Repository.isValidRefName(dst))
+				}
+				if (!Repository.isValidRefName(dst)) {
 					throw die(MessageFormat.format(CLIText.get().notAValidRefName, dst));
+				}
 
 				RefRename r = db.renameRef(src, dst);
-				if (r.rename() != Result.RENAMED)
+				if (r.rename() != Result.RENAMED) {
 					throw die(MessageFormat.format(CLIText.get().cannotBeRenamed, src));
+				}
 
-			} else if (branches.size() > 0) {
-				String newHead = branches.get(0);
+			} else if (createForce || branch != null) {
+				String newHead = branch;
 				String startBranch;
-				if (branches.size() == 2)
-					startBranch = branches.get(1);
-				else
+				if (createForce) {
+					startBranch = otherBranch;
+				} else {
 					startBranch = Constants.HEAD;
-				Ref startRef = db.getRef(startBranch);
+				}
+				Ref startRef = db.findRef(startBranch);
 				ObjectId startAt = db.resolve(startBranch + "^0"); //$NON-NLS-1$
 				if (startRef != null) {
 					startBranch = startRef.getName();
@@ -164,29 +216,36 @@ class Branch extends TextBuiltin {
 				}
 				startBranch = Repository.shortenRefName(startBranch);
 				String newRefName = newHead;
-				if (!newRefName.startsWith(Constants.R_HEADS))
+				if (!newRefName.startsWith(Constants.R_HEADS)) {
 					newRefName = Constants.R_HEADS + newRefName;
-				if (!Repository.isValidRefName(newRefName))
+				}
+				if (!Repository.isValidRefName(newRefName)) {
 					throw die(MessageFormat.format(CLIText.get().notAValidRefName, newRefName));
-				if (!createForce && db.resolve(newRefName) != null)
+				}
+				if (!createForce && db.resolve(newRefName) != null) {
 					throw die(MessageFormat.format(CLIText.get().branchAlreadyExists, newHead));
+				}
 				RefUpdate updateRef = db.updateRef(newRefName);
 				updateRef.setNewObjectId(startAt);
 				updateRef.setForceUpdate(createForce);
 				updateRef.setRefLogMessage(MessageFormat.format(CLIText.get().branchCreatedFrom, startBranch), false);
 				Result update = updateRef.update();
-				if (update == Result.REJECTED)
+				if (update == Result.REJECTED) {
 					throw die(MessageFormat.format(CLIText.get().couldNotCreateBranch, newHead, update.toString()));
+				}
 			} else {
-				if (verbose)
+				if (verbose) {
 					rw = new RevWalk(db);
+				}
 				list();
 			}
+		} catch (IOException | GitAPIException e) {
+			throw die(e.getMessage(), e);
 		}
 	}
 
-	private void list() throws Exception {
-		Ref head = db.getRef(Constants.HEAD);
+	private void list() throws IOException, GitAPIException {
+		Ref head = db.exactRef(Constants.HEAD);
 		// This can happen if HEAD is stillborn
 		if (head != null) {
 			String current = head.getLeaf().getName();
@@ -210,7 +269,7 @@ class Branch extends TextBuiltin {
 				addRefs(refs, Constants.R_REMOTES);
 
 				try (ObjectReader reader = db.newObjectReader()) {
-					for (final Entry<String, Ref> e : printRefs.entrySet()) {
+					for (Entry<String, Ref> e : printRefs.entrySet()) {
 						final Ref ref = e.getValue();
 						printHead(reader, e.getKey(),
 								current.equals(ref.getName()), ref);
@@ -220,21 +279,21 @@ class Branch extends TextBuiltin {
 		}
 	}
 
-	private void addRefs(final Collection<Ref> refs, final String prefix) {
-		for (final Ref ref : RefComparator.sort(refs)) {
+	private void addRefs(Collection<Ref> refs, String prefix) {
+		for (Ref ref : RefComparator.sort(refs)) {
 			final String name = ref.getName();
 			if (name.startsWith(prefix))
 				addRef(name.substring(name.indexOf('/', 5) + 1), ref);
 		}
 	}
 
-	private void addRef(final String name, final Ref ref) {
+	private void addRef(String name, Ref ref) {
 		printRefs.put(name, ref);
 		maxNameLength = Math.max(maxNameLength, name.length());
 	}
 
 	private void printHead(final ObjectReader reader, final String ref,
-			final boolean isCurrent, final Ref refObj) throws Exception {
+			final boolean isCurrent, final Ref refObj) throws IOException {
 		outw.print(isCurrent ? '*' : ' ');
 		outw.print(' ');
 		outw.print(ref);
@@ -249,27 +308,28 @@ class Branch extends TextBuiltin {
 		outw.println();
 	}
 
-	private void delete(boolean force) throws IOException {
+	private void delete(List<String> branches, boolean force)
+			throws IOException {
 		String current = db.getBranch();
 		ObjectId head = db.resolve(Constants.HEAD);
-		for (String branch : branches) {
-			if (branch.equals(current)) {
-				throw die(MessageFormat.format(CLIText.get().cannotDeleteTheBranchWhichYouAreCurrentlyOn, branch));
+		for (String b : branches) {
+			if (b.equals(current)) {
+				throw die(MessageFormat.format(CLIText.get().cannotDeleteTheBranchWhichYouAreCurrentlyOn, b));
 			}
 			RefUpdate update = db.updateRef((remote ? Constants.R_REMOTES
 					: Constants.R_HEADS)
-					+ branch);
+					+ b);
 			update.setNewObjectId(head);
 			update.setForceUpdate(force || remote);
 			Result result = update.delete();
 			if (result == Result.REJECTED) {
-				throw die(MessageFormat.format(CLIText.get().branchIsNotAnAncestorOfYourCurrentHEAD, branch));
+				throw die(MessageFormat.format(CLIText.get().branchIsNotAnAncestorOfYourCurrentHEAD, b));
 			} else if (result == Result.NEW)
-				throw die(MessageFormat.format(CLIText.get().branchNotFound, branch));
+				throw die(MessageFormat.format(CLIText.get().branchNotFound, b));
 			if (remote)
-				outw.println(MessageFormat.format(CLIText.get().deletedRemoteBranch, branch));
+				outw.println(MessageFormat.format(CLIText.get().deletedRemoteBranch, b));
 			else if (verbose)
-				outw.println(MessageFormat.format(CLIText.get().deletedBranch, branch));
+				outw.println(MessageFormat.format(CLIText.get().deletedBranch, b));
 		}
 	}
 }

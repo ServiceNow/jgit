@@ -1,45 +1,12 @@
 /*
  * Copyright (C) 2008-2009, Google Inc.
- * Copyright (C) 2006-2008, Shawn O. Pearce <spearce@spearce.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2006-2008, Shawn O. Pearce <spearce@spearce.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.internal.storage.file;
@@ -49,10 +16,12 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.zip.DataFormatException;
 import java.util.zip.Inflater;
 
+import org.eclipse.jgit.annotations.Nullable;
 import org.eclipse.jgit.errors.IncorrectObjectTypeException;
 import org.eclipse.jgit.errors.MissingObjectException;
 import org.eclipse.jgit.errors.StoredObjectRepresentationNotAvailableException;
@@ -66,9 +35,11 @@ import org.eclipse.jgit.lib.AbbreviatedObjectId;
 import org.eclipse.jgit.lib.AnyObjectId;
 import org.eclipse.jgit.lib.BitmapIndex;
 import org.eclipse.jgit.lib.BitmapIndex.BitmapBuilder;
+import org.eclipse.jgit.internal.storage.commitgraph.CommitGraph;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.InflaterCache;
 import org.eclipse.jgit.lib.ObjectId;
+import org.eclipse.jgit.lib.ObjectInserter;
 import org.eclipse.jgit.lib.ObjectLoader;
 import org.eclipse.jgit.lib.ObjectReader;
 import org.eclipse.jgit.lib.ProgressMonitor;
@@ -84,10 +55,22 @@ final class WindowCursor extends ObjectReader implements ObjectReuseAsIs {
 
 	private DeltaBaseCache baseCache;
 
+	@Nullable
+	private final ObjectInserter createdFromInserter;
+
 	final FileObjectDatabase db;
 
 	WindowCursor(FileObjectDatabase db) {
 		this.db = db;
+		this.createdFromInserter = null;
+		this.streamFileThreshold = WindowCache.getStreamFileThreshold();
+	}
+
+	WindowCursor(FileObjectDatabase db,
+			@Nullable ObjectDirectoryInserter createdFromInserter) {
+		this.db = db;
+		this.createdFromInserter = createdFromInserter;
+		this.streamFileThreshold = WindowCache.getStreamFileThreshold();
 	}
 
 	DeltaBaseCache getDeltaBaseCache() {
@@ -96,14 +79,16 @@ final class WindowCursor extends ObjectReader implements ObjectReuseAsIs {
 		return baseCache;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public ObjectReader newReader() {
 		return new WindowCursor(db);
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public BitmapIndex getBitmapIndex() throws IOException {
-		for (PackFile pack : db.getPacks()) {
+		for (Pack pack : db.getPacks()) {
 			PackBitmapIndex index = pack.getBitmapIndex();
 			if (index != null)
 				return new BitmapIndexImpl(index);
@@ -111,9 +96,17 @@ final class WindowCursor extends ObjectReader implements ObjectReuseAsIs {
 		return null;
 	}
 
+	/** {@inheritDoc} */
+	@Override
+	public Optional<CommitGraph> getCommitGraph() {
+		return db.getCommitGraph();
+	}
+
+	/** {@inheritDoc} */
+	@Override
 	public Collection<CachedPack> getCachedPacksAndUpdate(
 			BitmapBuilder needBitmap) throws IOException {
-		for (PackFile pack : db.getPacks()) {
+		for (Pack pack : db.getPacks()) {
 			PackBitmapIndex index = pack.getBitmapIndex();
 			if (needBitmap.removeAllOrNone(index))
 				return Collections.<CachedPack> singletonList(
@@ -122,20 +115,25 @@ final class WindowCursor extends ObjectReader implements ObjectReuseAsIs {
 		return Collections.emptyList();
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public Collection<ObjectId> resolve(AbbreviatedObjectId id)
 			throws IOException {
 		if (id.isComplete())
 			return Collections.singleton(id.toObjectId());
-		HashSet<ObjectId> matches = new HashSet<ObjectId>(4);
+		HashSet<ObjectId> matches = new HashSet<>(4);
 		db.resolve(matches, id);
 		return matches;
 	}
 
+	/** {@inheritDoc} */
+	@Override
 	public boolean has(AnyObjectId objectId) throws IOException {
 		return db.has(objectId);
 	}
 
+	/** {@inheritDoc} */
+	@Override
 	public ObjectLoader open(AnyObjectId objectId, int typeHint)
 			throws MissingObjectException, IncorrectObjectTypeException,
 			IOException {
@@ -151,11 +149,14 @@ final class WindowCursor extends ObjectReader implements ObjectReuseAsIs {
 		return ldr;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public Set<ObjectId> getShallowCommits() throws IOException {
 		return db.getShallowCommits();
 	}
 
+	/** {@inheritDoc} */
+	@Override
 	public long getObjectSize(AnyObjectId objectId, int typeHint)
 			throws MissingObjectException, IncorrectObjectTypeException,
 			IOException {
@@ -169,10 +170,14 @@ final class WindowCursor extends ObjectReader implements ObjectReuseAsIs {
 		return sz;
 	}
 
+	/** {@inheritDoc} */
+	@Override
 	public LocalObjectToPack newObjectToPack(AnyObjectId objectId, int type) {
 		return new LocalObjectToPack(objectId, type);
 	}
 
+	/** {@inheritDoc} */
+	@Override
 	public void selectObjectRepresentation(PackWriter packer,
 			ProgressMonitor monitor, Iterable<ObjectToPack> objects)
 			throws IOException, MissingObjectException {
@@ -182,6 +187,8 @@ final class WindowCursor extends ObjectReader implements ObjectReuseAsIs {
 		}
 	}
 
+	/** {@inheritDoc} */
+	@Override
 	public void copyObjectAsIs(PackOutputStream out, ObjectToPack otp,
 			boolean validate) throws IOException,
 			StoredObjectRepresentationNotAvailableException {
@@ -189,6 +196,8 @@ final class WindowCursor extends ObjectReader implements ObjectReuseAsIs {
 		src.pack.copyAsIs(out, src, validate, this);
 	}
 
+	/** {@inheritDoc} */
+	@Override
 	public void writeObjects(PackOutputStream out, List<ObjectToPack> list)
 			throws IOException {
 		for (ObjectToPack otp : list)
@@ -217,7 +226,7 @@ final class WindowCursor extends ObjectReader implements ObjectReuseAsIs {
 	 *             this cursor does not match the provider or id and the proper
 	 *             window could not be acquired through the provider's cache.
 	 */
-	int copy(final PackFile pack, long position, final byte[] dstbuf,
+	int copy(final Pack pack, long position, final byte[] dstbuf,
 			int dstoff, final int cnt) throws IOException {
 		final long length = pack.length;
 		int need = cnt;
@@ -231,12 +240,14 @@ final class WindowCursor extends ObjectReader implements ObjectReuseAsIs {
 		return cnt - need;
 	}
 
+	/** {@inheritDoc} */
+	@Override
 	public void copyPackAsIs(PackOutputStream out, CachedPack pack)
 			throws IOException {
 		((LocalCachedPack) pack).copyAsIs(out, this);
 	}
 
-	void copyPackAsIs(final PackFile pack, final long length,
+	void copyPackAsIs(final Pack pack, final long length,
 			final PackOutputStream out) throws IOException {
 		long position = 12;
 		long remaining = length - (12 + 20);
@@ -272,7 +283,7 @@ final class WindowCursor extends ObjectReader implements ObjectReuseAsIs {
 	 *             the inflater encountered an invalid chunk of data. Data
 	 *             stream corruption is likely.
 	 */
-	int inflate(final PackFile pack, long position, final byte[] dstbuf,
+	int inflate(final Pack pack, long position, final byte[] dstbuf,
 			boolean headerOnly) throws IOException, DataFormatException {
 		prepareInflater();
 		pin(pack, position);
@@ -290,7 +301,7 @@ final class WindowCursor extends ObjectReader implements ObjectReuseAsIs {
 		}
 	}
 
-	ByteArrayWindow quickCopy(PackFile p, long pos, long cnt)
+	ByteArrayWindow quickCopy(Pack p, long pos, long cnt)
 			throws IOException {
 		pin(p, pos);
 		if (window instanceof ByteArrayWindow
@@ -311,7 +322,7 @@ final class WindowCursor extends ObjectReader implements ObjectReuseAsIs {
 			inf.reset();
 	}
 
-	void pin(final PackFile pack, final long position)
+	void pin(Pack pack, long position)
 			throws IOException {
 		final ByteWindow w = window;
 		if (w == null || !w.contains(pack, position)) {
@@ -325,11 +336,18 @@ final class WindowCursor extends ObjectReader implements ObjectReuseAsIs {
 		}
 	}
 
-	int getStreamFileThreshold() {
-		return WindowCache.getStreamFileThreshold();
+	/** {@inheritDoc} */
+	@Override
+	@Nullable
+	public ObjectInserter getCreatedFromInserter() {
+		return createdFromInserter;
 	}
 
-	/** Release the current window cursor. */
+	/**
+	 * {@inheritDoc}
+	 * <p>
+	 * Release the current window cursor.
+	 */
 	@Override
 	public void close() {
 		window = null;

@@ -1,51 +1,19 @@
 /*
  * Copyright (C) 2010, Mathias Kinzler <mathias.kinzler@sap.com>
- * Copyright (C) 2010, Chris Aniszczyk <caniszczyk@gmail.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, Chris Aniszczyk <caniszczyk@gmail.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 package org.eclipse.jgit.api;
 
 import java.io.IOException;
 import java.text.MessageFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -79,28 +47,26 @@ import org.eclipse.jgit.revwalk.RevWalk;
  *      >Git documentation about Branch</a>
  */
 public class DeleteBranchCommand extends GitCommand<List<String>> {
-	private final Set<String> branchNames = new HashSet<String>();
+	private final Set<String> branchNames = new HashSet<>();
 
 	private boolean force;
 
 	/**
+	 * Constructor for DeleteBranchCommand
+	 *
 	 * @param repo
+	 *            the {@link org.eclipse.jgit.lib.Repository}
 	 */
 	protected DeleteBranchCommand(Repository repo) {
 		super(repo);
 	}
 
-	/**
-	 * @throws NotMergedException
-	 *             when trying to delete a branch which has not been merged into
-	 *             the currently checked out branch without force
-	 * @throws CannotDeleteCurrentBranchException
-	 * @return the list with the (full) names of the deleted branches
-	 */
+	/** {@inheritDoc} */
+	@Override
 	public List<String> call() throws GitAPIException,
 			NotMergedException, CannotDeleteCurrentBranchException {
 		checkCallable();
-		List<String> result = new ArrayList<String>();
+		List<String> result = new ArrayList<>();
 		if (branchNames.isEmpty())
 			return result;
 		try {
@@ -114,7 +80,7 @@ public class DeleteBranchCommand extends GitCommand<List<String>> {
 					for (String branchName : branchNames) {
 						if (branchName == null)
 							continue;
-						Ref currentRef = repo.getRef(branchName);
+						Ref currentRef = repo.findRef(branchName);
 						if (currentRef == null)
 							continue;
 
@@ -130,7 +96,7 @@ public class DeleteBranchCommand extends GitCommand<List<String>> {
 			for (String branchName : branchNames) {
 				if (branchName == null)
 					continue;
-				Ref currentRef = repo.getRef(branchName);
+				Ref currentRef = repo.findRef(branchName);
 				if (currentRef == null)
 					continue;
 				String fullName = currentRef.getName();
@@ -180,6 +146,8 @@ public class DeleteBranchCommand extends GitCommand<List<String>> {
 	}
 
 	/**
+	 * Set the names of the branches to delete
+	 *
 	 * @param branchnames
 	 *            the names of the branches to delete; if not set, this will do
 	 *            nothing; invalid branch names will simply be ignored
@@ -188,12 +156,13 @@ public class DeleteBranchCommand extends GitCommand<List<String>> {
 	public DeleteBranchCommand setBranchNames(String... branchnames) {
 		checkCallable();
 		this.branchNames.clear();
-		for (String branch : branchnames)
-			this.branchNames.add(branch);
+		this.branchNames.addAll(Arrays.asList(branchnames));
 		return this;
 	}
 
 	/**
+	 * Set whether to forcefully delete branches
+	 *
 	 * @param force
 	 *            <code>true</code> corresponds to the -D option,
 	 *            <code>false</code> to the -d option (default) <br>

@@ -1,56 +1,29 @@
 /*
- * Copyright (C) 2011, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2011, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.internal.storage.dfs;
 
+import static java.util.stream.Collectors.joining;
+
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.jgit.internal.storage.pack.PackExt;
@@ -59,14 +32,41 @@ import org.eclipse.jgit.lib.ObjectDatabase;
 import org.eclipse.jgit.lib.ObjectInserter;
 import org.eclipse.jgit.lib.ObjectReader;
 
-/** Manages objects stored in {@link DfsPackFile} on a storage system. */
+/**
+ * Manages objects stored in
+ * {@link org.eclipse.jgit.internal.storage.dfs.DfsPackFile} on a storage
+ * system.
+ */
 public abstract class DfsObjDatabase extends ObjectDatabase {
-	private static final PackList NO_PACKS = new PackList(new DfsPackFile[0]);
+	private static final PackList NO_PACKS = new PackList(
+			new DfsPackFile[0],
+			new DfsReftable[0]) {
+		@Override
+		boolean dirty() {
+			return true;
+		}
 
-	/** Sources for a pack file. */
-	public static enum PackSource {
+		@Override
+		void clearDirty() {
+			// Always dirty.
+		}
+
+		@Override
+		public void markDirty() {
+			// Always dirty.
+		}
+	};
+
+	/**
+	 * Sources for a pack file.
+	 * <p>
+	 * <strong>Note:</strong> When sorting packs by source, do not use the default
+	 * comparator based on {@link Enum#compareTo}. Prefer {@link
+	 * #DEFAULT_COMPARATOR} or your own {@link ComparatorBuilder}.
+	 */
+	public enum PackSource {
 		/** The pack is created by ObjectInserter due to local activity. */
-		INSERT(0),
+		INSERT,
 
 		/**
 		 * The pack is created by PackParser due to a network event.
@@ -77,18 +77,7 @@ public abstract class DfsObjDatabase extends ObjectDatabase {
 		 * storage layout preferred by this version. Received packs are likely
 		 * to be either compacted or garbage collected in the future.
 		 */
-		RECEIVE(0),
-
-		/**
-		 * Pack was created by Git garbage collection by this implementation.
-		 * <p>
-		 * This source is only used by the {@link DfsGarbageCollector} when it
-		 * builds a pack file by traversing the object graph and copying all
-		 * reachable objects into a new pack stream.
-		 *
-		 * @see DfsGarbageCollector
-		 */
-		GC(1),
+		RECEIVE,
 
 		/**
 		 * The pack was created by compacting multiple packs together.
@@ -99,7 +88,21 @@ public abstract class DfsObjDatabase extends ObjectDatabase {
 		 *
 		 * @see DfsPackCompactor
 		 */
-		COMPACT(1),
+		COMPACT,
+
+		/**
+		 * Pack was created by Git garbage collection by this implementation.
+		 * <p>
+		 * This source is only used by the {@link DfsGarbageCollector} when it
+		 * builds a pack file by traversing the object graph and copying all
+		 * reachable objects into a new pack stream.
+		 *
+		 * @see DfsGarbageCollector
+		 */
+		GC,
+
+		/** Created from non-heads by {@link DfsGarbageCollector}. */
+		GC_REST,
 
 		/**
 		 * Pack was created by Git garbage collection.
@@ -108,12 +111,85 @@ public abstract class DfsObjDatabase extends ObjectDatabase {
 		 * last GC pass. It is retained in a new pack until it is safe to prune
 		 * these objects from the repository.
 		 */
-		UNREACHABLE_GARBAGE(2);
+		UNREACHABLE_GARBAGE;
 
-		final int category;
+		/**
+		 * Default comparator for sources.
+		 * <p>
+		 * Sorts generally newer, smaller types such as {@code INSERT} and {@code
+		 * RECEIVE} earlier; older, larger types such as {@code GC} later; and
+		 * {@code UNREACHABLE_GARBAGE} at the end.
+		 */
+		public static final Comparator<PackSource> DEFAULT_COMPARATOR =
+				new ComparatorBuilder()
+						.add(INSERT, RECEIVE)
+						.add(COMPACT)
+						.add(GC)
+						.add(GC_REST)
+						.add(UNREACHABLE_GARBAGE)
+						.build();
 
-		PackSource(int category) {
-			this.category = category;
+		/**
+		 * Builder for describing {@link PackSource} ordering where some values are
+		 * explicitly considered equal to others.
+		 */
+		public static class ComparatorBuilder {
+			private final Map<PackSource, Integer> ranks = new HashMap<>();
+			private int counter;
+
+			/**
+			 * Add a collection of sources that should sort as equal.
+			 * <p>
+			 * Sources in the input will sort after sources listed in previous calls
+			 * to this method.
+			 *
+			 * @param sources
+			 *            sources in this equivalence class.
+			 * @return this.
+			 */
+			public ComparatorBuilder add(PackSource... sources) {
+				for (PackSource s : sources) {
+					ranks.put(s, Integer.valueOf(counter));
+				}
+				counter++;
+				return this;
+			}
+
+			/**
+			 * Build the comparator.
+			 *
+			 * @return new comparator instance.
+			 * @throws IllegalArgumentException
+			 *             not all {@link PackSource} instances were explicitly assigned
+			 *             an equivalence class.
+			 */
+			public Comparator<PackSource> build() {
+				return new PackSourceComparator(ranks);
+			}
+		}
+
+		private static class PackSourceComparator implements Comparator<PackSource> {
+			private final Map<PackSource, Integer> ranks;
+
+			private PackSourceComparator(Map<PackSource, Integer> ranks) {
+				if (!ranks.keySet().equals(
+							new HashSet<>(Arrays.asList(PackSource.values())))) {
+					throw new IllegalArgumentException();
+				}
+				this.ranks = new HashMap<>(ranks);
+			}
+
+			@Override
+			public int compare(PackSource a, PackSource b) {
+				return ranks.get(a).compareTo(ranks.get(b));
+			}
+
+			@Override
+			public String toString() {
+				return Arrays.stream(PackSource.values())
+						.map(s -> s + "=" + ranks.get(s)) //$NON-NLS-1$
+						.collect(joining(", ", getClass().getSimpleName() + "{", "}")); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+			}
 		}
 	}
 
@@ -123,32 +199,55 @@ public abstract class DfsObjDatabase extends ObjectDatabase {
 
 	private DfsReaderOptions readerOptions;
 
+	private Comparator<DfsPackDescription> packComparator;
+
 	/**
 	 * Initialize an object database for our repository.
 	 *
 	 * @param repository
 	 *            repository owning this object database.
-	 *
 	 * @param options
 	 *            how readers should access the object database.
 	 */
 	protected DfsObjDatabase(DfsRepository repository,
 			DfsReaderOptions options) {
 		this.repository = repository;
-		this.packList = new AtomicReference<PackList>(NO_PACKS);
+		this.packList = new AtomicReference<>(NO_PACKS);
 		this.readerOptions = options;
+		this.packComparator = DfsPackDescription.objectLookupComparator();
 	}
 
-	/** @return configured reader options, such as read-ahead. */
+	/**
+	 * Get configured reader options, such as read-ahead.
+	 *
+	 * @return configured reader options, such as read-ahead.
+	 */
 	public DfsReaderOptions getReaderOptions() {
 		return readerOptions;
 	}
 
+	/**
+	 * Set the comparator used when searching for objects across packs.
+	 * <p>
+	 * An optimal comparator will find more objects without having to load large
+	 * idx files from storage only to find that they don't contain the object.
+	 * See {@link DfsPackDescription#objectLookupComparator()} for the default
+	 * heuristics.
+	 *
+	 * @param packComparator
+	 *            comparator.
+	 */
+	public void setPackComparator(Comparator<DfsPackDescription> packComparator) {
+		this.packComparator = packComparator;
+	}
+
+	/** {@inheritDoc} */
 	@Override
-	public ObjectReader newReader() {
+	public DfsReader newReader() {
 		return new DfsReader(this);
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public ObjectInserter newInserter() {
 		return new DfsInserter(this);
@@ -159,14 +258,43 @@ public abstract class DfsObjDatabase extends ObjectDatabase {
 	 *
 	 * @return list of available packs. The returned array is shared with the
 	 *         implementation and must not be modified by the caller.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the pack list cannot be initialized.
 	 */
 	public DfsPackFile[] getPacks() throws IOException {
-		return scanPacks(NO_PACKS).packs;
+		return getPackList().packs;
 	}
 
-	/** @return repository owning this object database. */
+	/**
+	 * Scan and list all available reftable files in the repository.
+	 *
+	 * @return list of available reftables. The returned array is shared with
+	 *         the implementation and must not be modified by the caller.
+	 * @throws java.io.IOException
+	 *             the pack list cannot be initialized.
+	 */
+	public DfsReftable[] getReftables() throws IOException {
+		return getPackList().reftables;
+	}
+
+	/**
+	 * Scan and list all available pack files in the repository.
+	 *
+	 * @return list of available packs, with some additional metadata. The
+	 *         returned array is shared with the implementation and must not be
+	 *         modified by the caller.
+	 * @throws java.io.IOException
+	 *             the pack list cannot be initialized.
+	 */
+	public PackList getPackList() throws IOException {
+		return scanPacks(NO_PACKS);
+	}
+
+	/**
+	 * Get repository owning this object database.
+	 *
+	 * @return repository owning this object database.
+	 */
 	protected DfsRepository getRepository() {
 		return repository;
 	}
@@ -178,7 +306,28 @@ public abstract class DfsObjDatabase extends ObjectDatabase {
 	 *         implementation and must not be modified by the caller.
 	 */
 	public DfsPackFile[] getCurrentPacks() {
-		return packList.get().packs;
+		return getCurrentPackList().packs;
+	}
+
+	/**
+	 * List currently known reftable files in the repository, without scanning.
+	 *
+	 * @return list of available reftables. The returned array is shared with
+	 *         the implementation and must not be modified by the caller.
+	 */
+	public DfsReftable[] getCurrentReftables() {
+		return getCurrentPackList().reftables;
+	}
+
+	/**
+	 * List currently known pack files in the repository, without scanning.
+	 *
+	 * @return list of available packs, with some additional metadata. The
+	 *         returned array is shared with the implementation and must not be
+	 *         modified by the caller.
+	 */
+	public PackList getCurrentPackList() {
+		return packList.get();
 	}
 
 	/**
@@ -192,7 +341,7 @@ public abstract class DfsObjDatabase extends ObjectDatabase {
 	 * @param avoidUnreachableObjects
 	 *            if true, ignore objects that are unreachable.
 	 * @return true if the specified object is stored in this database.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the object store cannot be accessed.
 	 */
 	public boolean has(AnyObjectId objectId, boolean avoidUnreachableObjects)
@@ -210,11 +359,38 @@ public abstract class DfsObjDatabase extends ObjectDatabase {
 	 *            where the pack stream is created.
 	 * @return a unique name for the pack file. Must not collide with any other
 	 *         pack file name in the same DFS.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             a new unique pack description cannot be generated.
 	 */
 	protected abstract DfsPackDescription newPack(PackSource source)
 			throws IOException;
+
+	/**
+	 * Generate a new unique name for a pack file.
+	 *
+	 * <p>
+	 * Default implementation of this method would be equivalent to
+	 * {@code newPack(source).setEstimatedPackSize(estimatedPackSize)}. But the
+	 * clients can override this method to use the given
+	 * {@code estomatedPackSize} value more efficiently in the process of
+	 * creating a new
+	 * {@link org.eclipse.jgit.internal.storage.dfs.DfsPackDescription} object.
+	 *
+	 * @param source
+	 *            where the pack stream is created.
+	 * @param estimatedPackSize
+	 *            the estimated size of the pack.
+	 * @return a unique name for the pack file. Must not collide with any other
+	 *         pack file name in the same DFS.
+	 * @throws java.io.IOException
+	 *             a new unique pack description cannot be generated.
+	 */
+	protected DfsPackDescription newPack(PackSource source,
+			long estimatedPackSize) throws IOException {
+		DfsPackDescription pack = newPack(source);
+		pack.setEstimatedPackSize(estimatedPackSize);
+		return pack;
+	}
 
 	/**
 	 * Commit a pack and index pair that was written to the DFS.
@@ -237,7 +413,7 @@ public abstract class DfsObjDatabase extends ObjectDatabase {
 	 *            description of the new packs.
 	 * @param replaces
 	 *            if not null, list of packs to remove.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the packs cannot be committed. On failure a rollback must
 	 *             also be attempted by the caller.
 	 */
@@ -251,12 +427,11 @@ public abstract class DfsObjDatabase extends ObjectDatabase {
 	 * Implementation of pack commit.
 	 *
 	 * @see #commitPack(Collection, Collection)
-	 *
 	 * @param desc
 	 *            description of the new packs.
 	 * @param replaces
 	 *            if not null, list of packs to remove.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the packs cannot be committed.
 	 */
 	protected abstract void commitPackImpl(Collection<DfsPackDescription> desc,
@@ -287,7 +462,7 @@ public abstract class DfsObjDatabase extends ObjectDatabase {
 	 * DfsPackDescription objects.
 	 *
 	 * @return available packs. May be empty if there are no packs.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the packs cannot be listed and the object database is not
 	 *             functional to the caller.
 	 */
@@ -304,9 +479,9 @@ public abstract class DfsObjDatabase extends ObjectDatabase {
 	 * @param ext
 	 *            file extension that will be read i.e "pack" or "idx".
 	 * @return channel to read the file.
-	 * @throws FileNotFoundException
+	 * @throws java.io.FileNotFoundException
 	 *             the file does not exist.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the file cannot be opened.
 	 */
 	protected abstract ReadableChannel openFile(
@@ -323,7 +498,7 @@ public abstract class DfsObjDatabase extends ObjectDatabase {
 	 * @param ext
 	 *            file extension that will be written i.e "pack" or "idx".
 	 * @return channel to write the file.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the file cannot be opened.
 	 */
 	protected abstract DfsOutputStream writeFile(
@@ -345,19 +520,45 @@ public abstract class DfsObjDatabase extends ObjectDatabase {
 				// add, as the pack was already committed via commitPack().
 				// If this is the case return without changing the list.
 				for (DfsPackFile p : o.packs) {
-					if (p == newPack)
+					if (p.key.equals(newPack.key)) {
 						return;
+					}
 				}
 			}
 
 			DfsPackFile[] packs = new DfsPackFile[1 + o.packs.length];
 			packs[0] = newPack;
 			System.arraycopy(o.packs, 0, packs, 1, o.packs.length);
-			n = new PackList(packs);
+			n = new PackListImpl(packs, o.reftables);
 		} while (!packList.compareAndSet(o, n));
 	}
 
-	private PackList scanPacks(final PackList original) throws IOException {
+	void addReftable(DfsPackDescription add, Set<DfsPackDescription> remove)
+			throws IOException {
+		PackList o, n;
+		do {
+			o = packList.get();
+			if (o == NO_PACKS) {
+				o = scanPacks(o);
+				for (DfsReftable t : o.reftables) {
+					if (t.getPackDescription().equals(add)) {
+						return;
+					}
+				}
+			}
+
+			List<DfsReftable> tables = new ArrayList<>(1 + o.reftables.length);
+			for (DfsReftable t : o.reftables) {
+				if (!remove.contains(t.getPackDescription())) {
+					tables.add(t);
+				}
+			}
+			tables.add(new DfsReftable(add));
+			n = new PackListImpl(o.packs, tables.toArray(new DfsReftable[0]));
+		} while (!packList.compareAndSet(o, n));
+	}
+
+	PackList scanPacks(PackList original) throws IOException {
 		PackList o, n;
 		synchronized (packList) {
 			do {
@@ -379,79 +580,149 @@ public abstract class DfsObjDatabase extends ObjectDatabase {
 
 	private PackList scanPacksImpl(PackList old) throws IOException {
 		DfsBlockCache cache = DfsBlockCache.getInstance();
-		Map<DfsPackDescription, DfsPackFile> forReuse = reuseMap(old);
-		List<DfsPackDescription> scanned = listPacks();
-		Collections.sort(scanned);
+		Map<DfsPackDescription, DfsPackFile> packs = packMap(old);
+		Map<DfsPackDescription, DfsReftable> reftables = reftableMap(old);
 
-		List<DfsPackFile> list = new ArrayList<DfsPackFile>(scanned.size());
+		List<DfsPackDescription> scanned = listPacks();
+		Collections.sort(scanned, packComparator);
+
+		List<DfsPackFile> newPacks = new ArrayList<>(scanned.size());
+		List<DfsReftable> newReftables = new ArrayList<>(scanned.size());
 		boolean foundNew = false;
 		for (DfsPackDescription dsc : scanned) {
-			DfsPackFile oldPack = forReuse.remove(dsc);
+			DfsPackFile oldPack = packs.remove(dsc);
 			if (oldPack != null) {
-				list.add(oldPack);
-			} else {
-				list.add(cache.getOrCreate(dsc, null));
+				newPacks.add(oldPack);
+			} else if (dsc.hasFileExt(PackExt.PACK)) {
+				newPacks.add(new DfsPackFile(cache, dsc));
+				foundNew = true;
+			}
+
+			DfsReftable oldReftable = reftables.remove(dsc);
+			if (oldReftable != null) {
+				newReftables.add(oldReftable);
+			} else if (dsc.hasFileExt(PackExt.REFTABLE)) {
+				newReftables.add(new DfsReftable(cache, dsc));
 				foundNew = true;
 			}
 		}
 
-		for (DfsPackFile p : forReuse.values())
-			p.close();
-		if (list.isEmpty())
-			return new PackList(NO_PACKS.packs);
-		if (!foundNew)
+		if (newPacks.isEmpty() && newReftables.isEmpty())
+			return new PackListImpl(NO_PACKS.packs, NO_PACKS.reftables);
+		if (!foundNew) {
+			old.clearDirty();
 			return old;
-		return new PackList(list.toArray(new DfsPackFile[list.size()]));
+		}
+		Collections.sort(newReftables, reftableComparator());
+		return new PackListImpl(
+				newPacks.toArray(new DfsPackFile[0]),
+				newReftables.toArray(new DfsReftable[0]));
 	}
 
-	private static Map<DfsPackDescription, DfsPackFile> reuseMap(PackList old) {
-		Map<DfsPackDescription, DfsPackFile> forReuse
-			= new HashMap<DfsPackDescription, DfsPackFile>();
+	private static Map<DfsPackDescription, DfsPackFile> packMap(PackList old) {
+		Map<DfsPackDescription, DfsPackFile> forReuse = new HashMap<>();
 		for (DfsPackFile p : old.packs) {
-			if (p.invalid()) {
-				// The pack instance is corrupted, and cannot be safely used
-				// again. Do not include it in our reuse map.
-				//
-				p.close();
-				continue;
-			}
-
-			DfsPackFile prior = forReuse.put(p.getPackDescription(), p);
-			if (prior != null) {
-				// This should never occur. It should be impossible for us
-				// to have two pack files with the same name, as all of them
-				// came out of the same directory. If it does, we promised to
-				// close any PackFiles we did not reuse, so close the second,
-				// readers are likely to be actively using the first.
-				//
-				forReuse.put(prior.getPackDescription(), prior);
-				p.close();
+			if (!p.invalid()) {
+				forReuse.put(p.desc, p);
 			}
 		}
 		return forReuse;
 	}
 
-	/** Clears the cached list of packs, forcing them to be scanned again. */
+	private static Map<DfsPackDescription, DfsReftable> reftableMap(PackList old) {
+		Map<DfsPackDescription, DfsReftable> forReuse = new HashMap<>();
+		for (DfsReftable p : old.reftables) {
+			if (!p.invalid()) {
+				forReuse.put(p.desc, p);
+			}
+		}
+		return forReuse;
+	}
+
+	/**
+	 * Get comparator to sort {@link DfsReftable} by priority.
+	 *
+	 * @return comparator to sort {@link DfsReftable} by priority.
+	 */
+	protected Comparator<DfsReftable> reftableComparator() {
+		return Comparator.comparing(
+				DfsReftable::getPackDescription,
+				DfsPackDescription.reftableComparator());
+	}
+
+	/**
+	 * Clears the cached list of packs, forcing them to be scanned again.
+	 */
 	protected void clearCache() {
 		packList.set(NO_PACKS);
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public void close() {
-		// PackList packs = packList.get();
 		packList.set(NO_PACKS);
-
-		// TODO Close packs if they aren't cached.
-		// for (DfsPackFile p : packs.packs)
-		// p.close();
 	}
 
-	private static final class PackList {
+	/** Snapshot of packs scanned in a single pass. */
+	public abstract static class PackList {
 		/** All known packs, sorted. */
-		final DfsPackFile[] packs;
+		public final DfsPackFile[] packs;
 
-		PackList(final DfsPackFile[] packs) {
+		/** All known reftables, sorted. */
+		public final DfsReftable[] reftables;
+
+		private long lastModified = -1;
+
+		PackList(DfsPackFile[] packs, DfsReftable[] reftables) {
 			this.packs = packs;
+			this.reftables = reftables;
+		}
+
+		/** @return last modified time of all packs, in milliseconds. */
+		public long getLastModified() {
+			if (lastModified < 0) {
+				long max = 0;
+				for (DfsPackFile pack : packs) {
+					max = Math.max(max, pack.getPackDescription().getLastModified());
+				}
+				lastModified = max;
+			}
+			return lastModified;
+		}
+
+		abstract boolean dirty();
+		abstract void clearDirty();
+
+		/**
+		 * Mark pack list as dirty.
+		 * <p>
+		 * Used when the caller knows that new data might have been written to the
+		 * repository that could invalidate open readers depending on this pack list,
+		 * for example if refs are newly scanned.
+		 */
+		public abstract void markDirty();
+	}
+
+	private static final class PackListImpl extends PackList {
+		private volatile boolean dirty;
+
+		PackListImpl(DfsPackFile[] packs, DfsReftable[] reftables) {
+			super(packs, reftables);
+		}
+
+		@Override
+		boolean dirty() {
+			return dirty;
+		}
+
+		@Override
+		void clearDirty() {
+			dirty = false;
+		}
+
+		@Override
+		public void markDirty() {
+			dirty = true;
 		}
 	}
 }

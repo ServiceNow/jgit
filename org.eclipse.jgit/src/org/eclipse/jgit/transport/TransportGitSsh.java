@@ -1,47 +1,14 @@
 /*
- * Copyright (C) 2008-2010, Google Inc.
+ * Copyright (C) 2008, 2010 Google Inc.
  * Copyright (C) 2008, Marek Zawirski <marek.zawirski@gmail.com>
  * Copyright (C) 2008, Robin Rosenberg <robin.rosenberg@dewire.com>
- * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, 2020 Shawn O. Pearce <spearce@spearce.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.transport;
@@ -49,13 +16,17 @@ package org.eclipse.jgit.transport;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.security.AccessControlException;
 import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 import org.eclipse.jgit.errors.NoRemoteRepositoryException;
@@ -64,11 +35,11 @@ import org.eclipse.jgit.errors.TransportException;
 import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.Repository;
+import org.eclipse.jgit.util.FS;
 import org.eclipse.jgit.util.QuotedString;
 import org.eclipse.jgit.util.SystemReader;
 import org.eclipse.jgit.util.io.MessageWriter;
 import org.eclipse.jgit.util.io.StreamCopyThread;
-import org.eclipse.jgit.util.FS;
 
 /**
  * Transport through an SSH tunnel.
@@ -82,31 +53,38 @@ import org.eclipse.jgit.util.FS;
  * enumeration, save file modification and hook execution.
  */
 public class TransportGitSsh extends SshTransport implements PackTransport {
+	private static final String EXT = "ext"; //$NON-NLS-1$
+
 	static final TransportProtocol PROTO_SSH = new TransportProtocol() {
 		private final String[] schemeNames = { "ssh", "ssh+git", "git+ssh" }; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 
 		private final Set<String> schemeSet = Collections
-				.unmodifiableSet(new LinkedHashSet<String>(Arrays
+				.unmodifiableSet(new LinkedHashSet<>(Arrays
 						.asList(schemeNames)));
 
+		@Override
 		public String getName() {
 			return JGitText.get().transportProtoSSH;
 		}
 
+		@Override
 		public Set<String> getSchemes() {
 			return schemeSet;
 		}
 
+		@Override
 		public Set<URIishField> getRequiredFields() {
 			return Collections.unmodifiableSet(EnumSet.of(URIishField.HOST,
 					URIishField.PATH));
 		}
 
+		@Override
 		public Set<URIishField> getOptionalFields() {
 			return Collections.unmodifiableSet(EnumSet.of(URIishField.USER,
 					URIishField.PASS, URIishField.PORT));
 		}
 
+		@Override
 		public int getDefaultPort() {
 			return 22;
 		}
@@ -123,6 +101,7 @@ public class TransportGitSsh extends SshTransport implements PackTransport {
 			return super.canHandle(uri, local, remoteName);
 		}
 
+		@Override
 		public Transport open(URIish uri, Repository local, String remoteName)
 				throws NotSupportedException {
 			return new TransportGitSsh(local, uri);
@@ -134,12 +113,12 @@ public class TransportGitSsh extends SshTransport implements PackTransport {
 		}
 	};
 
-	TransportGitSsh(final Repository local, final URIish uri) {
+	TransportGitSsh(Repository local, URIish uri) {
 		super(local, uri);
 		initSshSessionFactory();
 	}
 
-	TransportGitSsh(final URIish uri) {
+	TransportGitSsh(URIish uri) {
 		super(uri);
 		initSshSessionFactory();
 	}
@@ -153,21 +132,35 @@ public class TransportGitSsh extends SshTransport implements PackTransport {
 						throws TransportException {
 					return new ExtSession();
 				}
+
+				@Override
+				public String getType() {
+					return EXT;
+				}
 			});
 		}
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public FetchConnection openFetch() throws TransportException {
 		return new SshFetchConnection();
 	}
 
 	@Override
+	public FetchConnection openFetch(Collection<RefSpec> refSpecs,
+			String... additionalPatterns)
+			throws NotSupportedException, TransportException {
+		return new SshFetchConnection(refSpecs, additionalPatterns);
+	}
+
+	/** {@inheritDoc} */
+	@Override
 	public PushConnection openPush() throws TransportException {
 		return new SshPushConnection();
 	}
 
-	String commandFor(final String exe) {
+	String commandFor(String exe) {
 		String path = uri.getPath();
 		if (uri.getScheme() != null && uri.getPath().startsWith("/~")) //$NON-NLS-1$
 			path = (uri.getPath().substring(1));
@@ -209,38 +202,50 @@ public class TransportGitSsh extends SshTransport implements PackTransport {
 		return new NoRemoteRepositoryException(uri, why);
 	}
 
+	/**
+	 * Added a try/catch to return false if cannot access the environment variable.
+	 * @return ture if environment variable GIT_SSH exists; false otherwise
+	 */
 	private static boolean useExtSession() {
-		return SystemReader.getInstance().getenv("GIT_SSH") != null; //$NON-NLS-1$
+		try {
+			return SystemReader.getInstance().getenv("GIT_SSH") != null; //$NON-NLS-1$
+		} catch (AccessControlException e){
+			return false;
+		}
 	}
 
-	private class ExtSession implements RemoteSession {
+	private class ExtSession implements RemoteSession2 {
+
+		@Override
 		public Process exec(String command, int timeout)
 				throws TransportException {
-			String ssh = SystemReader.getInstance().getenv("GIT_SSH"); //$NON-NLS-1$
-			boolean putty = ssh.toLowerCase().contains("plink"); //$NON-NLS-1$
+			return exec(command, null, timeout);
+		}
 
-			List<String> args = new ArrayList<String>();
+		@Override
+		public Process exec(String command, Map<String, String> environment,
+				int timeout) throws TransportException {
+			String ssh = SystemReader.getInstance().getenv("GIT_SSH"); //$NON-NLS-1$
+			boolean putty = ssh.toLowerCase(Locale.ROOT).contains("plink"); //$NON-NLS-1$
+
+			List<String> args = new ArrayList<>();
 			args.add(ssh);
-			if (putty && !ssh.toLowerCase().contains("tortoiseplink")) //$NON-NLS-1$
+			if (putty && !ssh.toLowerCase(Locale.ROOT)
+					.contains("tortoiseplink")) {//$NON-NLS-1$
 				args.add("-batch"); //$NON-NLS-1$
+			}
 			if (0 < getURI().getPort()) {
 				args.add(putty ? "-P" : "-p"); //$NON-NLS-1$ //$NON-NLS-2$
 				args.add(String.valueOf(getURI().getPort()));
 			}
-			if (getURI().getUser() != null)
+			if (getURI().getUser() != null) {
 				args.add(getURI().getUser() + "@" + getURI().getHost()); //$NON-NLS-1$
-			else
+			} else {
 				args.add(getURI().getHost());
+			}
 			args.add(command);
 
-			ProcessBuilder pb = new ProcessBuilder();
-			pb.command(args);
-
-			File directory = local.getDirectory();
-			if (directory != null)
-				pb.environment().put(Constants.GIT_DIR_KEY,
-						directory.getPath());
-
+			ProcessBuilder pb = createProcess(args, environment);
 			try {
 				return pb.start();
 			} catch (IOException err) {
@@ -248,6 +253,22 @@ public class TransportGitSsh extends SshTransport implements PackTransport {
 			}
 		}
 
+		private ProcessBuilder createProcess(List<String> args,
+				Map<String, String> environment) {
+			ProcessBuilder pb = new ProcessBuilder();
+			pb.command(args);
+			if (environment != null) {
+				pb.environment().putAll(environment);
+			}
+			File directory = local != null ? local.getDirectory() : null;
+			if (directory != null) {
+				pb.environment().put(Constants.GIT_DIR_KEY,
+						directory.getPath());
+			}
+			return pb;
+		}
+
+		@Override
 		public void disconnect() {
 			// Nothing to do
 		}
@@ -259,10 +280,31 @@ public class TransportGitSsh extends SshTransport implements PackTransport {
 		private StreamCopyThread errorThread;
 
 		SshFetchConnection() throws TransportException {
+			this(Collections.emptyList());
+		}
+
+		SshFetchConnection(Collection<RefSpec> refSpecs,
+				String... additionalPatterns) throws TransportException {
 			super(TransportGitSsh.this);
 			try {
-				process = getSession().exec(commandFor(getOptionUploadPack()),
-						getTimeout());
+				RemoteSession session = getSession();
+				TransferConfig.ProtocolVersion gitProtocol = protocol;
+				if (gitProtocol == null) {
+					gitProtocol = TransferConfig.ProtocolVersion.V2;
+				}
+				if (session instanceof RemoteSession2
+						&& TransferConfig.ProtocolVersion.V2
+								.equals(gitProtocol)) {
+					process = ((RemoteSession2) session).exec(
+							commandFor(getOptionUploadPack()), Collections
+									.singletonMap(
+											GitProtocolConstants.PROTOCOL_ENVIRONMENT_VARIABLE,
+											GitProtocolConstants.VERSION_2_REQUEST),
+							getTimeout());
+				} else {
+					process = session.exec(commandFor(getOptionUploadPack()),
+							getTimeout());
+				}
 				final MessageWriter msg = new MessageWriter();
 				setMessageWriter(msg);
 
@@ -275,14 +317,16 @@ public class TransportGitSsh extends SshTransport implements PackTransport {
 			} catch (TransportException err) {
 				close();
 				throw err;
-			} catch (IOException err) {
+			} catch (Throwable err) {
 				close();
 				throw new TransportException(uri,
 						JGitText.get().remoteHungUpUnexpectedly, err);
 			}
 
 			try {
-				readAdvertisedRefs();
+				if (!readAdvertisedRefs()) {
+					lsRefs(refSpecs, additionalPatterns);
+				}
 			} catch (NoRemoteRepositoryException notFound) {
 				final String msgs = getMessages();
 				checkExecFailure(process.exitValue(), getOptionUploadPack(),
@@ -295,6 +339,9 @@ public class TransportGitSsh extends SshTransport implements PackTransport {
 		public void close() {
 			endOut();
 
+			if (process != null) {
+				process.destroy();
+			}
 			if (errorThread != null) {
 				try {
 					errorThread.halt();
@@ -306,8 +353,6 @@ public class TransportGitSsh extends SshTransport implements PackTransport {
 			}
 
 			super.close();
-			if (process != null)
-				process.destroy();
 		}
 	}
 
@@ -331,10 +376,18 @@ public class TransportGitSsh extends SshTransport implements PackTransport {
 				init(process.getInputStream(), process.getOutputStream());
 
 			} catch (TransportException err) {
-				close();
+				try {
+					close();
+				} catch (Exception e) {
+					// ignore
+				}
 				throw err;
-			} catch (IOException err) {
-				close();
+			} catch (Throwable err) {
+				try {
+					close();
+				} catch (Exception e) {
+					// ignore
+				}
 				throw new TransportException(uri,
 						JGitText.get().remoteHungUpUnexpectedly, err);
 			}
@@ -353,6 +406,9 @@ public class TransportGitSsh extends SshTransport implements PackTransport {
 		public void close() {
 			endOut();
 
+			if (process != null) {
+				process.destroy();
+			}
 			if (errorThread != null) {
 				try {
 					errorThread.halt();
@@ -364,8 +420,6 @@ public class TransportGitSsh extends SshTransport implements PackTransport {
 			}
 
 			super.close();
-			if (process != null)
-				process.destroy();
 		}
 	}
 }

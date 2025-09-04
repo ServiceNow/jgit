@@ -1,45 +1,12 @@
 /*
  * Copyright (C) 2010, Stefan Lay <stefan.lay@sap.com>
- * Copyright (C) 2010-2012, Christian Halstrick <christian.halstrick@sap.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010-2012, Christian Halstrick <christian.halstrick@sap.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 package org.eclipse.jgit.api;
 
@@ -53,11 +20,10 @@ import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.merge.MergeChunk;
 import org.eclipse.jgit.merge.MergeChunk.ConflictState;
 import org.eclipse.jgit.merge.MergeStrategy;
-import org.eclipse.jgit.merge.ResolveMerger;
 import org.eclipse.jgit.merge.ResolveMerger.MergeFailureReason;
 
 /**
- * Encapsulates the result of a {@link MergeCommand}.
+ * Encapsulates the result of a {@link org.eclipse.jgit.api.MergeCommand}.
  */
 public class MergeResult {
 
@@ -185,6 +151,7 @@ public class MergeResult {
 		 * @since 3.0
 		 **/
 		MERGED_NOT_COMMITTED {
+			@Override
 			public String toString() {
 				return "Merged-not-committed"; //$NON-NLS-1$
 			}
@@ -212,6 +179,7 @@ public class MergeResult {
 		 * files (i.e. local modifications prevent checkout of files).
 		 */
 		CHECKOUT_CONFLICT {
+			@Override
 			public String toString() {
 				return "Checkout Conflict"; //$NON-NLS-1$
 			}
@@ -247,6 +215,8 @@ public class MergeResult {
 	private List<String> checkoutConflicts;
 
 	/**
+	 * Constructor for MergeResult.
+	 *
 	 * @param newHead
 	 *            the object the head points at after the merge
 	 * @param base
@@ -258,10 +228,10 @@ public class MergeResult {
 	 * @param mergeStatus
 	 *            the status the merge resulted in
 	 * @param mergeStrategy
-	 *            the used {@link MergeStrategy}
+	 *            the used {@link org.eclipse.jgit.merge.MergeStrategy}
 	 * @param lowLevelResults
 	 *            merge results as returned by
-	 *            {@link ResolveMerger#getMergeResults()}
+	 *            {@link org.eclipse.jgit.merge.ResolveMerger#getMergeResults()}
 	 * @since 2.0
 	 */
 	public MergeResult(ObjectId newHead, ObjectId base,
@@ -273,6 +243,8 @@ public class MergeResult {
 	}
 
 	/**
+	 * Constructor for MergeResult.
+	 *
 	 * @param newHead
 	 *            the object the head points at after the merge
 	 * @param base
@@ -284,9 +256,10 @@ public class MergeResult {
 	 * @param mergeStatus
 	 *            the status the merge resulted in
 	 * @param mergeStrategy
-	 *            the used {@link MergeStrategy}
+	 *            the used {@link org.eclipse.jgit.merge.MergeStrategy}
 	 * @param lowLevelResults
-	 *            merge results as returned by {@link ResolveMerger#getMergeResults()}
+	 *            merge results as returned by
+	 *            {@link org.eclipse.jgit.merge.ResolveMerger#getMergeResults()}
 	 * @param description
 	 *            a user friendly description of the merge result
 	 */
@@ -300,6 +273,8 @@ public class MergeResult {
 	}
 
 	/**
+	 * Constructor for MergeResult.
+	 *
 	 * @param newHead
 	 *            the object the head points at after the merge
 	 * @param base
@@ -311,13 +286,13 @@ public class MergeResult {
 	 * @param mergeStatus
 	 *            the status the merge resulted in
 	 * @param mergeStrategy
-	 *            the used {@link MergeStrategy}
+	 *            the used {@link org.eclipse.jgit.merge.MergeStrategy}
 	 * @param lowLevelResults
 	 *            merge results as returned by
-	 *            {@link ResolveMerger#getMergeResults()}
+	 *            {@link org.eclipse.jgit.merge.ResolveMerger#getMergeResults()}
 	 * @param failingPaths
 	 *            list of paths causing this merge to fail as returned by
-	 *            {@link ResolveMerger#getFailingPaths()}
+	 *            {@link org.eclipse.jgit.merge.ResolveMerger#getFailingPaths()}
 	 * @param description
 	 *            a user friendly description of the merge result
 	 */
@@ -352,6 +327,8 @@ public class MergeResult {
 	}
 
 	/**
+	 * Get the object the head points at after the merge
+	 *
 	 * @return the object the head points at after the merge
 	 */
 	public ObjectId getNewHead() {
@@ -359,6 +336,8 @@ public class MergeResult {
 	}
 
 	/**
+	 * Get the merge status
+	 *
 	 * @return the status the merge resulted in
 	 */
 	public MergeStatus getMergeStatus() {
@@ -366,6 +345,8 @@ public class MergeResult {
 	}
 
 	/**
+	 * Get the commits which have been merged
+	 *
 	 * @return all the commits which have been merged together
 	 */
 	public ObjectId[] getMergedCommits() {
@@ -373,6 +354,8 @@ public class MergeResult {
 	}
 
 	/**
+	 * Get the common base
+	 *
 	 * @return base the common base which was used to produce a content-merge.
 	 *         May be <code>null</code> if the merge-result was produced without
 	 *         computing a common base
@@ -381,6 +364,7 @@ public class MergeResult {
 		return base;
 	}
 
+	/** {@inheritDoc} */
 	@SuppressWarnings("nls")
 	@Override
 	public String toString() {
@@ -400,6 +384,8 @@ public class MergeResult {
 	}
 
 	/**
+	 * Set conflicts
+	 *
 	 * @param conflicts
 	 *            the conflicts to set
 	 */
@@ -408,25 +394,32 @@ public class MergeResult {
 	}
 
 	/**
+	 * Add a conflict
+	 *
 	 * @param path
+	 *            path of the file to add a conflict for
 	 * @param conflictingRanges
 	 *            the conflicts to set
 	 */
 	public void addConflict(String path, int[][] conflictingRanges) {
 		if (conflicts == null)
-			conflicts = new HashMap<String, int[][]>();
+			conflicts = new HashMap<>();
 		conflicts.put(path, conflictingRanges);
 	}
 
 	/**
+	 * Add a conflict
+	 *
 	 * @param path
+	 *            path of the file to add a conflict for
 	 * @param lowLevelResult
+	 *            a {@link org.eclipse.jgit.merge.MergeResult}
 	 */
 	public void addConflict(String path, org.eclipse.jgit.merge.MergeResult<?> lowLevelResult) {
 		if (!lowLevelResult.containsConflicts())
 			return;
 		if (conflicts == null)
-			conflicts = new HashMap<String, int[][]>();
+			conflicts = new HashMap<>();
 		int nrOfConflicts = 0;
 		// just counting
 		for (MergeChunk mergeChunk : lowLevelResult) {
@@ -460,9 +453,10 @@ public class MergeResult {
 
 	/**
 	 * Returns information about the conflicts which occurred during a
-	 * {@link MergeCommand}. The returned value maps the path of a conflicting
-	 * file to a two-dimensional int-array of line-numbers telling where in the
-	 * file conflict markers for which merged commit can be found.
+	 * {@link org.eclipse.jgit.api.MergeCommand}. The returned value maps the
+	 * path of a conflicting file to a two-dimensional int-array of line-numbers
+	 * telling where in the file conflict markers for which merged commit can be
+	 * found.
 	 * <p>
 	 * If the returned value contains a mapping "path"-&gt;[x][y]=z then this
 	 * means
@@ -503,7 +497,7 @@ public class MergeResult {
 
 	/**
 	 * Returns a list of paths causing this merge to fail as returned by
-	 * {@link ResolveMerger#getFailingPaths()}
+	 * {@link org.eclipse.jgit.merge.ResolveMerger#getFailingPaths()}
 	 *
 	 * @return the list of paths causing this merge to fail or <code>null</code>
 	 *         if no failure occurred

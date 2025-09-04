@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2008, Marek Zawirski <marek.zawirski@gmail.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, Marek Zawirski <marek.zawirski@gmail.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.internal.storage.file;
@@ -58,7 +25,7 @@ import org.eclipse.jgit.lib.ObjectId;
  * </p>
  *
  * @see PackIndex
- * @see PackFile
+ * @see Pack
  */
 public class PackReverseIndex {
 	/** Index we were created from, and that has our ObjectId data. */
@@ -88,7 +55,7 @@ public class PackReverseIndex {
 	 * @param packIndex
 	 *            forward index - entries to (reverse) index.
 	 */
-	public PackReverseIndex(final PackIndex packIndex) {
+	public PackReverseIndex(PackIndex packIndex) {
 		index = packIndex;
 
 		final long cnt = index.getObjectCount();
@@ -107,7 +74,7 @@ public class PackReverseIndex {
 
 		long maxOffset = 0;
 		int ith = 0;
-		for (final MutableEntry me : index) {
+		for (MutableEntry me : index) {
 			final long o = me.getOffset();
 			offsetsBySha1[ith++] = o;
 			if (o > maxOffset)
@@ -155,7 +122,7 @@ public class PackReverseIndex {
 	 *            start offset of object to find.
 	 * @return object id for this offset, or null if no object was found.
 	 */
-	public ObjectId findObject(final long offset) {
+	public ObjectId findObject(long offset) {
 		final int ith = binarySearch(offset);
 		if (ith < 0)
 			return null;
@@ -174,10 +141,10 @@ public class PackReverseIndex {
 	 *            offset).
 	 * @return offset of the next object in a pack or maxOffset if provided
 	 *         offset was the last one.
-	 * @throws CorruptObjectException
+	 * @throws org.eclipse.jgit.errors.CorruptObjectException
 	 *             when there is no object with the provided offset.
 	 */
-	public long findNextOffset(final long offset, final long maxOffset)
+	public long findNextOffset(long offset, long maxOffset)
 			throws CorruptObjectException {
 		final int ith = binarySearch(offset);
 		if (ith < 0)
@@ -191,11 +158,11 @@ public class PackReverseIndex {
 		return index.getOffset(nth[ith + 1]);
 	}
 
-	int findPostion(long offset) {
+	int findPosition(long offset) {
 		return binarySearch(offset);
 	}
 
-	private int binarySearch(final long offset) {
+	private int binarySearch(long offset) {
 		int bucket = (int) (offset / bucketSize);
 		int low = bucket == 0 ? 0 : offsetIndex[bucket - 1];
 		int high = offsetIndex[bucket];

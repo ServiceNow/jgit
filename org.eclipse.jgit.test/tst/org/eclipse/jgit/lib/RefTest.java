@@ -1,50 +1,18 @@
 /*
  * Copyright (C) 2009-2010, Google Inc.
  * Copyright (C) 2009, Robin Rosenberg
- * Copyright (C) 2009, Robin Rosenberg <robin.rosenberg@dewire.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2009, Robin Rosenberg <robin.rosenberg@dewire.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.lib;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.eclipse.jgit.junit.Assert.assertEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -57,7 +25,11 @@ import static org.junit.Assert.fail;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.util.Map;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import java.util.TreeSet;
 
 import org.eclipse.jgit.lib.Ref.Storage;
@@ -99,7 +71,7 @@ public class RefTest extends SampleDataRepositoryTestCase {
 				"ab/c", "dummy", true);
 		config.save();
 		assertEquals("[ab/c, origin]",
-				new TreeSet<String>(db.getRemoteNames()).toString());
+				new TreeSet<>(db.getRemoteNames()).toString());
 
 		// one-level deep remote branch
 		assertEquals("master",
@@ -147,17 +119,22 @@ public class RefTest extends SampleDataRepositoryTestCase {
 		ObjectId r = db.resolve("refs/remotes/origin/HEAD");
 		assertEquals(masterId, r);
 
-		Map<String, Ref> allRefs = db.getAllRefs();
-		Ref refHEAD = allRefs.get("refs/remotes/origin/HEAD");
-		assertNotNull(refHEAD);
-		assertEquals(masterId, refHEAD.getObjectId());
-		assertFalse(refHEAD.isPeeled());
-		assertNull(refHEAD.getPeeledObjectId());
+		List<Ref> allRefs = db.getRefDatabase().getRefs();
+		Optional<Ref> refHEAD = allRefs.stream()
+				.filter(ref -> ref.getName().equals("refs/remotes/origin/HEAD"))
+				.findAny();
+		assertTrue(refHEAD.isPresent());
+		assertEquals(masterId, refHEAD.get().getObjectId());
+		assertFalse(refHEAD.get().isPeeled());
+		assertNull(refHEAD.get().getPeeledObjectId());
 
-		Ref refmaster = allRefs.get("refs/remotes/origin/master");
-		assertEquals(masterId, refmaster.getObjectId());
-		assertFalse(refmaster.isPeeled());
-		assertNull(refmaster.getPeeledObjectId());
+		Optional<Ref> refmaster = allRefs.stream().filter(
+				ref -> ref.getName().equals("refs/remotes/origin/master"))
+				.findAny();
+		assertTrue(refmaster.isPresent());
+		assertEquals(masterId, refmaster.get().getObjectId());
+		assertFalse(refmaster.get().isPeeled());
+		assertNull(refmaster.get().getPeeledObjectId());
 	}
 
 	@Test
@@ -253,11 +230,11 @@ public class RefTest extends SampleDataRepositoryTestCase {
 			InterruptedException {
 		Ref ref = db.exactRef("refs/heads/master");
 		assertEquals(Storage.PACKED, ref.getStorage());
-		FileOutputStream os = new FileOutputStream(new File(db.getDirectory(),
-				"refs/heads/master"));
-		os.write(ref.getObjectId().name().getBytes());
-		os.write('\n');
-		os.close();
+		try (FileOutputStream os = new FileOutputStream(
+				new File(db.getDirectory(), "refs/heads/master"))) {
+			os.write(ref.getObjectId().name().getBytes(UTF_8));
+			os.write('\n');
+		}
 
 		ref = db.exactRef("refs/heads/master");
 		assertEquals(Storage.LOOSE, ref.getStorage());
@@ -304,5 +281,111 @@ public class RefTest extends SampleDataRepositoryTestCase {
 		assertSame(dst.getObjectId(), ref.getObjectId());
 		assertSame(dst.getPeeledObjectId(), ref.getPeeledObjectId());
 		assertEquals(dst.isPeeled(), ref.isPeeled());
+	}
+
+	private static void checkContainsRef(Collection<Ref> haystack, Ref needle) {
+		for (Ref ref : haystack) {
+			if (ref.getName().equals(needle.getName()) &&
+					ref.getObjectId().equals(needle.getObjectId())) {
+				return;
+			}
+		}
+		fail("list " + haystack + " does not contain ref " + needle);
+	}
+
+	@Test
+	public void testGetRefsByPrefix() throws IOException {
+		List<Ref> refs = db.getRefDatabase().getRefsByPrefix("refs/heads/g");
+		assertEquals(2, refs.size());
+		checkContainsRef(refs, db.exactRef("refs/heads/g"));
+		checkContainsRef(refs, db.exactRef("refs/heads/gitlink"));
+
+		refs = db.getRefDatabase().getRefsByPrefix("refs/heads/prefix/");
+		assertEquals(1, refs.size());
+		checkContainsRef(refs, db.exactRef("refs/heads/prefix/a"));
+	}
+
+	@Test
+	public void testGetRefsByPrefixes() throws IOException {
+		List<Ref> refs = db.getRefDatabase().getRefsByPrefix();
+		assertEquals(0, refs.size());
+
+		refs = db.getRefDatabase().getRefsByPrefix("refs/heads/p",
+				"refs/tags/A");
+		assertEquals(3, refs.size());
+		checkContainsRef(refs, db.exactRef("refs/heads/pa"));
+		checkContainsRef(refs, db.exactRef("refs/heads/prefix/a"));
+		checkContainsRef(refs, db.exactRef("refs/tags/A"));
+	}
+
+	@Test
+	public void testGetRefsExcludingPrefix() throws IOException {
+		Set<String> exclude = new HashSet<>();
+		exclude.add("refs/tags");
+		// HEAD + 12 refs/heads are present here.
+		List<Ref> refs =
+				db.getRefDatabase().getRefsByPrefixWithExclusions(RefDatabase.ALL, exclude);
+		assertEquals(13, refs.size());
+		checkContainsRef(refs, db.exactRef("HEAD"));
+		checkContainsRef(refs, db.exactRef("refs/heads/a"));
+		for (Ref notInResult : db.getRefDatabase().getRefsByPrefix("refs/tags")) {
+			assertFalse(refs.contains(notInResult));
+		}
+	}
+
+	@Test
+	public void testGetRefsExcludingPrefixes() throws IOException {
+		Set<String> exclude = new HashSet<>();
+		exclude.add("refs/tags/");
+		exclude.add("refs/heads/");
+		List<Ref> refs = db.getRefDatabase().getRefsByPrefixWithExclusions(RefDatabase.ALL, exclude);
+		assertEquals(1, refs.size());
+		checkContainsRef(refs, db.exactRef("HEAD"));
+	}
+
+	@Test
+	public void testGetRefsExcludingNonExistingPrefixes() throws IOException {
+		Set<String> prefixes = new HashSet<>();
+		prefixes.add("refs/tags/");
+		prefixes.add("refs/heads/");
+		prefixes.add("refs/nonexistent/");
+		List<Ref> refs = db.getRefDatabase().getRefsByPrefixWithExclusions(RefDatabase.ALL, prefixes);
+		assertEquals(1, refs.size());
+		checkContainsRef(refs, db.exactRef("HEAD"));
+	}
+
+	@Test
+	public void testGetRefsWithPrefixExcludingPrefixes() throws IOException {
+		Set<String> exclude = new HashSet<>();
+		exclude.add("refs/heads/pa");
+		String include = "refs/heads/p";
+		List<Ref> refs = db.getRefDatabase().getRefsByPrefixWithExclusions(include, exclude);
+		assertEquals(1, refs.size());
+		checkContainsRef(refs, db.exactRef("refs/heads/prefix/a"));
+	}
+
+	@Test
+	public void testGetRefsWithPrefixExcludingOverlappingPrefixes() throws IOException {
+		Set<String> exclude = new HashSet<>();
+		exclude.add("refs/heads/pa");
+		exclude.add("refs/heads/");
+		exclude.add("refs/heads/p");
+		exclude.add("refs/tags/");
+		List<Ref> refs = db.getRefDatabase().getRefsByPrefixWithExclusions(RefDatabase.ALL, exclude);
+		assertEquals(1, refs.size());
+		checkContainsRef(refs, db.exactRef("HEAD"));
+	}
+
+	@Test
+	public void testResolveTipSha1() throws IOException {
+		ObjectId masterId = db.resolve("refs/heads/master");
+		Set<Ref> resolved = db.getRefDatabase().getTipsWithSha1(masterId);
+
+		assertEquals(2, resolved.size());
+		checkContainsRef(resolved, db.exactRef("refs/heads/master"));
+		checkContainsRef(resolved, db.exactRef("HEAD"));
+
+		assertEquals(db.getRefDatabase()
+				.getTipsWithSha1(ObjectId.zeroId()).size(), 0);
 	}
 }

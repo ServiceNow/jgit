@@ -1,56 +1,35 @@
 /*
- * Copyright (C) 2009, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2009, 2023 Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.dircache;
 
+import static java.time.Instant.EPOCH;
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.security.MessageDigest;
+import java.time.Instant;
+import java.util.concurrent.TimeUnit;
+
+import org.eclipse.jgit.dircache.DirCache.DirCacheVersion;
+import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.FileMode;
 import org.eclipse.jgit.lib.ObjectId;
+import org.eclipse.jgit.util.MutableInteger;
 import org.junit.Test;
 
 public class DirCacheEntryTest {
@@ -67,8 +46,19 @@ public class DirCacheEntryTest {
 		assertFalse(isValidPath("a/"));
 		assertFalse(isValidPath("ab/cd/ef/"));
 		assertFalse(isValidPath("a\u0000b"));
+		assertFalse(isValidPath(".git"));
+		assertFalse(isValidPath(".GIT"));
+		assertFalse(isValidPath(".Git"));
+		assertFalse(isValidPath(".git/b"));
+		assertFalse(isValidPath(".GIT/b"));
+		assertFalse(isValidPath(".Git/b"));
+		assertFalse(isValidPath("x/y/.git/z/b"));
+		assertFalse(isValidPath("x/y/.GIT/z/b"));
+		assertFalse(isValidPath("x/y/.Git/z/b"));
+		assertTrue(isValidPath("git/b"));
 	}
 
+	@SuppressWarnings("unused")
 	private static boolean isValidPath(String path) {
 		try {
 			new DirCacheEntry(path);
@@ -78,6 +68,96 @@ public class DirCacheEntryTest {
 		}
 	}
 
+	private static void checkPath(DirCacheVersion indexVersion,
+			DirCacheEntry previous, String name) throws IOException {
+		DirCacheEntry dce = new DirCacheEntry(name);
+		long now = System.currentTimeMillis();
+		long anHourAgo = now - TimeUnit.HOURS.toMillis(1);
+		dce.setLastModified(Instant.ofEpochMilli(anHourAgo));
+		ByteArrayOutputStream out = new ByteArrayOutputStream();
+		dce.write(out, indexVersion, previous);
+		byte[] raw = out.toByteArray();
+		MessageDigest md0 = Constants.newMessageDigest();
+		md0.update(raw);
+		ByteArrayInputStream in = new ByteArrayInputStream(raw);
+		MutableInteger infoAt = new MutableInteger();
+		byte[] sharedInfo = new byte[raw.length];
+		MessageDigest md = Constants.newMessageDigest();
+		DirCacheEntry read = new DirCacheEntry(sharedInfo, infoAt, in, md,
+				Instant.ofEpochMilli(now), indexVersion, previous);
+		assertEquals("Paths of length " + name.length() + " should match", name,
+				read.getPathString());
+		assertEquals("Should have been fully read", -1, in.read());
+		assertArrayEquals("Digests should match", md0.digest(),
+				md.digest());
+	}
+
+	@Test
+	public void testLongPath() throws Exception {
+		StringBuilder name = new StringBuilder(4094 + 16);
+		for (int i = 0; i < 4094; i++) {
+			name.append('a');
+		}
+		for (int j = 0; j < 16; j++) {
+			checkPath(DirCacheVersion.DIRC_VERSION_EXTENDED, null,
+					name.toString());
+			name.append('b');
+		}
+	}
+
+	@Test
+	public void testLongPathV4() throws Exception {
+		StringBuilder name = new StringBuilder(4094 + 16);
+		for (int i = 0; i < 4094; i++) {
+			name.append('a');
+		}
+		DirCacheEntry previous = new DirCacheEntry(name.toString());
+		for (int j = 0; j < 16; j++) {
+			checkPath(DirCacheVersion.DIRC_VERSION_PATHCOMPRESS, previous,
+					name.toString());
+			name.append('b');
+		}
+	}
+
+	@Test
+	public void testShortPath() throws Exception {
+		StringBuilder name = new StringBuilder(1 + 16);
+		name.append('a');
+		for (int j = 0; j < 16; j++) {
+			checkPath(DirCacheVersion.DIRC_VERSION_EXTENDED, null,
+					name.toString());
+			name.append('b');
+		}
+	}
+
+	@Test
+	public void testShortPathV4() throws Exception {
+		StringBuilder name = new StringBuilder(1 + 16);
+		name.append('a');
+		DirCacheEntry previous = new DirCacheEntry(name.toString());
+		for (int j = 0; j < 16; j++) {
+			checkPath(DirCacheVersion.DIRC_VERSION_PATHCOMPRESS, previous,
+					name.toString());
+			name.append('b');
+		}
+	}
+
+	@Test
+	public void testPathV4() throws Exception {
+		StringBuilder name = new StringBuilder();
+		for (int i = 0; i < 20; i++) {
+			name.append('a');
+		}
+		DirCacheEntry previous = new DirCacheEntry(name.toString());
+		for (int j = 0; j < 20; j++) {
+			name.setLength(name.length() - 1);
+			String newName = name.toString() + "bbb";
+			checkPath(DirCacheVersion.DIRC_VERSION_PATHCOMPRESS, previous,
+					newName);
+		}
+	}
+
+	@SuppressWarnings("unused")
 	@Test
 	public void testCreate_ByStringPath() {
 		assertEquals("a", new DirCacheEntry("a").getPathString());
@@ -91,6 +171,7 @@ public class DirCacheEntryTest {
 		}
 	}
 
+	@SuppressWarnings("unused")
 	@Test
 	public void testCreate_ByStringPathAndStage() {
 		DirCacheEntry e;
@@ -171,6 +252,46 @@ public class DirCacheEntryTest {
 	}
 
 	@Test
+	public void testSetStage() {
+		DirCacheEntry e = new DirCacheEntry("some/path", DirCacheEntry.STAGE_1);
+		e.setAssumeValid(true);
+		e.setCreationTime(2L);
+		e.setFileMode(FileMode.EXECUTABLE_FILE);
+		e.setLastModified(EPOCH.plusMillis(3L));
+		e.setLength(100L);
+		e.setObjectId(ObjectId
+				.fromString("0123456789012345678901234567890123456789"));
+		e.setUpdateNeeded(true);
+		e.setStage(DirCacheEntry.STAGE_2);
+
+		assertTrue(e.isAssumeValid());
+		assertEquals(2L, e.getCreationTime());
+		assertEquals(
+				ObjectId.fromString("0123456789012345678901234567890123456789"),
+				e.getObjectId());
+		assertEquals(FileMode.EXECUTABLE_FILE, e.getFileMode());
+		assertEquals(EPOCH.plusMillis(3L), e.getLastModifiedInstant());
+		assertEquals(100L, e.getLength());
+		assertEquals(DirCacheEntry.STAGE_2, e.getStage());
+		assertTrue(e.isUpdateNeeded());
+		assertEquals("some/path", e.getPathString());
+
+		e.setStage(DirCacheEntry.STAGE_0);
+
+		assertTrue(e.isAssumeValid());
+		assertEquals(2L, e.getCreationTime());
+		assertEquals(
+				ObjectId.fromString("0123456789012345678901234567890123456789"),
+				e.getObjectId());
+		assertEquals(FileMode.EXECUTABLE_FILE, e.getFileMode());
+		assertEquals(EPOCH.plusMillis(3L), e.getLastModifiedInstant());
+		assertEquals(100L, e.getLength());
+		assertEquals(DirCacheEntry.STAGE_0, e.getStage());
+		assertTrue(e.isUpdateNeeded());
+		assertEquals("some/path", e.getPathString());
+	}
+
+	@Test
 	public void testCopyMetaDataWithStage() {
 		copyMetaDataHelper(false);
 	}
@@ -180,12 +301,12 @@ public class DirCacheEntryTest {
 		copyMetaDataHelper(true);
 	}
 
-	private static void copyMetaDataHelper(final boolean keepStage) {
+	private static void copyMetaDataHelper(boolean keepStage) {
 		DirCacheEntry e = new DirCacheEntry("some/path", DirCacheEntry.STAGE_2);
 		e.setAssumeValid(false);
 		e.setCreationTime(2L);
 		e.setFileMode(FileMode.EXECUTABLE_FILE);
-		e.setLastModified(3L);
+		e.setLastModified(EPOCH.plusMillis(3L));
 		e.setLength(100L);
 		e.setObjectId(ObjectId
 				.fromString("0123456789012345678901234567890123456789"));
@@ -196,7 +317,7 @@ public class DirCacheEntryTest {
 		f.setAssumeValid(true);
 		f.setCreationTime(10L);
 		f.setFileMode(FileMode.SYMLINK);
-		f.setLastModified(20L);
+		f.setLastModified(EPOCH.plusMillis(20L));
 		f.setLength(100000000L);
 		f.setObjectId(ObjectId
 				.fromString("1234567890123456789012345678901234567890"));
@@ -209,7 +330,7 @@ public class DirCacheEntryTest {
 				ObjectId.fromString("1234567890123456789012345678901234567890"),
 				e.getObjectId());
 		assertEquals(FileMode.SYMLINK, e.getFileMode());
-		assertEquals(20L, e.getLastModified());
+		assertEquals(EPOCH.plusMillis(20L), e.getLastModifiedInstant());
 		assertEquals(100000000L, e.getLength());
 		if (keepStage)
 			assertEquals(DirCacheEntry.STAGE_2, e.getStage());

@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2010, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, 2017 Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.http.test;
@@ -55,25 +22,20 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.IOException;
-import java.util.Arrays;
-import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-
-import javax.servlet.http.HttpServletRequest;
 
 import org.eclipse.jetty.servlet.ServletContextHandler;
 import org.eclipse.jetty.servlet.ServletHolder;
 import org.eclipse.jgit.errors.NotSupportedException;
-import org.eclipse.jgit.errors.RepositoryNotFoundException;
 import org.eclipse.jgit.http.server.GitServlet;
 import org.eclipse.jgit.junit.TestRepository;
 import org.eclipse.jgit.junit.http.AccessEvent;
-import org.eclipse.jgit.junit.http.HttpTestCase;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.NullProgressMonitor;
 import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.lib.Repository;
+import org.eclipse.jgit.lib.StoredConfig;
 import org.eclipse.jgit.revwalk.RevBlob;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.transport.FetchConnection;
@@ -81,19 +43,10 @@ import org.eclipse.jgit.transport.HttpTransport;
 import org.eclipse.jgit.transport.Transport;
 import org.eclipse.jgit.transport.TransportHttp;
 import org.eclipse.jgit.transport.URIish;
-import org.eclipse.jgit.transport.http.HttpConnectionFactory;
-import org.eclipse.jgit.transport.http.JDKHttpConnectionFactory;
-import org.eclipse.jgit.transport.http.apache.HttpClientConnectionFactory;
-import org.eclipse.jgit.transport.resolver.RepositoryResolver;
-import org.eclipse.jgit.transport.resolver.ServiceNotEnabledException;
 import org.junit.Before;
 import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
-import org.junit.runners.Parameterized.Parameters;
 
-@RunWith(Parameterized.class)
-public class DumbClientSmartServerTest extends HttpTestCase {
+public class DumbClientSmartServerTest extends AllProtocolsHttpTestCase {
 	private Repository remoteRepository;
 
 	private URIish remoteURI;
@@ -102,18 +55,11 @@ public class DumbClientSmartServerTest extends HttpTestCase {
 
 	private RevCommit A, B;
 
-	@Parameters
-	public static Collection<Object[]> data() {
-		// run all tests with both connection factories we have
-		return Arrays.asList(new Object[][] {
-				{ new JDKHttpConnectionFactory() },
-				{ new HttpClientConnectionFactory() } });
+	public DumbClientSmartServerTest(TestParameters params) {
+		super(params);
 	}
 
-	public DumbClientSmartServerTest(HttpConnectionFactory cf) {
-		HttpTransport.setConnectionFactory(cf);
-	}
-
+	@Override
 	@Before
 	public void setUp() throws Exception {
 		super.setUp();
@@ -123,24 +69,16 @@ public class DumbClientSmartServerTest extends HttpTestCase {
 
 		ServletContextHandler app = server.addContext("/git");
 		GitServlet gs = new GitServlet();
-		gs.setRepositoryResolver(new RepositoryResolver<HttpServletRequest>() {
-			public Repository open(HttpServletRequest req, String name)
-					throws RepositoryNotFoundException,
-					ServiceNotEnabledException {
-				if (!name.equals(srcName))
-					throw new RepositoryNotFoundException(name);
-
-				final Repository db = src.getRepository();
-				db.incrementOpen();
-				return db;
-			}
-		});
+		gs.setRepositoryResolver(new TestRepositoryResolver(src, srcName));
 		app.addServlet(new ServletHolder(gs), "/*");
 
 		server.setUp();
 
 		remoteRepository = src.getRepository();
 		remoteURI = toURIish(app, srcName);
+		StoredConfig cfg = remoteRepository.getConfig();
+		cfg.setInt("protocol", null, "version", enableProtocolV2 ? 2 : 0);
+		cfg.save();
 
 		A_txt = src.blob("A");
 		A = src.commit().add("A_txt", A_txt).create();
@@ -155,9 +93,8 @@ public class DumbClientSmartServerTest extends HttpTestCase {
 		assertEquals("http", remoteURI.getScheme());
 
 		Map<String, Ref> map;
-		Transport t = Transport.open(dst, remoteURI);
+		try (Transport t = Transport.open(dst, remoteURI)) {
 		((TransportHttp) t).setUseSmartHttp(false);
-		try {
 			// I didn't make up these public interface names, I just
 			// approved them for inclusion into the code base. Sorry.
 			// --spearce
@@ -165,14 +102,9 @@ public class DumbClientSmartServerTest extends HttpTestCase {
 			assertTrue("isa TransportHttp", t instanceof TransportHttp);
 			assertTrue("isa HttpTransport", t instanceof HttpTransport);
 
-			FetchConnection c = t.openFetch();
-			try {
+			try (FetchConnection c = t.openFetch()) {
 				map = c.getRefsMap();
-			} finally {
-				c.close();
 			}
-		} finally {
-			t.close();
 		}
 
 		assertNotNull("have map of refs", map);
@@ -199,7 +131,7 @@ public class DumbClientSmartServerTest extends HttpTestCase {
 				.startsWith("JGit/"));
 		assertEquals("*/*", info.getRequestHeader(HDR_ACCEPT));
 		assertEquals(200, info.getStatus());
-		assertEquals("text/plain; charset=UTF-8",
+		assertEquals("text/plain;charset=utf-8",
 				info
 				.getResponseHeader(HDR_CONTENT_TYPE));
 
@@ -214,17 +146,14 @@ public class DumbClientSmartServerTest extends HttpTestCase {
 	@Test
 	public void testInitialClone_Small() throws Exception {
 		Repository dst = createBareRepository();
-		assertFalse(dst.hasObject(A_txt));
+		assertFalse(dst.getObjectDatabase().has(A_txt));
 
-		Transport t = Transport.open(dst, remoteURI);
+		try (Transport t = Transport.open(dst, remoteURI)) {
 		((TransportHttp) t).setUseSmartHttp(false);
-		try {
 			t.fetch(NullProgressMonitor.INSTANCE, mirror(master));
-		} finally {
-			t.close();
 		}
 
-		assertTrue(dst.hasObject(A_txt));
+		assertTrue(dst.getObjectDatabase().has(A_txt));
 		assertEquals(B, dst.exactRef(master).getObjectId());
 		fsck(dst, B);
 
@@ -239,20 +168,20 @@ public class DumbClientSmartServerTest extends HttpTestCase {
 
 	@Test
 	public void testInitialClone_Packed() throws Exception {
-		new TestRepository<Repository>(remoteRepository).packAndPrune();
-
-		Repository dst = createBareRepository();
-		assertFalse(dst.hasObject(A_txt));
-
-		Transport t = Transport.open(dst, remoteURI);
-		((TransportHttp) t).setUseSmartHttp(false);
-		try {
-			t.fetch(NullProgressMonitor.INSTANCE, mirror(master));
-		} finally {
-			t.close();
+		try (TestRepository<Repository> tr = new TestRepository<>(
+				remoteRepository)) {
+			tr.packAndPrune();
 		}
 
-		assertTrue(dst.hasObject(A_txt));
+		Repository dst = createBareRepository();
+		assertFalse(dst.getObjectDatabase().has(A_txt));
+
+		try (Transport t = Transport.open(dst, remoteURI)) {
+			((TransportHttp) t).setUseSmartHttp(false);
+			t.fetch(NullProgressMonitor.INSTANCE, mirror(master));
+		}
+
+		assertTrue(dst.getObjectDatabase().has(A_txt));
 		assertEquals(B, dst.exactRef(master).getObjectId());
 		fsck(dst, B);
 
@@ -269,7 +198,7 @@ public class DumbClientSmartServerTest extends HttpTestCase {
 		assertEquals("GET", req.get(0).getMethod());
 		assertEquals(0, req.get(0).getParameters().size());
 		assertEquals(200, req.get(0).getStatus());
-		assertEquals("text/plain; charset=UTF-8",
+		assertEquals("text/plain;charset=utf-8",
 				req.get(0).getResponseHeader(
 				HDR_CONTENT_TYPE));
 	}
@@ -280,9 +209,8 @@ public class DumbClientSmartServerTest extends HttpTestCase {
 		final RevCommit Q = src.commit().create();
 		final Repository db = src.getRepository();
 
-		Transport t = Transport.open(db, remoteURI);
-		((TransportHttp) t).setUseSmartHttp(false);
-		try {
+		try (Transport t = Transport.open(db, remoteURI)) {
+			((TransportHttp) t).setUseSmartHttp(false);
 			try {
 				t.push(NullProgressMonitor.INSTANCE, push(src, Q));
 				fail("push incorrectly completed against a smart server");
@@ -290,8 +218,6 @@ public class DumbClientSmartServerTest extends HttpTestCase {
 				String exp = "smart HTTP push disabled";
 				assertEquals(exp, nse.getMessage());
 			}
-		} finally {
-			t.close();
 		}
 	}
 }

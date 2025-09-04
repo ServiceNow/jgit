@@ -4,54 +4,22 @@
  * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org>
  * Copyright (C) 2010, Christian Halstrick <christian.halstrick@sap.com>
  * Copyright (C) 2013, Robin Stocker <robin@nibor.org>
- * Copyright (C) 2015, Patrick Steinhardt <ps@pks.im>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2015, Patrick Steinhardt <ps@pks.im> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.transport;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.Serializable;
-import java.io.UnsupportedEncodingException;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.util.BitSet;
@@ -61,6 +29,7 @@ import java.util.regex.Pattern;
 import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.util.RawParseUtils;
+import org.eclipse.jgit.util.References;
 import org.eclipse.jgit.util.StringUtils;
 
 /**
@@ -83,7 +52,7 @@ public class URIish implements Serializable {
 	 * capturing groups: the first containing the user and the second containing
 	 * the password
 	 */
-	private static final String OPT_USER_PWD_P = "(?:([^/:@]+)(?::([^\\\\/]+))?@)?"; //$NON-NLS-1$
+	private static final String OPT_USER_PWD_P = "(?:([^/:]+)(?::([^\\\\/]+))?@)?"; //$NON-NLS-1$
 
 	/**
 	 * Part of a pattern which matches the host part of URIs. Defines one
@@ -95,7 +64,7 @@ public class URIish implements Serializable {
 	 * Part of a pattern which matches the optional port part of URIs. Defines
 	 * one capturing group containing the port without the preceding colon.
 	 */
-	private static final String OPT_PORT_P = "(?::(\\d+))?"; //$NON-NLS-1$
+	private static final String OPT_PORT_P = "(?::(\\d*))?"; //$NON-NLS-1$
 
 	/**
 	 * Part of a pattern which matches the ~username part (e.g. /~root in
@@ -137,7 +106,11 @@ public class URIish implements Serializable {
 			+ OPT_PORT_P //
 			+ "(" // open a group capturing the user-home-dir-part //$NON-NLS-1$
 			+ (USER_HOME_P + "?") //$NON-NLS-1$
-			+ "[\\\\/])" //$NON-NLS-1$
+			+ "(?:" // start non capturing group for host //$NON-NLS-1$
+					// separator or end of line
+			+ "[\\\\/])|$" //$NON-NLS-1$
+			+ ")" // close non capturing group for the host//$NON-NLS-1$
+					// separator or end of line
 			+ ")?" // close the optional group containing hostname //$NON-NLS-1$
 			+ "(.+)?" //$NON-NLS-1$
 			+ "$"); //$NON-NLS-1$
@@ -196,10 +169,12 @@ public class URIish implements Serializable {
 	private String host;
 
 	/**
-	 * Parse and construct an {@link URIish} from a string
+	 * Parse and construct an {@link org.eclipse.jgit.transport.URIish} from a
+	 * string
 	 *
 	 * @param s
-	 * @throws URISyntaxException
+	 *            a {@link java.lang.String} object.
+	 * @throws java.net.URISyntaxException
 	 */
 	public URIish(String s) throws URISyntaxException {
 		if (StringUtils.isEmptyOrNull(s)) {
@@ -218,11 +193,23 @@ public class URIish implements Serializable {
 			scheme = matcher.group(1);
 			user = unescape(matcher.group(2));
 			pass = unescape(matcher.group(3));
-			host = unescape(matcher.group(4));
-			if (matcher.group(5) != null)
-				port = Integer.parseInt(matcher.group(5));
-			rawPath = cleanLeadingSlashes(
-					n2e(matcher.group(6)) + n2e(matcher.group(7)), scheme);
+			// empty ports are in general allowed, except for URLs like
+			// file://D:/path for which it is more desirable to parse with
+			// host=null and path=D:/path
+			String portString = matcher.group(5);
+			if ("file".equals(scheme) && "".equals(portString)) { //$NON-NLS-1$ //$NON-NLS-2$
+				rawPath = cleanLeadingSlashes(
+						n2e(matcher.group(4)) + ":" + portString //$NON-NLS-1$
+								+ n2e(matcher.group(6)) + n2e(matcher.group(7)),
+						scheme);
+			} else {
+				host = unescape(matcher.group(4));
+				if (portString != null && portString.length() > 0) {
+					port = Integer.parseInt(portString);
+				}
+				rawPath = cleanLeadingSlashes(
+						n2e(matcher.group(6)) + n2e(matcher.group(7)), scheme);
+			}
 			path = unescape(rawPath);
 			return;
 		}
@@ -264,12 +251,7 @@ public class URIish implements Serializable {
 		if (s.indexOf('%') < 0)
 			return s;
 
-		byte[] bytes;
-		try {
-			bytes = s.getBytes(Constants.CHARACTER_ENCODING);
-		} catch (UnsupportedEncodingException e) {
-			throw new RuntimeException(e); // can't happen
-		}
+		byte[] bytes = s.getBytes(UTF_8);
 
 		byte[] os = new byte[bytes.length];
 		int j = 0;
@@ -284,7 +266,10 @@ public class URIish implements Serializable {
 				try {
 					val = parseHexByte(c1, c2);
 				} catch (ArrayIndexOutOfBoundsException e) {
-					throw new URISyntaxException(s, JGitText.get().cannotParseGitURIish);
+					URISyntaxException use = new URISyntaxException(s,
+							JGitText.get().cannotParseGitURIish);
+					use.initCause(e);
+					throw use;
 				}
 				os[j++] = (byte) val;
 				i += 2;
@@ -317,14 +302,9 @@ public class URIish implements Serializable {
 		if (s == null)
 			return null;
 		ByteArrayOutputStream os = new ByteArrayOutputStream(s.length());
-		byte[] bytes;
-		try {
-			bytes = s.getBytes(Constants.CHARACTER_ENCODING);
-		} catch (UnsupportedEncodingException e) {
-			throw new RuntimeException(e); // cannot happen
-		}
-		for (int i = 0; i < bytes.length; ++i) {
-			int b = bytes[i] & 0xFF;
+		byte[] bytes = s.getBytes(UTF_8);
+		for (byte c : bytes) {
+			int b = c & 0xFF;
 			if (b <= 32 || (encodeNonAscii && b > 127) || b == '%'
 					|| (escapeReservedChars && reservedChars.get(b))) {
 				os.write('%');
@@ -341,10 +321,7 @@ public class URIish implements Serializable {
 	}
 
 	private String n2e(String s) {
-		if (s == null)
-			return ""; //$NON-NLS-1$
-		else
-			return s;
+		return s == null ? "" : s; //$NON-NLS-1$
 	}
 
 	// takes care to cut of a leading slash if a windows drive letter or a
@@ -353,8 +330,8 @@ public class URIish implements Serializable {
 		if (p.length() >= 3
 				&& p.charAt(0) == '/'
 				&& p.charAt(2) == ':'
-				&& (p.charAt(1) >= 'A' && p.charAt(1) <= 'Z' || p.charAt(1) >= 'a'
-						&& p.charAt(1) <= 'z'))
+				&& ((p.charAt(1) >= 'A' && p.charAt(1) <= 'Z')
+						|| (p.charAt(1) >= 'a' && p.charAt(1) <= 'z')))
 			return p.substring(1);
 		else if (s != null && p.length() >= 2 && p.charAt(0) == '/'
 				&& p.charAt(1) == '~')
@@ -369,11 +346,13 @@ public class URIish implements Serializable {
 	 * @param u
 	 *            the source URL to convert from.
 	 */
-	public URIish(final URL u) {
+	public URIish(URL u) {
 		scheme = u.getProtocol();
 		path = u.getPath();
+		path = cleanLeadingSlashes(path, scheme);
 		try {
 			rawPath = u.toURI().getRawPath();
+			rawPath = cleanLeadingSlashes(rawPath, scheme);
 		} catch (URISyntaxException e) {
 			throw new RuntimeException(e); // Impossible
 		}
@@ -389,12 +368,14 @@ public class URIish implements Serializable {
 		host = u.getHost();
 	}
 
-	/** Create an empty, non-configured URI. */
+	/**
+	 * Create an empty, non-configured URI.
+	 */
 	public URIish() {
 		// Configure nothing.
 	}
 
-	private URIish(final URIish u) {
+	private URIish(URIish u) {
 		this.scheme = u.scheme;
 		this.rawPath = u.rawPath;
 		this.path = u.path;
@@ -405,6 +386,8 @@ public class URIish implements Serializable {
 	}
 
 	/**
+	 * Whether this URI references a repository on another system.
+	 *
 	 * @return true if this URI references a repository on another system.
 	 */
 	public boolean isRemote() {
@@ -412,6 +395,8 @@ public class URIish implements Serializable {
 	}
 
 	/**
+	 * Get host name part.
+	 *
 	 * @return host name part or null
 	 */
 	public String getHost() {
@@ -425,13 +410,15 @@ public class URIish implements Serializable {
 	 *            the new value for host.
 	 * @return a new URI with the updated value.
 	 */
-	public URIish setHost(final String n) {
+	public URIish setHost(String n) {
 		final URIish r = new URIish(this);
 		r.host = n;
 		return r;
 	}
 
 	/**
+	 * Get protocol name
+	 *
 	 * @return protocol name or null for local references
 	 */
 	public String getScheme() {
@@ -445,13 +432,15 @@ public class URIish implements Serializable {
 	 *            the new value for scheme.
 	 * @return a new URI with the updated value.
 	 */
-	public URIish setScheme(final String n) {
+	public URIish setScheme(String n) {
 		final URIish r = new URIish(this);
 		r.scheme = n;
 		return r;
 	}
 
 	/**
+	 * Get path name component
+	 *
 	 * @return path name component
 	 */
 	public String getPath() {
@@ -459,6 +448,8 @@ public class URIish implements Serializable {
 	}
 
 	/**
+	 * Get path name component
+	 *
 	 * @return path name component
 	 */
 	public String getRawPath() {
@@ -472,7 +463,7 @@ public class URIish implements Serializable {
 	 *            the new value for path.
 	 * @return a new URI with the updated value.
 	 */
-	public URIish setPath(final String n) {
+	public URIish setPath(String n) {
 		final URIish r = new URIish(this);
 		r.path = n;
 		r.rawPath = n;
@@ -485,9 +476,9 @@ public class URIish implements Serializable {
 	 * @param n
 	 *            the new value for path.
 	 * @return a new URI with the updated value.
-	 * @throws URISyntaxException
+	 * @throws java.net.URISyntaxException
 	 */
-	public URIish setRawPath(final String n) throws URISyntaxException {
+	public URIish setRawPath(String n) throws URISyntaxException {
 		final URIish r = new URIish(this);
 		r.path = unescape(n);
 		r.rawPath = n;
@@ -495,6 +486,8 @@ public class URIish implements Serializable {
 	}
 
 	/**
+	 * Get user name requested for transfer
+	 *
 	 * @return user name requested for transfer or null
 	 */
 	public String getUser() {
@@ -508,13 +501,15 @@ public class URIish implements Serializable {
 	 *            the new value for user.
 	 * @return a new URI with the updated value.
 	 */
-	public URIish setUser(final String n) {
+	public URIish setUser(String n) {
 		final URIish r = new URIish(this);
 		r.user = n;
 		return r;
 	}
 
 	/**
+	 * Get password requested for transfer
+	 *
 	 * @return password requested for transfer or null
 	 */
 	public String getPass() {
@@ -528,13 +523,15 @@ public class URIish implements Serializable {
 	 *            the new value for password.
 	 * @return a new URI with the updated value.
 	 */
-	public URIish setPass(final String n) {
+	public URIish setPass(String n) {
 		final URIish r = new URIish(this);
 		r.pass = n;
 		return r;
 	}
 
 	/**
+	 * Get port number requested for transfer or -1 if not explicit
+	 *
 	 * @return port number requested for transfer or -1 if not explicit
 	 */
 	public int getPort() {
@@ -548,12 +545,14 @@ public class URIish implements Serializable {
 	 *            the new value for port.
 	 * @return a new URI with the updated value.
 	 */
-	public URIish setPort(final int n) {
+	public URIish setPort(int n) {
 		final URIish r = new URIish(this);
 		r.port = n > 0 ? n : -1;
 		return r;
 	}
 
+	/** {@inheritDoc} */
+	@Override
 	public int hashCode() {
 		int hc = 0;
 		if (getScheme() != null)
@@ -571,7 +570,9 @@ public class URIish implements Serializable {
 		return hc;
 	}
 
-	public boolean equals(final Object obj) {
+	/** {@inheritDoc} */
+	@Override
+	public boolean equals(Object obj) {
 		if (!(obj instanceof URIish))
 			return false;
 		final URIish b = (URIish) obj;
@@ -590,8 +591,11 @@ public class URIish implements Serializable {
 		return true;
 	}
 
-	private static boolean eq(final String a, final String b) {
-		if (a == b)
+	private static boolean eq(String a, String b) {
+		if (References.isSameObject(a, b)) {
+			return true;
+		}
+		if (StringUtils.isEmptyOrNull(a) && StringUtils.isEmptyOrNull(b))
 			return true;
 		if (a == null || b == null)
 			return false;
@@ -607,11 +611,13 @@ public class URIish implements Serializable {
 		return format(true, false);
 	}
 
+	/** {@inheritDoc} */
+	@Override
 	public String toString() {
 		return format(false, false);
 	}
 
-	private String format(final boolean includePassword, boolean escapeNonAscii) {
+	private String format(boolean includePassword, boolean escapeNonAscii) {
 		final StringBuilder r = new StringBuilder();
 		if (getScheme() != null) {
 			r.append(getScheme());
@@ -638,7 +644,7 @@ public class URIish implements Serializable {
 
 		if (getPath() != null) {
 			if (getScheme() != null) {
-				if (!getPath().startsWith("/")) //$NON-NLS-1$
+				if (!getPath().startsWith("/") && !getPath().isEmpty()) //$NON-NLS-1$
 					r.append('/');
 			} else if (getHost() != null)
 				r.append(':');
@@ -655,6 +661,8 @@ public class URIish implements Serializable {
 	}
 
 	/**
+	 * Get the URI as an ASCII string.
+	 *
 	 * @return the URI as an ASCII string. Password is not included.
 	 */
 	public String toASCIIString() {
@@ -662,6 +670,9 @@ public class URIish implements Serializable {
 	}
 
 	/**
+	 * Convert the URI including password, formatted with only ASCII characters
+	 * such that it will be valid for use over the network.
+	 *
 	 * @return the URI including password, formatted with only ASCII characters
 	 *         such that it will be valid for use over the network.
 	 */
@@ -702,16 +713,16 @@ public class URIish implements Serializable {
 	 *
 	 * @return the "humanish" part of the path. May be an empty string. Never
 	 *         {@code null}.
-	 * @throws IllegalArgumentException
+	 * @throws java.lang.IllegalArgumentException
 	 *             if it's impossible to determine a humanish part, or path is
 	 *             {@code null} or empty
 	 * @see #getPath
 	 */
 	public String getHumanishName() throws IllegalArgumentException {
 		String s = getPath();
-		if ("/".equals(s)) //$NON-NLS-1$
+		if ("/".equals(s) || "".equals(s)) //$NON-NLS-1$ //$NON-NLS-2$
 			s = getHost();
-		if ("".equals(s) || s == null) //$NON-NLS-1$
+		if (s == null) // $NON-NLS-1$
 			throw new IllegalArgumentException();
 
 		String[] elements;
@@ -727,6 +738,12 @@ public class URIish implements Serializable {
 		else if (result.endsWith(Constants.DOT_GIT_EXT))
 			result = result.substring(0, result.length()
 					- Constants.DOT_GIT_EXT.length());
+		if (("file".equals(scheme) || LOCAL_FILE.matcher(s) //$NON-NLS-1$
+				.matches())
+				&& result.endsWith(Constants.DOT_BUNDLE_EXT)) {
+			result = result.substring(0,
+					result.length() - Constants.DOT_BUNDLE_EXT.length());
+		}
 		return result;
 	}
 

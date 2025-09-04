@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2010, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.notes;
@@ -83,7 +50,7 @@ public class NoteMapTest extends RepositoryTestCase {
 	public void setUp() throws Exception {
 		super.setUp();
 
-		tr = new TestRepository<Repository>(db);
+		tr = new TestRepository<>(db);
 		reader = db.newObjectReader();
 		inserter = db.newObjectInserter();
 	}
@@ -403,10 +370,12 @@ public class NoteMapTest extends RepositoryTestCase {
 		}
 
 		RevCommit n = commitNoteMap(map);
-		TreeWalk tw = new TreeWalk(reader);
-		tw.reset(n.getTree());
-		while (tw.next())
-			assertFalse("no fan-out subtree", tw.isSubtree());
+		try (TreeWalk tw = new TreeWalk(reader)) {
+			tw.reset(n.getTree());
+			while (tw.next()) {
+				assertFalse("no fan-out subtree", tw.isSubtree());
+			}
+		}
 
 		for (int i = 254; i < 256; i++) {
 			idBuf.setByte(Constants.OBJECT_ID_LENGTH - 1, i);
@@ -418,13 +387,15 @@ public class NoteMapTest extends RepositoryTestCase {
 
 		// The 00 bucket is fully split.
 		String path = fanout(38, idBuf.name());
-		tw = TreeWalk.forPath(reader, path, n.getTree());
-		assertNotNull("has " + path, tw);
+		try (TreeWalk tw = TreeWalk.forPath(reader, path, n.getTree())) {
+			assertNotNull("has " + path, tw);
+		}
 
 		// The other bucket is not.
 		path = fanout(2, data1.name());
-		tw = TreeWalk.forPath(reader, path, n.getTree());
-		assertNotNull("has " + path, tw);
+		try (TreeWalk tw = TreeWalk.forPath(reader, path, n.getTree())) {
+			assertNotNull("has " + path, tw);
+		}
 	}
 
 	@Test
@@ -445,11 +416,13 @@ public class NoteMapTest extends RepositoryTestCase {
 		assertEquals("empty tree", empty, n.getTree());
 	}
 
+	@Test
 	public void testIteratorEmptyMap() {
 		Iterator<Note> it = NoteMap.newEmptyMap().iterator();
 		assertFalse(it.hasNext());
 	}
 
+	@Test
 	public void testIteratorFlatTree() throws Exception {
 		RevBlob a = tr.blob("a");
 		RevBlob b = tr.blob("b");
@@ -468,6 +441,7 @@ public class NoteMapTest extends RepositoryTestCase {
 		assertEquals(2, count(it));
 	}
 
+	@Test
 	public void testIteratorFanoutTree2_38() throws Exception {
 		RevBlob a = tr.blob("a");
 		RevBlob b = tr.blob("b");
@@ -486,6 +460,7 @@ public class NoteMapTest extends RepositoryTestCase {
 		assertEquals(2, count(it));
 	}
 
+	@Test
 	public void testIteratorFanoutTree2_2_36() throws Exception {
 		RevBlob a = tr.blob("a");
 		RevBlob b = tr.blob("b");
@@ -504,6 +479,7 @@ public class NoteMapTest extends RepositoryTestCase {
 		assertEquals(2, count(it));
 	}
 
+	@Test
 	public void testIteratorFullyFannedOut() throws Exception {
 		RevBlob a = tr.blob("a");
 		RevBlob b = tr.blob("b");
@@ -522,12 +498,13 @@ public class NoteMapTest extends RepositoryTestCase {
 		assertEquals(2, count(it));
 	}
 
+	@Test
 	public void testShorteningNoteRefName() throws Exception {
 		String expectedShortName = "review";
 		String noteRefName = Constants.R_NOTES + expectedShortName;
 		assertEquals(expectedShortName, NoteMap.shortenRefName(noteRefName));
 		String nonNoteRefName = Constants.R_HEADS + expectedShortName;
-		assertEquals(nonNoteRefName, NoteMap.shortenRefName(expectedShortName));
+		assertEquals(nonNoteRefName, NoteMap.shortenRefName(nonNoteRefName));
 	}
 
 	private RevCommit commitNoteMap(NoteMap map) throws IOException {

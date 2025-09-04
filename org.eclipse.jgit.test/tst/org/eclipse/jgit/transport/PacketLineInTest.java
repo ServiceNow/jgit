@@ -1,51 +1,20 @@
 /*
- * Copyright (C) 2009, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2009, 2020 Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.transport;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotSame;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.ByteArrayInputStream;
@@ -116,17 +85,6 @@ public class PacketLineInTest {
 	}
 
 	@Test
-	public void testReadString_Len0001() {
-		init("0001");
-		try {
-			in.readString();
-			fail("incorrectly accepted invalid packet header");
-		} catch (IOException e) {
-			assertEquals("Invalid packet line header: 0001", e.getMessage());
-		}
-	}
-
-	@Test
 	public void testReadString_Len0002() {
 		init("0002");
 		try {
@@ -153,14 +111,26 @@ public class PacketLineInTest {
 		init("0004");
 		final String act = in.readString();
 		assertEquals("", act);
-		assertNotSame(PacketLineIn.END, act);
+		assertFalse(PacketLineIn.isEnd(act));
+		assertFalse(PacketLineIn.isDelimiter(act));
 		assertEOF();
 	}
 
 	@Test
 	public void testReadString_End() throws IOException {
 		init("0000");
-		assertSame(PacketLineIn.END, in.readString());
+		String act = in.readString();
+		assertTrue(PacketLineIn.isEnd(act));
+		assertFalse(PacketLineIn.isDelimiter(act));
+		assertEOF();
+	}
+
+	@Test
+	public void testReadString_Delim() throws IOException {
+		init("0001");
+		String act = in.readString();
+		assertTrue(PacketLineIn.isDelimiter(act));
+		assertFalse(PacketLineIn.isEnd(act));
 		assertEOF();
 	}
 
@@ -187,14 +157,14 @@ public class PacketLineInTest {
 		init("0004");
 		final String act = in.readStringRaw();
 		assertEquals("", act);
-		assertNotSame(PacketLineIn.END, act);
+		assertFalse(PacketLineIn.isEnd(act));
 		assertEOF();
 	}
 
 	@Test
 	public void testReadStringRaw_End() throws IOException {
 		init("0000");
-		assertSame(PacketLineIn.END, in.readStringRaw());
+		assertTrue(PacketLineIn.isEnd(in.readString()));
 		assertEOF();
 	}
 
@@ -328,9 +298,61 @@ public class PacketLineInTest {
 		}
 	}
 
+	// parseACKv2
+
+	@Test
+	public void testParseAckV2_NAK() throws IOException {
+		final ObjectId expid = ObjectId
+				.fromString("fcfcfb1fd94829c1a1704f894fc111d14770d34e");
+		final MutableObjectId actid = new MutableObjectId();
+		actid.fromString(expid.name());
+
+		assertSame(PacketLineIn.AckNackResult.NAK,
+				PacketLineIn.parseACKv2("NAK", actid));
+		assertEquals(expid, actid);
+	}
+
+	@Test
+	public void testParseAckV2_ACK() throws IOException {
+		final ObjectId expid = ObjectId
+				.fromString("fcfcfb1fd94829c1a1704f894fc111d14770d34e");
+		final MutableObjectId actid = new MutableObjectId();
+
+		assertSame(PacketLineIn.AckNackResult.ACK_COMMON,
+				PacketLineIn.parseACKv2(
+						"ACK fcfcfb1fd94829c1a1704f894fc111d14770d34e", actid));
+		assertEquals(expid, actid);
+	}
+
+	@Test
+	public void testParseAckV2_Ready() throws IOException {
+		final ObjectId expid = ObjectId
+				.fromString("fcfcfb1fd94829c1a1704f894fc111d14770d34e");
+		final MutableObjectId actid = new MutableObjectId();
+		actid.fromString(expid.name());
+
+		assertSame(PacketLineIn.AckNackResult.ACK_READY,
+				PacketLineIn.parseACKv2("ready", actid));
+		assertEquals(expid, actid);
+	}
+
+	@Test
+	public void testParseAckV2_ERR() {
+		IOException e = assertThrows(IOException.class, () -> PacketLineIn
+				.parseACKv2("ERR want is not valid", new MutableObjectId()));
+		assertTrue(e.getMessage().contains("want is not valid"));
+	}
+
+	@Test
+	public void testParseAckV2_Invalid() {
+		IOException e = assertThrows(IOException.class,
+				() -> PacketLineIn.parseACKv2("HELO", new MutableObjectId()));
+		assertTrue(e.getMessage().contains("xpected ACK/NAK"));
+	}
+
 	// test support
 
-	private void init(final String msg) {
+	private void init(String msg) {
 		rawIn = new ByteArrayInputStream(Constants.encodeASCII(msg));
 		in = new PacketLineIn(rawIn);
 	}

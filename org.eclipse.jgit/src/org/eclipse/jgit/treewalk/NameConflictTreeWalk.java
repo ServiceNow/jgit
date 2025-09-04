@@ -1,49 +1,18 @@
 /*
- * Copyright (C) 2008, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.treewalk;
 
-import org.eclipse.jgit.dircache.DirCacheBuilder;
+import java.io.IOException;
+
+import org.eclipse.jgit.annotations.Nullable;
 import org.eclipse.jgit.errors.CorruptObjectException;
 import org.eclipse.jgit.lib.FileMode;
 import org.eclipse.jgit.lib.ObjectReader;
@@ -52,24 +21,26 @@ import org.eclipse.jgit.lib.Repository;
 /**
  * Specialized TreeWalk to detect directory-file (D/F) name conflicts.
  * <p>
- * Due to the way a Git tree is organized the standard {@link TreeWalk} won't
- * easily find a D/F conflict when merging two or more trees together. In the
- * standard TreeWalk the file will be returned first, and then much later the
- * directory will be returned. This makes it impossible for the application to
- * efficiently detect and handle the conflict.
+ * Due to the way a Git tree is organized the standard
+ * {@link org.eclipse.jgit.treewalk.TreeWalk} won't easily find a D/F conflict
+ * when merging two or more trees together. In the standard TreeWalk the file
+ * will be returned first, and then much later the directory will be returned.
+ * This makes it impossible for the application to efficiently detect and handle
+ * the conflict.
  * <p>
  * Using this walk implementation causes the directory to report earlier than
  * usual, at the same time as the non-directory entry. This permits the
  * application to handle the D/F conflict in a single step. The directory is
  * returned only once, so it does not get returned later in the iteration.
  * <p>
- * When a D/F conflict is detected {@link TreeWalk#isSubtree()} will return true
- * and {@link TreeWalk#enterSubtree()} will recurse into the subtree, no matter
- * which iterator originally supplied the subtree.
+ * When a D/F conflict is detected
+ * {@link org.eclipse.jgit.treewalk.TreeWalk#isSubtree()} will return true and
+ * {@link org.eclipse.jgit.treewalk.TreeWalk#enterSubtree()} will recurse into
+ * the subtree, no matter which iterator originally supplied the subtree.
  * <p>
  * Because conflicted directories report early, using this walk implementation
- * to populate a {@link DirCacheBuilder} may cause the automatic resorting to
- * run and fix the entry ordering.
+ * to populate a {@link org.eclipse.jgit.dircache.DirCacheBuilder} may cause the
+ * automatic resorting to run and fix the entry ordering.
  * <p>
  * This walk implementation requires more CPU to implement a look-ahead and a
  * look-behind to merge a D/F pair together, or to skip a previously reported
@@ -85,7 +56,14 @@ import org.eclipse.jgit.lib.Repository;
 public class NameConflictTreeWalk extends TreeWalk {
 	private static final int TREE_MODE = FileMode.TREE.getBits();
 
-	private boolean fastMinHasMatch;
+	/**
+	 * True if all {@link #trees} point to entries with equal names.
+	 *
+	 * If at least one tree iterator point to a different name or
+	 * reached end of the tree, the value is false.
+	 * Note: if all iterators reached end of trees, the value is true.
+	 */
+	private boolean allTreesNamesMatchFastMinRef;
 
 	private AbstractTreeIterator dfConflict;
 
@@ -95,8 +73,21 @@ public class NameConflictTreeWalk extends TreeWalk {
 	 * @param repo
 	 *            the repository the walker will obtain data from.
 	 */
-	public NameConflictTreeWalk(final Repository repo) {
+	public NameConflictTreeWalk(Repository repo) {
 		super(repo);
+	}
+
+	/**
+	 * Create a new tree walker for a given repository.
+	 *
+	 * @param repo
+	 *            the repository the walker will obtain data from.
+	 * @param or
+	 *            the reader the walker will obtain tree data from.
+	 * @since 4.3
+	 */
+	public NameConflictTreeWalk(@Nullable Repository repo, ObjectReader or) {
+		super(repo, or);
 	}
 
 	/**
@@ -105,7 +96,7 @@ public class NameConflictTreeWalk extends TreeWalk {
 	 * @param or
 	 *            the reader the walker will obtain tree data from.
 	 */
-	public NameConflictTreeWalk(final ObjectReader or) {
+	public NameConflictTreeWalk(ObjectReader or) {
 		super(or);
 	}
 
@@ -113,12 +104,12 @@ public class NameConflictTreeWalk extends TreeWalk {
 	AbstractTreeIterator min() throws CorruptObjectException {
 		for (;;) {
 			final AbstractTreeIterator minRef = fastMin();
-			if (fastMinHasMatch)
+			if (allTreesNamesMatchFastMinRef)
 				return minRef;
 
 			if (isTree(minRef)) {
 				if (skipEntry(minRef)) {
-					for (final AbstractTreeIterator t : trees) {
+					for (AbstractTreeIterator t : trees) {
 						if (t.matches == minRef) {
 							t.next(1);
 							t.matches = null;
@@ -134,25 +125,31 @@ public class NameConflictTreeWalk extends TreeWalk {
 	}
 
 	private AbstractTreeIterator fastMin() {
-		fastMinHasMatch = true;
-
-		int i = 0;
+		int i = getFirstNonEofTreeIndex();
+		if (i == -1) {
+			// All trees reached the end.
+			allTreesNamesMatchFastMinRef = true;
+			return trees[trees.length - 1];
+		}
 		AbstractTreeIterator minRef = trees[i];
-		while (minRef.eof() && ++i < trees.length)
-			minRef = trees[i];
-		if (minRef.eof())
-			return minRef;
-
+		// if i > 0 then we already know that only some trees reached the end
+		// (but not all), so it is impossible that ALL trees points to the
+		// minRef entry.
+		// Only if i == 0 it is still possible that all trees points to the same
+		// minRef entry.
+		allTreesNamesMatchFastMinRef = i == 0;
 		boolean hasConflict = false;
 		minRef.matches = minRef;
 		while (++i < trees.length) {
 			final AbstractTreeIterator t = trees[i];
-			if (t.eof())
+			if (t.eof()) {
+				allTreesNamesMatchFastMinRef = false;
 				continue;
+			}
 
 			final int cmp = t.pathCompare(minRef);
 			if (cmp < 0) {
-				if (fastMinHasMatch && isTree(minRef) && !isTree(t)
+				if (allTreesNamesMatchFastMinRef && isTree(minRef) && !isTree(t)
 						&& nameEqual(minRef, t)) {
 					// We used to be at a tree, but now we are at a file
 					// with the same name. Allow the file to match the
@@ -161,7 +158,7 @@ public class NameConflictTreeWalk extends TreeWalk {
 					t.matches = minRef;
 					hasConflict = true;
 				} else {
-					fastMinHasMatch = false;
+					allTreesNamesMatchFastMinRef = false;
 					t.matches = t;
 					minRef = t;
 				}
@@ -169,7 +166,8 @@ public class NameConflictTreeWalk extends TreeWalk {
 				// Exact name/mode match is best.
 				//
 				t.matches = minRef;
-			} else if (fastMinHasMatch && isTree(t) && !isTree(minRef)
+			} else if (allTreesNamesMatchFastMinRef && isTree(t)
+					&& !isTree(minRef) && !isGitlink(minRef)
 					&& nameEqual(t, minRef)) {
 				// The minimum is a file (non-tree) but the next entry
 				// of this iterator is a tree whose name matches our file.
@@ -188,12 +186,21 @@ public class NameConflictTreeWalk extends TreeWalk {
 				minRef = t;
 				hasConflict = true;
 			} else
-				fastMinHasMatch = false;
+				allTreesNamesMatchFastMinRef = false;
 		}
 
-		if (hasConflict && fastMinHasMatch && dfConflict == null)
+		if (hasConflict && allTreesNamesMatchFastMinRef && dfConflict == null)
 			dfConflict = minRef;
 		return minRef;
+	}
+
+	private int getFirstNonEofTreeIndex() {
+		for (int i = 0; i < trees.length; i++) {
+			if (!trees[i].eof()) {
+				return i;
+			}
+		}
+		return -1;
 	}
 
 	private static boolean nameEqual(final AbstractTreeIterator a,
@@ -201,16 +208,20 @@ public class NameConflictTreeWalk extends TreeWalk {
 		return a.pathCompare(b, TREE_MODE) == 0;
 	}
 
-	private static boolean isTree(final AbstractTreeIterator p) {
+	private boolean isGitlink(AbstractTreeIterator p) {
+		return FileMode.GITLINK.equals(p.mode);
+	}
+
+	private static boolean isTree(AbstractTreeIterator p) {
 		return FileMode.TREE.equals(p.mode);
 	}
 
-	private boolean skipEntry(final AbstractTreeIterator minRef)
+	private boolean skipEntry(AbstractTreeIterator minRef)
 			throws CorruptObjectException {
 		// A tree D/F may have been handled earlier. We need to
 		// not report this path if it has already been reported.
 		//
-		for (final AbstractTreeIterator t : trees) {
+		for (AbstractTreeIterator t : trees) {
 			if (t.matches == minRef || t.first())
 				continue;
 
@@ -239,14 +250,14 @@ public class NameConflictTreeWalk extends TreeWalk {
 		return false;
 	}
 
-	private AbstractTreeIterator combineDF(final AbstractTreeIterator minRef)
+	private AbstractTreeIterator combineDF(AbstractTreeIterator minRef)
 			throws CorruptObjectException {
 		// Look for a possible D/F conflict forward in the tree(s)
 		// as there may be a "$path/" which matches "$path". Make
 		// such entries match this entry.
 		//
 		AbstractTreeIterator treeMatch = null;
-		for (final AbstractTreeIterator t : trees) {
+		for (AbstractTreeIterator t : trees) {
 			if (t.matches == minRef || t.eof())
 				continue;
 
@@ -280,17 +291,40 @@ public class NameConflictTreeWalk extends TreeWalk {
 			}
 		}
 
+		// When the combineDF is called, the t.matches field stores other
+		// entry (i.e. tree iterator) with an equal path. However, the
+		// previous loop moves each iterator independently. As a result,
+		// iterators which have had equals path at the start of the
+		// method can have different paths at this point.
+		// Reevaluate existing matches.
+		// The NameConflictTreeWalkTest.testDF_specialFileNames test
+		// cover this situation.
+		for (AbstractTreeIterator t : trees) {
+			// The previous loop doesn't touch tree iterator if it matches
+			// minRef. Skip it here
+			if (t.eof() || t.matches == null || t.matches == minRef)
+				continue;
+			// The t.pathCompare takes into account the entry type (file
+			// or directory) and returns non-zero value if names match
+			// but entry type don't match.
+			// We want to keep such matches (file/directory conflict),
+			// so reset matches only if names are not equal.
+			if (!nameEqual(t, t.matches))
+				t.matches = null;
+		}
+
 		if (treeMatch != null) {
 			// If we do have a conflict use one of the directory
 			// matching iterators instead of the file iterator.
 			// This way isSubtree is true and isRecursive works.
 			//
-			for (final AbstractTreeIterator t : trees)
+			for (AbstractTreeIterator t : trees)
 				if (t.matches == minRef)
 					t.matches = treeMatch;
 
-			if (dfConflict == null)
+			if (dfConflict == null && !isGitlink(minRef)) {
 				dfConflict = treeMatch;
+			}
 
 			return treeMatch;
 		}
@@ -301,8 +335,7 @@ public class NameConflictTreeWalk extends TreeWalk {
 	@Override
 	void popEntriesEqual() throws CorruptObjectException {
 		final AbstractTreeIterator ch = currentHead;
-		for (int i = 0; i < trees.length; i++) {
-			final AbstractTreeIterator t = trees[i];
+		for (AbstractTreeIterator t : trees) {
 			if (t.matches == ch) {
 				if (t.matchShift == 0)
 					t.next(1);
@@ -321,8 +354,7 @@ public class NameConflictTreeWalk extends TreeWalk {
 	@Override
 	void skipEntriesEqual() throws CorruptObjectException {
 		final AbstractTreeIterator ch = currentHead;
-		for (int i = 0; i < trees.length; i++) {
-			final AbstractTreeIterator t = trees[i];
+		for (AbstractTreeIterator t : trees) {
 			if (t.matches == ch) {
 				if (t.matchShift == 0)
 					t.skip();
@@ -336,6 +368,42 @@ public class NameConflictTreeWalk extends TreeWalk {
 
 		if (ch == dfConflict)
 			dfConflict = null;
+	}
+
+	@Override
+	void stopWalk() throws IOException {
+		if (!needsStopWalk()) {
+			return;
+		}
+
+		// Name conflicts make aborting early difficult. Multiple paths may
+		// exist between the file and directory versions of a name. To ensure
+		// the directory version is skipped over (as it was previously visited
+		// during the file version step) requires popping up the stack and
+		// finishing out each subtree that the walker dove into. Siblings in
+		// parents do not need to be recursed into, bounding the cost.
+		for (;;) {
+			AbstractTreeIterator t = min();
+			if (t.eof()) {
+				if (depth > 0) {
+					exitSubtree();
+					popEntriesEqual();
+					continue;
+				}
+				return;
+			}
+			currentHead = t;
+			skipEntriesEqual();
+		}
+	}
+
+	private boolean needsStopWalk() {
+		for (AbstractTreeIterator t : trees) {
+			if (t.needsStopWalk()) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**

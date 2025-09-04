@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.transport;
@@ -56,6 +23,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
@@ -86,8 +54,9 @@ import org.eclipse.jgit.lib.SymbolicRef;
  * extended HTTP/1.1 semantics. This make it possible to read or write Git data
  * from a remote repository that is stored on S3.
  * <p>
- * Unlike the HTTP variant (see {@link TransportHttp}) we rely upon being able
- * to list objects in a bucket, as the S3 API supports this function. By listing
+ * Unlike the HTTP variant (see
+ * {@link org.eclipse.jgit.transport.TransportHttp}) we rely upon being able to
+ * list objects in a bucket, as the S3 API supports this function. By listing
  * the bucket contents we can avoid relying on <code>objects/info/packs</code>
  * or <code>info/refs</code> in the remote repository.
  * <p>
@@ -101,23 +70,28 @@ public class TransportAmazonS3 extends HttpTransport implements WalkTransport {
 	static final String S3_SCHEME = "amazon-s3"; //$NON-NLS-1$
 
 	static final TransportProtocol PROTO_S3 = new TransportProtocol() {
+		@Override
 		public String getName() {
 			return "Amazon S3"; //$NON-NLS-1$
 		}
 
+		@Override
 		public Set<String> getSchemes() {
 			return Collections.singleton(S3_SCHEME);
 		}
 
+		@Override
 		public Set<URIishField> getRequiredFields() {
 			return Collections.unmodifiableSet(EnumSet.of(URIishField.USER,
 					URIishField.HOST, URIishField.PATH));
 		}
 
+		@Override
 		public Set<URIishField> getOptionalFields() {
 			return Collections.unmodifiableSet(EnumSet.of(URIishField.PASS));
 		}
 
+		@Override
 		public Transport open(URIish uri, Repository local, String remoteName)
 				throws NotSupportedException {
 			return new TransportAmazonS3(local, uri);
@@ -196,6 +170,7 @@ public class TransportAmazonS3 extends HttpTransport implements WalkTransport {
 		}
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public FetchConnection openFetch() throws TransportException {
 		final DatabaseS3 c = new DatabaseS3(bucket, keyPrefix + "/objects"); //$NON-NLS-1$
@@ -204,6 +179,7 @@ public class TransportAmazonS3 extends HttpTransport implements WalkTransport {
 		return r;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public PushConnection openPush() throws TransportException {
 		final DatabaseS3 c = new DatabaseS3(bucket, keyPrefix + "/objects"); //$NON-NLS-1$
@@ -212,6 +188,7 @@ public class TransportAmazonS3 extends HttpTransport implements WalkTransport {
 		return r;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public void close() {
 		// No explicit connections are maintained.
@@ -250,7 +227,7 @@ public class TransportAmazonS3 extends HttpTransport implements WalkTransport {
 		@Override
 		Collection<WalkRemoteObjectDatabase> getAlternates() throws IOException {
 			try {
-				return readAlternates(INFO_ALTERNATES);
+				return readAlternates(Constants.INFO_ALTERNATES);
 			} catch (FileNotFoundException err) {
 				// Fall through.
 			}
@@ -258,18 +235,21 @@ public class TransportAmazonS3 extends HttpTransport implements WalkTransport {
 		}
 
 		@Override
-		WalkRemoteObjectDatabase openAlternate(final String location)
+		WalkRemoteObjectDatabase openAlternate(String location)
 				throws IOException {
 			return new DatabaseS3(bucketName, resolveKey(location));
 		}
 
 		@Override
 		Collection<String> getPackNames() throws IOException {
-			final HashSet<String> have = new HashSet<String>();
-			have.addAll(s3.list(bucket, resolveKey("pack"))); //$NON-NLS-1$
+			// s3.list returns most recently modified packs first.
+			// These are the packs most likely to contain missing refs.
+			final List<String> packList = s3.list(bucket, resolveKey("pack")); //$NON-NLS-1$
+			final HashSet<String> have = new HashSet<>();
+			have.addAll(packList);
 
-			final Collection<String> packs = new ArrayList<String>();
-			for (final String n : have) {
+			final Collection<String> packs = new ArrayList<>();
+			for (String n : packList) {
 				if (!n.startsWith("pack-") || !n.endsWith(".pack")) //$NON-NLS-1$ //$NON-NLS-2$
 					continue;
 
@@ -281,7 +261,7 @@ public class TransportAmazonS3 extends HttpTransport implements WalkTransport {
 		}
 
 		@Override
-		FileStream open(final String path) throws IOException {
+		FileStream open(String path) throws IOException {
 			final URLConnection c = s3.get(bucket, resolveKey(path));
 			final InputStream raw = c.getInputStream();
 			final InputStream in = s3.decrypt(c);
@@ -290,7 +270,7 @@ public class TransportAmazonS3 extends HttpTransport implements WalkTransport {
 		}
 
 		@Override
-		void deleteFile(final String path) throws IOException {
+		void deleteFile(String path) throws IOException {
 			s3.delete(bucket, resolveKey(path));
 		}
 
@@ -302,19 +282,19 @@ public class TransportAmazonS3 extends HttpTransport implements WalkTransport {
 		}
 
 		@Override
-		void writeFile(final String path, final byte[] data) throws IOException {
+		void writeFile(String path, byte[] data) throws IOException {
 			s3.put(bucket, resolveKey(path), data);
 		}
 
 		Map<String, Ref> readAdvertisedRefs() throws TransportException {
-			final TreeMap<String, Ref> avail = new TreeMap<String, Ref>();
+			final TreeMap<String, Ref> avail = new TreeMap<>();
 			readPackedRefs(avail);
 			readLooseRefs(avail);
 			readRef(avail, Constants.HEAD);
 			return avail;
 		}
 
-		private void readLooseRefs(final TreeMap<String, Ref> avail)
+		private void readLooseRefs(TreeMap<String, Ref> avail)
 				throws TransportException {
 			try {
 				for (final String n : s3.list(bucket, resolveKey(ROOT_DIR
@@ -325,16 +305,13 @@ public class TransportAmazonS3 extends HttpTransport implements WalkTransport {
 			}
 		}
 
-		private Ref readRef(final TreeMap<String, Ref> avail, final String rn)
+		private Ref readRef(TreeMap<String, Ref> avail, String rn)
 				throws TransportException {
 			final String s;
 			String ref = ROOT_DIR + rn;
 			try {
-				final BufferedReader br = openReader(ref);
-				try {
+				try (BufferedReader br = openReader(ref)) {
 					s = br.readLine();
-				} finally {
-					br.close();
 				}
 			} catch (FileNotFoundException noRef) {
 				return null;
@@ -368,7 +345,7 @@ public class TransportAmazonS3 extends HttpTransport implements WalkTransport {
 			throw new TransportException(getURI(), MessageFormat.format(JGitText.get().transportExceptionBadRef, rn, s));
 		}
 
-		private Storage loose(final Ref r) {
+		private Storage loose(Ref r) {
 			if (r != null && r.getStorage() == Storage.PACKED)
 				return Storage.LOOSE_PACKED;
 			return Storage.LOOSE;

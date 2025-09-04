@@ -1,48 +1,17 @@
 /*
- * Copyright (C) 2008-2009, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008-2009, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.patch;
 
+import static java.nio.charset.StandardCharsets.ISO_8859_1;
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
@@ -55,7 +24,6 @@ import java.io.UnsupportedEncodingException;
 import java.util.HashMap;
 import java.util.HashSet;
 
-import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.util.MutableInteger;
 import org.eclipse.jgit.util.RawParseUtils;
 import org.eclipse.jgit.util.TemporaryBuffer;
@@ -84,12 +52,12 @@ public class EGitPatchHistoryTest {
 
 		int errors;
 
-		PatchReader(final HashMap<String, HashMap<String, StatInfo>> s)
+		PatchReader(HashMap<String, HashMap<String, StatInfo>> s)
 				throws IOException {
 			super(new String[] { "-p" });
 			stats = s;
 
-			offBy1 = new HashSet<String>();
+			offBy1 = new HashSet<>();
 			offBy1.add("9bda5ece6806cd797416eaa47c7b927cc6e9c3b2");
 		}
 
@@ -102,7 +70,7 @@ public class EGitPatchHistoryTest {
 			p.parse(buf, 0, buf.length - 1);
 			assertEquals("File count " + cid, files.size(), p.getFiles().size());
 			if (!p.getErrors().isEmpty()) {
-				for (final FormatError e : p.getErrors()) {
+				for (FormatError e : p.getErrors()) {
 					System.out.println("error " + e.getMessage());
 					System.out.println("  at " + e.getLineText());
 				}
@@ -110,7 +78,7 @@ public class EGitPatchHistoryTest {
 				fail("Unexpected error in " + cid);
 			}
 
-			for (final FileHeader fh : p.getFiles()) {
+			for (FileHeader fh : p.getFiles()) {
 				final String fileName;
 				if (fh.getChangeType() != FileHeader.ChangeType.DELETE)
 					fileName = fh.getNewPath();
@@ -120,7 +88,7 @@ public class EGitPatchHistoryTest {
 				final String nid = fileName + " in " + cid;
 				assertNotNull("No " + nid, s);
 				int added = 0, deleted = 0;
-				for (final HunkHeader h : fh.getHunks()) {
+				for (HunkHeader h : fh.getHunks()) {
 					added += h.getOldImage().getLinesAdded();
 					deleted += h.getOldImage().getLinesDeleted();
 				}
@@ -146,7 +114,7 @@ public class EGitPatchHistoryTest {
 			assertTrue("Missed files in " + cid, files.isEmpty());
 		}
 
-		private static void dump(final byte[] buf) {
+		private static void dump(byte[] buf) {
 			String str;
 			try {
 				str = new String(buf, 0, buf.length - 1, "ISO-8859-1");
@@ -158,7 +126,7 @@ public class EGitPatchHistoryTest {
 	}
 
 	static class NumStatReader extends CommitReader {
-		final HashMap<String, HashMap<String, StatInfo>> stats = new HashMap<String, HashMap<String, StatInfo>>();
+		final HashMap<String, HashMap<String, StatInfo>> stats = new HashMap<>();
 
 		NumStatReader() throws IOException {
 			super(new String[] { "--numstat" });
@@ -166,7 +134,7 @@ public class EGitPatchHistoryTest {
 
 		@Override
 		void onCommit(String commitId, byte[] buf) {
-			final HashMap<String, StatInfo> files = new HashMap<String, StatInfo>();
+			final HashMap<String, StatInfo> files = new HashMap<>();
 			final MutableInteger ptr = new MutableInteger();
 			while (ptr.value < buf.length) {
 				if (buf[ptr.value] == '\n')
@@ -175,7 +143,7 @@ public class EGitPatchHistoryTest {
 				i.added = RawParseUtils.parseBase10(buf, ptr.value, ptr);
 				i.deleted = RawParseUtils.parseBase10(buf, ptr.value + 1, ptr);
 				final int eol = RawParseUtils.nextLF(buf, ptr.value);
-				final String name = RawParseUtils.decode(Constants.CHARSET,
+				final String name = RawParseUtils.decode(UTF_8,
 						buf, ptr.value + 1, eol - 1);
 				files.put(name, i);
 				ptr.value = eol;
@@ -184,10 +152,10 @@ public class EGitPatchHistoryTest {
 		}
 	}
 
-	static abstract class CommitReader {
+	abstract static class CommitReader {
 		private Process proc;
 
-		CommitReader(final String[] args) throws IOException {
+		CommitReader(String[] args) throws IOException {
 			final String[] realArgs = new String[3 + args.length + 1];
 			realArgs[0] = "git";
 			realArgs[1] = "log";
@@ -201,28 +169,28 @@ public class EGitPatchHistoryTest {
 		}
 
 		void read() throws IOException, InterruptedException {
-			final BufferedReader in = new BufferedReader(new InputStreamReader(
-					proc.getInputStream(), "ISO-8859-1"));
-			String commitId = null;
-			TemporaryBuffer buf = null;
-			for (;;) {
-				String line = in.readLine();
-				if (line == null)
-					break;
-				if (line.startsWith("commit ")) {
-					if (buf != null) {
-						buf.close();
-						onCommit(commitId, buf.toByteArray());
-						buf.destroy();
+			try (BufferedReader in = new BufferedReader(
+					new InputStreamReader(proc.getInputStream(), ISO_8859_1))) {
+				String commitId = null;
+				TemporaryBuffer buf = null;
+				for (;;) {
+					String line = in.readLine();
+					if (line == null)
+						break;
+					if (line.startsWith("commit ")) {
+						if (buf != null) {
+							buf.close();
+							onCommit(commitId, buf.toByteArray());
+							buf.destroy();
+						}
+						commitId = line.substring("commit ".length());
+						buf = new TemporaryBuffer.LocalFile(null);
+					} else if (buf != null) {
+						buf.write(line.getBytes(ISO_8859_1));
+						buf.write('\n');
 					}
-					commitId = line.substring("commit ".length());
-					buf = new TemporaryBuffer.LocalFile(null);
-				} else if (buf != null) {
-					buf.write(line.getBytes("ISO-8859-1"));
-					buf.write('\n');
 				}
 			}
-			in.close();
 			assertEquals(0, proc.waitFor());
 			proc = null;
 		}

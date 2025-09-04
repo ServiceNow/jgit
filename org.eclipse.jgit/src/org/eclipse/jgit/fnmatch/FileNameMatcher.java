@@ -1,45 +1,11 @@
 /*
- * Copyright (C) 2008, Florian Koeberle <florianskarten@web.de>
- * Copyright (C) 2008, Florian Köberle <florianskarten@web.de>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, Florian Köberle <florianskarten@web.de> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.fnmatch;
@@ -105,7 +71,7 @@ public class FileNameMatcher {
 	 * @param headsStartValue
 	 *            must be a list which will never be modified.
 	 */
-	private FileNameMatcher(final List<Head> headsStartValue) {
+	private FileNameMatcher(List<Head> headsStartValue) {
 		this(headsStartValue, headsStartValue);
 	}
 
@@ -120,18 +86,20 @@ public class FileNameMatcher {
 	private FileNameMatcher(final List<Head> headsStartValue,
 			final List<Head> heads) {
 		this.headsStartValue = headsStartValue;
-		this.heads = new ArrayList<Head>(heads.size());
+		this.heads = new ArrayList<>(heads.size());
 		this.heads.addAll(heads);
-		this.listForLocalUseage = new ArrayList<Head>(heads.size());
+		this.listForLocalUseage = new ArrayList<>(heads.size());
 	}
 
 	/**
+	 * Constructor for FileNameMatcher
+	 *
 	 * @param patternString
 	 *            must contain a pattern which fnmatch would accept.
 	 * @param invalidWildgetCharacter
 	 *            if this parameter isn't null then this character will not
 	 *            match at wildcards(* and ? are wildcards).
-	 * @throws InvalidPatternException
+	 * @throws org.eclipse.jgit.errors.InvalidPatternException
 	 *             if the patternString contains a invalid fnmatch pattern.
 	 */
 	public FileNameMatcher(final String patternString,
@@ -141,11 +109,13 @@ public class FileNameMatcher {
 	}
 
 	/**
-	 * A Copy Constructor which creates a new {@link FileNameMatcher} with the
-	 * same state and reset point like <code>other</code>.
+	 * A Copy Constructor which creates a new
+	 * {@link org.eclipse.jgit.fnmatch.FileNameMatcher} with the same state and
+	 * reset point like <code>other</code>.
 	 *
 	 * @param other
-	 *            another {@link FileNameMatcher} instance.
+	 *            another {@link org.eclipse.jgit.fnmatch.FileNameMatcher}
+	 *            instance.
 	 */
 	public FileNameMatcher(FileNameMatcher other) {
 		this(other.headsStartValue, other.heads);
@@ -158,7 +128,7 @@ public class FileNameMatcher {
 		final List<AbstractHead> allHeads = parseHeads(patternString,
 				invalidWildgetCharacter);
 
-		List<Head> nextHeadsSuggestion = new ArrayList<Head>(2);
+		List<Head> nextHeadsSuggestion = new ArrayList<>(2);
 		nextHeadsSuggestion.add(LastHead.INSTANCE);
 		for (int i = allHeads.size() - 1; i >= 0; i--) {
 			final AbstractHead head = allHeads.get(i);
@@ -172,7 +142,7 @@ public class FileNameMatcher {
 				head.setNewHeads(nextHeadsSuggestion);
 			} else {
 				head.setNewHeads(nextHeadsSuggestion);
-				nextHeadsSuggestion = new ArrayList<Head>(2);
+				nextHeadsSuggestion = new ArrayList<>(2);
 				nextHeadsSuggestion.add(head);
 			}
 		}
@@ -236,7 +206,7 @@ public class FileNameMatcher {
 			throws InvalidPatternException {
 
 		int currentIndex = 0;
-		List<AbstractHead> heads = new ArrayList<AbstractHead>();
+		List<AbstractHead> heads = new ArrayList<>();
 		while (currentIndex < pattern.length()) {
 			final int groupStart = indexOfUnescaped(pattern, '[', currentIndex);
 			if (groupStart == -1) {
@@ -262,7 +232,7 @@ public class FileNameMatcher {
 
 	private static List<AbstractHead> createSimpleHeads(
 			final String patternPart, final Character invalidWildgetCharacter) {
-		final List<AbstractHead> heads = new ArrayList<AbstractHead>(
+		final List<AbstractHead> heads = new ArrayList<>(
 				patternPart.length());
 
 		boolean escaped = false;
@@ -300,18 +270,18 @@ public class FileNameMatcher {
 
 	private static AbstractHead createWildCardHead(
 			final Character invalidWildgetCharacter, final boolean star) {
-		if (invalidWildgetCharacter != null)
+		if (invalidWildgetCharacter != null) {
 			return new RestrictedWildCardHead(invalidWildgetCharacter
 					.charValue(), star);
-		else
-			return new WildCardHead(star);
+		}
+		return new WildCardHead(star);
 	}
 
 	/**
 	 * @param c new character to append
 	 * @return true to continue, false if the matcher can stop appending
 	 */
-	private boolean extendStringToMatchByOneCharacter(final char c) {
+	private boolean extendStringToMatchByOneCharacter(char c) {
 		final List<Head> newHeads = listForLocalUseage;
 		newHeads.clear();
 		List<Head> lastAddedHeads = null;
@@ -347,12 +317,13 @@ public class FileNameMatcher {
 	}
 
 	/**
+	 * Append to the string which is matched against the patterns of this class
 	 *
 	 * @param stringToMatch
 	 *            extends the string which is matched against the patterns of
 	 *            this class.
 	 */
-	public void append(final String stringToMatch) {
+	public void append(String stringToMatch) {
 		for (int i = 0; i < stringToMatch.length(); i++) {
 			final char c = stringToMatch.charAt(i);
 			if (!extendStringToMatchByOneCharacter(c))
@@ -369,20 +340,24 @@ public class FileNameMatcher {
 	}
 
 	/**
+	 * Create a {@link org.eclipse.jgit.fnmatch.FileNameMatcher} instance which
+	 * uses the same pattern like this matcher, but has the current state of
+	 * this matcher as reset and start point
 	 *
-	 * @return a {@link FileNameMatcher} instance which uses the same pattern
-	 *         like this matcher, but has the current state of this matcher as
-	 *         reset and start point.
+	 * @return a {@link org.eclipse.jgit.fnmatch.FileNameMatcher} instance which
+	 *         uses the same pattern like this matcher, but has the current
+	 *         state of this matcher as reset and start point.
 	 */
 	public FileNameMatcher createMatcherForSuffix() {
-		final List<Head> copyOfHeads = new ArrayList<Head>(heads.size());
+		final List<Head> copyOfHeads = new ArrayList<>(heads.size());
 		copyOfHeads.addAll(heads);
 		return new FileNameMatcher(copyOfHeads);
 	}
 
 	/**
+	 * Whether the matcher matches
 	 *
-	 * @return true, if the string currently being matched does match.
+	 * @return whether the matcher matches
 	 */
 	public boolean isMatch() {
 		if (heads.isEmpty())
@@ -400,13 +375,13 @@ public class FileNameMatcher {
 	}
 
 	/**
+	 * Whether a match can be appended
 	 *
-	 * @return false, if the string being matched will not match when the string
-	 *         gets extended.
+	 * @return a boolean.
 	 */
 	public boolean canAppendMatch() {
-		for (int i = 0; i < heads.size(); i++) {
-			if (heads.get(i) != LastHead.INSTANCE) {
+		for (Head head : heads) {
+			if (head != LastHead.INSTANCE) {
 				return true;
 			}
 		}

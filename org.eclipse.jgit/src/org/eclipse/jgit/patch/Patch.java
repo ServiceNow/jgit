@@ -1,52 +1,19 @@
 /*
- * Copyright (C) 2008-2009, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008-2009, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.patch;
 
 import static org.eclipse.jgit.lib.Constants.encodeASCII;
-import static org.eclipse.jgit.patch.FileHeader.isHunkHdr;
 import static org.eclipse.jgit.patch.FileHeader.NEW_NAME;
 import static org.eclipse.jgit.patch.FileHeader.OLD_NAME;
+import static org.eclipse.jgit.patch.FileHeader.isHunkHdr;
 import static org.eclipse.jgit.util.RawParseUtils.match;
 import static org.eclipse.jgit.util.RawParseUtils.nextLF;
 
@@ -58,7 +25,10 @@ import java.util.List;
 import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.util.TemporaryBuffer;
 
-/** A parsed collection of {@link FileHeader}s from a unified diff patch file */
+/**
+ * A parsed collection of {@link org.eclipse.jgit.patch.FileHeader}s from a
+ * unified diff patch file
+ */
 public class Patch {
 	static final byte[] DIFF_GIT = encodeASCII("diff --git "); //$NON-NLS-1$
 
@@ -81,10 +51,12 @@ public class Patch {
 	/** Formatting errors, if any were identified. */
 	private final List<FormatError> errors;
 
-	/** Create an empty patch. */
+	/**
+	 * Create an empty patch.
+	 */
 	public Patch() {
-		files = new ArrayList<FileHeader>();
-		errors = new ArrayList<FormatError>(0);
+		files = new ArrayList<>();
+		errors = new ArrayList<>(0);
 	}
 
 	/**
@@ -96,11 +68,15 @@ public class Patch {
 	 * @param fh
 	 *            the header of the file.
 	 */
-	public void addFile(final FileHeader fh) {
+	public void addFile(FileHeader fh) {
 		files.add(fh);
 	}
 
-	/** @return list of files described in the patch, in occurrence order. */
+	/**
+	 * Get list of files described in the patch, in occurrence order.
+	 *
+	 * @return list of files described in the patch, in occurrence order.
+	 */
 	public List<? extends FileHeader> getFiles() {
 		return files;
 	}
@@ -111,11 +87,15 @@ public class Patch {
 	 * @param err
 	 *            the error description.
 	 */
-	public void addError(final FormatError err) {
+	public void addError(FormatError err) {
 		errors.add(err);
 	}
 
-	/** @return collection of formatting errors, if any. */
+	/**
+	 * Get collection of formatting errors.
+	 *
+	 * @return collection of formatting errors, if any.
+	 */
 	public List<FormatError> getErrors() {
 		return errors;
 	}
@@ -130,19 +110,19 @@ public class Patch {
 	 * @param is
 	 *            the stream to read the patch data from. The stream is read
 	 *            until EOF is reached.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             there was an error reading from the input stream.
 	 */
-	public void parse(final InputStream is) throws IOException {
+	public void parse(InputStream is) throws IOException {
 		final byte[] buf = readFully(is);
 		parse(buf, 0, buf.length);
 	}
 
-	private static byte[] readFully(final InputStream is) throws IOException {
-		TemporaryBuffer b = new TemporaryBuffer.Heap(Integer.MAX_VALUE);
-		b.copy(is);
-		b.close();
-		return b.toByteArray();
+	private static byte[] readFully(InputStream is) throws IOException {
+		try (TemporaryBuffer b = new TemporaryBuffer.Heap(Integer.MAX_VALUE)) {
+			b.copy(is);
+			return b.toByteArray();
+		}
 	}
 
 	/**
@@ -160,12 +140,12 @@ public class Patch {
 	 *            1 past the last position to end parsing. The total length to
 	 *            be parsed is <code>end - ptr</code>.
 	 */
-	public void parse(final byte[] buf, int ptr, final int end) {
+	public void parse(byte[] buf, int ptr, int end) {
 		while (ptr < end)
 			ptr = parseFile(buf, ptr, end);
 	}
 
-	private int parseFile(final byte[] buf, int c, final int end) {
+	private int parseFile(byte[] buf, int c, int end) {
 		while (c < end) {
 			if (isHunkHdr(buf, c, end) >= 1) {
 				// If we find a disconnected hunk header we might
@@ -221,7 +201,7 @@ public class Patch {
 		return c;
 	}
 
-	private int parseDiffGit(final byte[] buf, final int start, final int end) {
+	private int parseDiffGit(byte[] buf, int start, int end) {
 		final FileHeader fh = new FileHeader(buf, start);
 		int ptr = fh.parseGitFileName(start + DIFF_GIT.length, end);
 		if (ptr < 0)
@@ -258,14 +238,14 @@ public class Patch {
 		return ptr;
 	}
 
-	private static int skipFile(final byte[] buf, int ptr) {
+	private static int skipFile(byte[] buf, int ptr) {
 		ptr = nextLF(buf, ptr);
 		if (match(buf, ptr, OLD_NAME) >= 0)
 			ptr = nextLF(buf, ptr);
 		return ptr;
 	}
 
-	private int parseHunks(final FileHeader fh, int c, final int end) {
+	private int parseHunks(FileHeader fh, int c, int end) {
 		final byte[] buf = fh.buf;
 		while (c < end) {
 			// If we see a file header at this point, we have all of the
@@ -336,7 +316,7 @@ public class Patch {
 		return c;
 	}
 
-	private int parseGitBinary(final FileHeader fh, int c, final int end) {
+	private int parseGitBinary(FileHeader fh, int c, int end) {
 		final BinaryHunk postImage = new BinaryHunk(fh, c);
 		final int nEnd = postImage.parseHunk(c, end);
 		if (nEnd < 0) {
@@ -360,17 +340,17 @@ public class Patch {
 		return c;
 	}
 
-	void warn(final byte[] buf, final int ptr, final String msg) {
+	void warn(byte[] buf, int ptr, String msg) {
 		addError(new FormatError(buf, ptr, FormatError.Severity.WARNING, msg));
 	}
 
-	void error(final byte[] buf, final int ptr, final String msg) {
+	void error(byte[] buf, int ptr, String msg) {
 		addError(new FormatError(buf, ptr, FormatError.Severity.ERROR, msg));
 	}
 
 	private static boolean matchAny(final byte[] buf, final int c,
 			final byte[][] srcs) {
-		for (final byte[] s : srcs) {
+		for (byte[] s : srcs) {
 			if (match(buf, c, s) >= 0)
 				return true;
 		}

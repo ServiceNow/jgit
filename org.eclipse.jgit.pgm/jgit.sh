@@ -79,7 +79,7 @@ CYGWIN*)
 Darwin)
 	if [ -e /System/Library/Frameworks/JavaVM.framework ]
 	then
-		java_args='
+		java_args+='
 			-Dcom.apple.mrj.application.apple.menu.about.name=JGit
 			-Dcom.apple.mrj.application.growbox.intrudes=false
 			-Dapple.laf.useScreenMenuBar=true
@@ -110,9 +110,9 @@ then
 	LESS=${LESS:-FSRX}
 	export LESS
 
-	"$java" $java_args org.eclipse.jgit.pgm.Main "$@" | $use_pager
+	"$java" $java_args org.springframework.boot.loader.JarLauncher "$@" | $use_pager
 	exit
 else
-  exec "$java" $java_args org.eclipse.jgit.pgm.Main "$@"
+  exec "$java" $java_args org.springframework.boot.loader.JarLauncher "$@"
   exit 1
 fi

@@ -1,45 +1,12 @@
 /*
  * Copyright (C) 2008-2009, Google Inc.
- * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.util;
@@ -51,12 +18,12 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.UncheckedIOException;
 import java.util.ArrayList;
 
 import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.lib.NullProgressMonitor;
 import org.eclipse.jgit.lib.ProgressMonitor;
-import org.eclipse.jgit.util.io.SafeBufferedOutputStream;
 
 /**
  * A fully buffered output stream.
@@ -92,7 +59,7 @@ public abstract class TemporaryBuffer extends OutputStream {
 	 *            maximum number of bytes to store in memory before entering the
 	 *            overflow output path; also used as the estimated size.
 	 */
-	protected TemporaryBuffer(final int limit) {
+	protected TemporaryBuffer(int limit) {
 		this(limit, limit);
 	}
 
@@ -107,7 +74,7 @@ public abstract class TemporaryBuffer extends OutputStream {
 	 *            overflow output path.
 	 * @since 4.0
 	 */
-	protected TemporaryBuffer(final int estimatedSize, final int limit) {
+	protected TemporaryBuffer(int estimatedSize, int limit) {
 		if (estimatedSize > limit)
 			throw new IllegalArgumentException();
 		this.inCoreLimit = limit;
@@ -115,8 +82,9 @@ public abstract class TemporaryBuffer extends OutputStream {
 		reset();
 	}
 
+	/** {@inheritDoc} */
 	@Override
-	public void write(final int b) throws IOException {
+	public void write(int b) throws IOException {
 		if (overflow != null) {
 			overflow.write(b);
 			return;
@@ -135,8 +103,9 @@ public abstract class TemporaryBuffer extends OutputStream {
 		s.buffer[s.count++] = (byte) b;
 	}
 
+	/** {@inheritDoc} */
 	@Override
-	public void write(final byte[] b, int off, int len) throws IOException {
+	public void write(byte[] b, int off, int len) throws IOException {
 		if (overflow == null) {
 			while (len > 0) {
 				Block s = last();
@@ -163,7 +132,7 @@ public abstract class TemporaryBuffer extends OutputStream {
 	/**
 	 * Dumps the entire buffer into the overflow stream, and flushes it.
 	 *
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the overflow stream cannot be started, or the buffer contents
 	 *             cannot be written to it, or it failed to flush.
 	 */
@@ -178,11 +147,11 @@ public abstract class TemporaryBuffer extends OutputStream {
 	 *
 	 * @param in
 	 *            the stream to read from, until EOF is reached.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             an error occurred reading from the input stream, or while
 	 *             writing to a local temporary file.
 	 */
-	public void copy(final InputStream in) throws IOException {
+	public void copy(InputStream in) throws IOException {
 		if (blocks != null) {
 			for (;;) {
 				Block s = last();
@@ -228,10 +197,8 @@ public abstract class TemporaryBuffer extends OutputStream {
 	 * The buffer is only complete after {@link #close()} has been invoked.
 	 *
 	 * @return the complete byte array; length matches {@link #length()}.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             an error occurred reading from a local temporary file
-	 * @throws OutOfMemoryError
-	 *             the buffer cannot fit in memory
 	 */
 	public byte[] toByteArray() throws IOException {
 		final long len = length();
@@ -239,11 +206,29 @@ public abstract class TemporaryBuffer extends OutputStream {
 			throw new OutOfMemoryError(JGitText.get().lengthExceedsMaximumArraySize);
 		final byte[] out = new byte[(int) len];
 		int outPtr = 0;
-		for (final Block b : blocks) {
+		for (Block b : blocks) {
 			System.arraycopy(b.buffer, 0, out, outPtr, b.count);
 			outPtr += b.count;
 		}
 		return out;
+	}
+
+	/**
+	 * Convert first {@code limit} number of bytes of the buffer content to
+	 * String.
+	 *
+	 * @param limit
+	 *            the maximum number of bytes to be converted to String
+	 * @return first {@code limit} number of bytes of the buffer content
+	 *         converted to String.
+	 * @since 5.12
+	 */
+	public String toString(int limit) {
+		try {
+			return RawParseUtils.decode(toByteArray(limit));
+		} catch (IOException e) {
+			throw new UncheckedIOException(e);
+		}
 	}
 
 	/**
@@ -254,13 +239,9 @@ public abstract class TemporaryBuffer extends OutputStream {
 	 *
 	 * @param limit
 	 *            the maximum number of bytes to be returned
-	 *
 	 * @return the byte array limited to {@code limit} bytes.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             an error occurred reading from a local temporary file
-	 * @throws OutOfMemoryError
-	 *             the buffer cannot fit in memory
-	 *
 	 * @since 4.2
 	 */
 	public byte[] toByteArray(int limit) throws IOException {
@@ -268,11 +249,16 @@ public abstract class TemporaryBuffer extends OutputStream {
 		if (Integer.MAX_VALUE < len)
 			throw new OutOfMemoryError(
 					JGitText.get().lengthExceedsMaximumArraySize);
-		final byte[] out = new byte[(int) len];
+		int length = (int) len;
+		final byte[] out = new byte[length];
 		int outPtr = 0;
-		for (final Block b : blocks) {
-			System.arraycopy(b.buffer, 0, out, outPtr, b.count);
-			outPtr += b.count;
+		for (Block b : blocks) {
+			int toCopy = Math.min(length - outPtr, b.count);
+			System.arraycopy(b.buffer, 0, out, outPtr, toCopy);
+			outPtr += toCopy;
+			if (outPtr == length) {
+				break;
+			}
 		}
 		return out;
 	}
@@ -289,15 +275,15 @@ public abstract class TemporaryBuffer extends OutputStream {
 	 *            if not null progress updates are sent here. Caller should
 	 *            initialize the task and the number of work units to <code>
 	 *            {@link #length()}/1024</code>.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             an error occurred reading from a temporary file on the local
 	 *             system, or writing to the output stream.
 	 */
-	public void writeTo(final OutputStream os, ProgressMonitor pm)
+	public void writeTo(OutputStream os, ProgressMonitor pm)
 			throws IOException {
 		if (pm == null)
 			pm = NullProgressMonitor.INSTANCE;
-		for (final Block b : blocks) {
+		for (Block b : blocks) {
 			os.write(b.buffer, 0, b.count);
 			pm.update(b.count / 1024);
 		}
@@ -311,14 +297,36 @@ public abstract class TemporaryBuffer extends OutputStream {
 	 *
 	 * @return a stream to read from the buffer. The caller must close the
 	 *         stream when it is no longer useful.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             an error occurred opening the temporary file.
 	 */
 	public InputStream openInputStream() throws IOException {
 		return new BlockInputStream();
 	}
 
-	/** Reset this buffer for reuse, purging all buffered content. */
+	/**
+	 * Same as {@link #openInputStream()} but handling destruction of any
+	 * associated resources automatically when closing the returned stream.
+	 *
+	 * @return an InputStream which will automatically destroy any associated
+	 *         temporary file on {@link #close()}
+	 * @throws IOException
+	 *             in case of an error.
+	 * @since 4.11
+	 */
+	public InputStream openInputStreamWithAutoDestroy() throws IOException {
+		return new BlockInputStream() {
+			@Override
+			public void close() throws IOException {
+				super.close();
+				destroy();
+			}
+		};
+	}
+
+	/**
+	 * Reset this buffer for reuse, purging all buffered content.
+	 */
 	public void reset() {
 		if (overflow != null) {
 			destroy();
@@ -326,7 +334,7 @@ public abstract class TemporaryBuffer extends OutputStream {
 		if (blocks != null)
 			blocks.clear();
 		else
-			blocks = new ArrayList<Block>(initialBlocks);
+			blocks = new ArrayList<>(initialBlocks);
 		blocks.add(new Block(Math.min(inCoreLimit, Block.SZ)));
 	}
 
@@ -335,7 +343,7 @@ public abstract class TemporaryBuffer extends OutputStream {
 	 *
 	 * @return the output stream to receive the buffered content, followed by
 	 *         the remaining output.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the buffer cannot create the overflow stream.
 	 */
 	protected abstract OutputStream overflow() throws IOException;
@@ -356,14 +364,16 @@ public abstract class TemporaryBuffer extends OutputStream {
 		overflow = overflow();
 
 		final Block last = blocks.remove(blocks.size() - 1);
-		for (final Block b : blocks)
+		for (Block b : blocks)
 			overflow.write(b.buffer, 0, b.count);
 		blocks = null;
 
-		overflow = new SafeBufferedOutputStream(overflow, Block.SZ);
+		overflow = new BufferedOutputStream(overflow, Block.SZ);
 		overflow.write(last.buffer, 0, last.count);
 	}
 
+	/** {@inheritDoc} */
+	@Override
 	public void close() throws IOException {
 		if (overflow != null) {
 			try {
@@ -374,7 +384,9 @@ public abstract class TemporaryBuffer extends OutputStream {
 		}
 	}
 
-	/** Clear this buffer so it has no data, and cannot be used again. */
+	/**
+	 * Clear this buffer so it has no data, and cannot be used again.
+	 */
 	public void destroy() {
 		blocks = null;
 
@@ -421,7 +433,7 @@ public abstract class TemporaryBuffer extends OutputStream {
 		 *            system default temporary directory (for example /tmp) will
 		 *            be used instead.
 		 */
-		public LocalFile(final File directory) {
+		public LocalFile(File directory) {
 			this(directory, DEFAULT_IN_CORE_LIMIT);
 		}
 
@@ -437,16 +449,18 @@ public abstract class TemporaryBuffer extends OutputStream {
 		 *            maximum number of bytes to store in memory. Storage beyond
 		 *            this limit will use the local file.
 		 */
-		public LocalFile(final File directory, final int inCoreLimit) {
+		public LocalFile(File directory, int inCoreLimit) {
 			super(inCoreLimit);
 			this.directory = directory;
 		}
 
+		@Override
 		protected OutputStream overflow() throws IOException {
 			onDiskFile = File.createTempFile("jgit_", ".buf", directory); //$NON-NLS-1$ //$NON-NLS-2$
 			return new BufferedOutputStream(new FileOutputStream(onDiskFile));
 		}
 
+		@Override
 		public long length() {
 			if (onDiskFile == null) {
 				return super.length();
@@ -454,6 +468,7 @@ public abstract class TemporaryBuffer extends OutputStream {
 			return onDiskFile.length();
 		}
 
+		@Override
 		public byte[] toByteArray() throws IOException {
 			if (onDiskFile == null) {
 				return super.toByteArray();
@@ -463,16 +478,38 @@ public abstract class TemporaryBuffer extends OutputStream {
 			if (Integer.MAX_VALUE < len)
 				throw new OutOfMemoryError(JGitText.get().lengthExceedsMaximumArraySize);
 			final byte[] out = new byte[(int) len];
-			final FileInputStream in = new FileInputStream(onDiskFile);
-			try {
+			try (FileInputStream in = new FileInputStream(onDiskFile)) {
 				IO.readFully(in, out, 0, (int) len);
-			} finally {
-				in.close();
 			}
 			return out;
 		}
 
-		public void writeTo(final OutputStream os, ProgressMonitor pm)
+		@Override
+		public byte[] toByteArray(int limit) throws IOException {
+			if (onDiskFile == null) {
+				return super.toByteArray(limit);
+			}
+			final long len = Math.min(length(), limit);
+			if (Integer.MAX_VALUE < len) {
+				throw new OutOfMemoryError(
+						JGitText.get().lengthExceedsMaximumArraySize);
+			}
+			final byte[] out = new byte[(int) len];
+			try (FileInputStream in = new FileInputStream(onDiskFile)) {
+				int read = 0;
+				int chunk;
+				while ((chunk = in.read(out, read, out.length - read)) >= 0) {
+					read += chunk;
+					if (read == out.length) {
+						break;
+					}
+				}
+			}
+			return out;
+		}
+
+		@Override
+		public void writeTo(OutputStream os, ProgressMonitor pm)
 				throws IOException {
 			if (onDiskFile == null) {
 				super.writeTo(os, pm);
@@ -480,16 +517,13 @@ public abstract class TemporaryBuffer extends OutputStream {
 			}
 			if (pm == null)
 				pm = NullProgressMonitor.INSTANCE;
-			final FileInputStream in = new FileInputStream(onDiskFile);
-			try {
+			try (FileInputStream in = new FileInputStream(onDiskFile)) {
 				int cnt;
 				final byte[] buf = new byte[Block.SZ];
 				while ((cnt = in.read(buf)) >= 0) {
 					os.write(buf, 0, cnt);
 					pm.update(cnt / 1024);
 				}
-			} finally {
-				in.close();
 			}
 		}
 
@@ -498,6 +532,20 @@ public abstract class TemporaryBuffer extends OutputStream {
 			if (onDiskFile == null)
 				return super.openInputStream();
 			return new FileInputStream(onDiskFile);
+		}
+
+		@Override
+		public InputStream openInputStreamWithAutoDestroy() throws IOException {
+			if (onDiskFile == null) {
+				return super.openInputStreamWithAutoDestroy();
+			}
+			return new FileInputStream(onDiskFile) {
+				@Override
+				public void close() throws IOException {
+					super.close();
+					destroy();
+				}
+			};
 		}
 
 		@Override
@@ -530,7 +578,7 @@ public abstract class TemporaryBuffer extends OutputStream {
 		 *            also used as the estimated size. Storing beyond this many
 		 *            will cause an IOException to be thrown during write.
 		 */
-		public Heap(final int limit) {
+		public Heap(int limit) {
 			super(limit);
 		}
 
@@ -546,7 +594,7 @@ public abstract class TemporaryBuffer extends OutputStream {
 		 *            thrown during write.
 		 * @since 4.0
 		 */
-		public Heap(final int estimatedSize, final int limit) {
+		public Heap(int estimatedSize, int limit) {
 			super(estimatedSize, limit);
 		}
 

@@ -1,57 +1,22 @@
 /*
- * Copyright (C) 2011, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2011, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.http.server;
 
-import static org.eclipse.jgit.http.server.ServletUtils.ATTRIBUTE_HANDLER;
-import static org.eclipse.jgit.transport.GitProtocolConstants.OPTION_SIDE_BAND;
-import static org.eclipse.jgit.transport.GitProtocolConstants.OPTION_SIDE_BAND_64K;
-import static org.eclipse.jgit.transport.GitProtocolConstants.CAPABILITY_SIDE_BAND_64K;
-import static org.eclipse.jgit.transport.SideBandOutputStream.CH_ERROR;
-import static org.eclipse.jgit.transport.SideBandOutputStream.SMALL_BUF;
 import static javax.servlet.http.HttpServletResponse.SC_FORBIDDEN;
 import static javax.servlet.http.HttpServletResponse.SC_INTERNAL_SERVER_ERROR;
 import static javax.servlet.http.HttpServletResponse.SC_NOT_FOUND;
+import static org.eclipse.jgit.http.server.ServletUtils.ATTRIBUTE_HANDLER;
+import static org.eclipse.jgit.transport.GitProtocolConstants.CAPABILITY_SIDE_BAND_64K;
+import static org.eclipse.jgit.transport.SideBandOutputStream.CH_ERROR;
+import static org.eclipse.jgit.transport.SideBandOutputStream.SMALL_BUF;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -63,13 +28,13 @@ import java.util.List;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
+import org.eclipse.jgit.internal.transport.parser.FirstCommand;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.transport.PacketLineIn;
 import org.eclipse.jgit.transport.PacketLineOut;
 import org.eclipse.jgit.transport.ReceivePack;
 import org.eclipse.jgit.transport.RequestNotYetReadException;
 import org.eclipse.jgit.transport.SideBandOutputStream;
-import org.eclipse.jgit.transport.UploadPack;
 
 /**
  * Utility functions for handling the Git-over-HTTP protocol.
@@ -154,9 +119,9 @@ public class GitSmartHttpTools {
 	 * an HTTP response code is returned instead.
 	 * <p>
 	 * This method may only be called before handing off the request to
-	 * {@link UploadPack#upload(java.io.InputStream, OutputStream, OutputStream)}
+	 * {@link org.eclipse.jgit.transport.UploadPack#upload(java.io.InputStream, OutputStream, OutputStream)}
 	 * or
-	 * {@link ReceivePack#receive(java.io.InputStream, OutputStream, OutputStream)}.
+	 * {@link org.eclipse.jgit.transport.ReceivePack#receive(java.io.InputStream, OutputStream, OutputStream)}.
 	 *
 	 * @param req
 	 *            current request.
@@ -193,71 +158,45 @@ public class GitSmartHttpTools {
 		}
 
 		if (isInfoRefs(req)) {
-			sendInfoRefsError(req, res, textForGit);
+			sendInfoRefsError(req, res, textForGit, httpStatus);
 		} else if (isUploadPack(req)) {
-			sendUploadPackError(req, res, textForGit);
+			sendUploadPackError(req, res, textForGit, httpStatus);
 		} else if (isReceivePack(req)) {
-			sendReceivePackError(req, res, textForGit);
+			sendReceivePackError(req, res, textForGit, httpStatus);
 		} else {
 			if (httpStatus < 400)
 				ServletUtils.consumeRequestBody(req);
-			res.sendError(httpStatus);
+			res.sendError(httpStatus, textForGit);
 		}
 	}
 
 	private static void sendInfoRefsError(HttpServletRequest req,
-			HttpServletResponse res, String textForGit) throws IOException {
+			HttpServletResponse res, String textForGit, int httpStatus)
+			throws IOException {
 		ByteArrayOutputStream buf = new ByteArrayOutputStream(128);
 		PacketLineOut pck = new PacketLineOut(buf);
 		String svc = req.getParameter("service");
 		pck.writeString("# service=" + svc + "\n");
 		pck.end();
 		pck.writeString("ERR " + textForGit);
-		send(req, res, infoRefsResultType(svc), buf.toByteArray());
+		send(req, res, infoRefsResultType(svc), buf.toByteArray(), httpStatus);
 	}
 
 	private static void sendUploadPackError(HttpServletRequest req,
-			HttpServletResponse res, String textForGit) throws IOException {
+			HttpServletResponse res, String textForGit, int httpStatus)
+			throws IOException {
+		// Do not use sideband. Sideband is acceptable only while packfile is
+		// being sent. Other places, like acknowledgement section, do not
+		// support sideband. Use an error packet.
 		ByteArrayOutputStream buf = new ByteArrayOutputStream(128);
 		PacketLineOut pckOut = new PacketLineOut(buf);
-
-		boolean sideband;
-		UploadPack up = (UploadPack) req.getAttribute(ATTRIBUTE_HANDLER);
-		if (up != null) {
-			try {
-				sideband = up.isSideBand();
-			} catch (RequestNotYetReadException e) {
-				sideband = isUploadPackSideBand(req);
-			}
-		} else
-			sideband = isUploadPackSideBand(req);
-
-		if (sideband)
-			writeSideBand(buf, textForGit);
-		else
-			writePacket(pckOut, textForGit);
-		send(req, res, UPLOAD_PACK_RESULT_TYPE, buf.toByteArray());
-	}
-
-	private static boolean isUploadPackSideBand(HttpServletRequest req) {
-		try {
-			// The client may be in a state where they have sent the sideband
-			// capability and are expecting a response in the sideband, but we might
-			// not have an UploadPack, or it might not have read any of the request.
-			// So, cheat and read the first line.
-			String line = new PacketLineIn(req.getInputStream()).readString();
-			UploadPack.FirstLine parsed = new UploadPack.FirstLine(line);
-			return (parsed.getOptions().contains(OPTION_SIDE_BAND)
-					|| parsed.getOptions().contains(OPTION_SIDE_BAND_64K));
-		} catch (IOException e) {
-			// Probably the connection is closed and a subsequent write will fail, but
-			// try it just in case.
-			return false;
-		}
+		writePacket(pckOut, textForGit);
+		send(req, res, UPLOAD_PACK_RESULT_TYPE, buf.toByteArray(), httpStatus);
 	}
 
 	private static void sendReceivePackError(HttpServletRequest req,
-			HttpServletResponse res, String textForGit) throws IOException {
+			HttpServletResponse res, String textForGit, int httpStatus)
+			throws IOException {
 		ByteArrayOutputStream buf = new ByteArrayOutputStream(128);
 		PacketLineOut pckOut = new PacketLineOut(buf);
 
@@ -276,7 +215,7 @@ public class GitSmartHttpTools {
 			writeSideBand(buf, textForGit);
 		else
 			writePacket(pckOut, textForGit);
-		send(req, res, RECEIVE_PACK_RESULT_TYPE, buf.toByteArray());
+		send(req, res, RECEIVE_PACK_RESULT_TYPE, buf.toByteArray(), httpStatus);
 	}
 
 	private static boolean isReceivePackSideBand(HttpServletRequest req) {
@@ -286,8 +225,9 @@ public class GitSmartHttpTools {
 			// not have a ReceivePack, or it might not have read any of the request.
 			// So, cheat and read the first line.
 			String line = new PacketLineIn(req.getInputStream()).readString();
-			ReceivePack.FirstLine parsed = new ReceivePack.FirstLine(line);
-			return parsed.getCapabilities().contains(CAPABILITY_SIDE_BAND_64K);
+			FirstCommand parsed = FirstCommand.fromLine(line);
+			return parsed.getCapabilities()
+					.containsKey(CAPABILITY_SIDE_BAND_64K);
 		} catch (IOException e) {
 			// Probably the connection is closed and a subsequent write will fail, but
 			// try it just in case.
@@ -297,28 +237,26 @@ public class GitSmartHttpTools {
 
 	private static void writeSideBand(OutputStream out, String textForGit)
 			throws IOException {
-		@SuppressWarnings("resource" /* java 7 */)
-		OutputStream msg = new SideBandOutputStream(CH_ERROR, SMALL_BUF, out);
-		msg.write(Constants.encode("error: " + textForGit));
-		msg.flush();
+		try (OutputStream msg = new SideBandOutputStream(CH_ERROR, SMALL_BUF,
+				out)) {
+			msg.write(Constants.encode("error: " + textForGit));
+			msg.flush();
+		}
 	}
 
 	private static void writePacket(PacketLineOut pckOut, String textForGit)
 			throws IOException {
-		pckOut.writeString("error: " + textForGit);
+		pckOut.writeString("ERR " + textForGit);
 	}
 
 	private static void send(HttpServletRequest req, HttpServletResponse res,
-			String type, byte[] buf) throws IOException {
+			String type, byte[] buf, int httpStatus) throws IOException {
 		ServletUtils.consumeRequestBody(req);
-		res.setStatus(HttpServletResponse.SC_OK);
+		res.setStatus(httpStatus);
 		res.setContentType(type);
 		res.setContentLength(buf.length);
-		OutputStream os = res.getOutputStream();
-		try {
+		try (OutputStream os = res.getOutputStream()) {
 			os.write(buf);
-		} finally {
-			os.close();
 		}
 	}
 

@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2010, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.lib;
@@ -53,6 +20,7 @@ import static org.eclipse.jgit.lib.FileMode.TREE;
 import java.io.IOException;
 
 import org.eclipse.jgit.errors.CorruptObjectException;
+import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.revwalk.RevBlob;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.revwalk.RevTree;
@@ -93,7 +61,9 @@ public class TreeFormatter {
 
 	private TemporaryBuffer.Heap overflowBuffer;
 
-	/** Create an empty formatter with a default buffer size. */
+	/**
+	 * Create an empty formatter with a default buffer size.
+	 */
 	public TreeFormatter() {
 		this(8192);
 	}
@@ -111,7 +81,7 @@ public class TreeFormatter {
 	}
 
 	/**
-	 * Add a link to a submodule commit, mode is {@link FileMode#GITLINK}.
+	 * Add a link to a submodule commit, mode is {@link org.eclipse.jgit.lib.FileMode#GITLINK}.
 	 *
 	 * @param name
 	 *            name of the entry.
@@ -123,7 +93,7 @@ public class TreeFormatter {
 	}
 
 	/**
-	 * Add a subtree, mode is {@link FileMode#TREE}.
+	 * Add a subtree, mode is {@link org.eclipse.jgit.lib.FileMode#TREE}.
 	 *
 	 * @param name
 	 *            name of the entry.
@@ -135,7 +105,7 @@ public class TreeFormatter {
 	}
 
 	/**
-	 * Add a regular file, mode is {@link FileMode#REGULAR_FILE}.
+	 * Add a regular file, mode is {@link org.eclipse.jgit.lib.FileMode#REGULAR_FILE}.
 	 *
 	 * @param name
 	 *            name of the entry.
@@ -193,6 +163,34 @@ public class TreeFormatter {
 	 */
 	public void append(byte[] nameBuf, int namePos, int nameLen, FileMode mode,
 			AnyObjectId id) {
+		append(nameBuf, namePos, nameLen, mode, id, false);
+	}
+
+	/**
+	 * Append any entry to the tree.
+	 *
+	 * @param nameBuf
+	 *            buffer holding the name of the entry. The name should be UTF-8
+	 *            encoded, but file name encoding is not a well defined concept
+	 *            in Git.
+	 * @param namePos
+	 *            first position within {@code nameBuf} of the name data.
+	 * @param nameLen
+	 *            number of bytes from {@code nameBuf} to use as the name.
+	 * @param mode
+	 *            mode describing the treatment of {@code id}.
+	 * @param id
+	 *            the ObjectId to store in this entry.
+	 * @param allowEmptyName
+	 *            allow an empty filename (creating a corrupt tree)
+	 * @since 4.6
+	 */
+	public void append(byte[] nameBuf, int namePos, int nameLen, FileMode mode,
+			AnyObjectId id, boolean allowEmptyName) {
+		if (nameLen == 0 && !allowEmptyName) {
+			throw new IllegalArgumentException(
+					JGitText.get().invalidTreeZeroLengthName);
+		}
 		if (fmtBuf(nameBuf, namePos, nameLen, mode)) {
 			id.copyRawTo(buf, ptr);
 			ptr += OBJECT_ID_LENGTH;
@@ -278,7 +276,7 @@ public class TreeFormatter {
 	 * @param ins
 	 *            the inserter to store the tree.
 	 * @return computed ObjectId of the tree
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the tree could not be stored.
 	 */
 	public ObjectId insertTo(ObjectInserter ins) throws IOException {
@@ -292,7 +290,7 @@ public class TreeFormatter {
 	/**
 	 * Compute the ObjectId for this tree
 	 *
-	 * @param ins
+	 * @param ins a {@link org.eclipse.jgit.lib.ObjectInserter} object.
 	 * @return ObjectId for this tree
 	 */
 	public ObjectId computeId(ObjectInserter ins) {
@@ -314,7 +312,8 @@ public class TreeFormatter {
 	 * This method is not efficient, as it needs to create a copy of the
 	 * internal buffer in order to supply an array of the correct size to the
 	 * caller. If the buffer is just to pass to an ObjectInserter, consider
-	 * using {@link ObjectInserter#insert(TreeFormatter)} instead.
+	 * using {@link org.eclipse.jgit.lib.ObjectInserter#insert(TreeFormatter)}
+	 * instead.
 	 *
 	 * @return a copy of this formatter's buffer.
 	 */
@@ -333,6 +332,7 @@ public class TreeFormatter {
 		}
 	}
 
+	/** {@inheritDoc} */
 	@SuppressWarnings("nls")
 	@Override
 	public String toString() {

@@ -2,55 +2,22 @@
  * Copyright (C) 2011, Google Inc.
  * Copyright (C) 2009, Christian Halstrick <christian.halstrick@sap.com>
  * Copyright (C) 2009, Johannes E. Schindelin
- * Copyright (C) 2009, Johannes Schindelin <johannes.schindelin@gmx.de>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2009, Johannes Schindelin <johannes.schindelin@gmx.de> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.pgm;
 
 import static java.lang.Integer.valueOf;
 import static java.lang.Long.valueOf;
+import static org.eclipse.jgit.lib.Constants.OBJECT_ID_ABBREV_STRING_LENGTH;
 import static org.eclipse.jgit.lib.Constants.OBJECT_ID_STRING_LENGTH;
 
-import java.io.File;
 import java.io.IOException;
 import java.text.MessageFormat;
 import java.text.SimpleDateFormat;
@@ -60,12 +27,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 
+import org.eclipse.jgit.api.errors.NoHeadException;
 import org.eclipse.jgit.blame.BlameGenerator;
 import org.eclipse.jgit.blame.BlameResult;
 import org.eclipse.jgit.diff.RawText;
 import org.eclipse.jgit.diff.RawTextComparator;
-import org.eclipse.jgit.dircache.DirCache;
+import org.eclipse.jgit.errors.NoWorkTreeException;
 import org.eclipse.jgit.lib.Constants;
+import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectReader;
 import org.eclipse.jgit.lib.PersonIdent;
 import org.eclipse.jgit.pgm.internal.CLIText;
@@ -114,7 +83,7 @@ class Blame extends TextBuiltin {
 	private String rangeString;
 
 	@Option(name = "--reverse", metaVar = "metaVar_blameReverse", usage = "usage_blameReverse")
-	private List<RevCommit> reverseRange = new ArrayList<RevCommit>(2);
+	private List<RevCommit> reverseRange = new ArrayList<>(2);
 
 	@Argument(index = 0, required = false, metaVar = "metaVar_revision")
 	private String revision;
@@ -122,9 +91,7 @@ class Blame extends TextBuiltin {
 	@Argument(index = 1, required = false, metaVar = "metaVar_file")
 	private String file;
 
-	private ObjectReader reader;
-
-	private final Map<RevCommit, String> abbreviatedCommits = new HashMap<RevCommit, String>();
+	private final Map<RevCommit, String> abbreviatedCommits = new HashMap<>();
 
 	private SimpleDateFormat dateFmt;
 
@@ -134,64 +101,75 @@ class Blame extends TextBuiltin {
 
 	private BlameResult blame;
 
+	/** Used to get a current time stamp for lines without commit. */
+	private final PersonIdent dummyDate = new PersonIdent("", ""); //$NON-NLS-1$ //$NON-NLS-2$
+
+	/** {@inheritDoc} */
 	@Override
-	protected void run() throws Exception {
+	protected void run() {
 		if (file == null) {
-			if (revision == null)
+			if (revision == null) {
 				throw die(CLIText.get().fileIsRequired);
+			}
 			file = revision;
 			revision = null;
 		}
 
 		boolean autoAbbrev = abbrev == 0;
-		if (abbrev == 0)
-			abbrev = db.getConfig().getInt("core", "abbrev", 7); //$NON-NLS-1$ //$NON-NLS-2$
-		if (!showBlankBoundary)
+		if (abbrev == 0) {
+			abbrev = db.getConfig().getInt("core", "abbrev", //$NON-NLS-1$ //$NON-NLS-2$
+					OBJECT_ID_ABBREV_STRING_LENGTH);
+		}
+		if (!showBlankBoundary) {
 			root = db.getConfig().getBoolean("blame", "blankboundary", false); //$NON-NLS-1$ //$NON-NLS-2$
-		if (!root)
+		}
+		if (!root) {
 			root = db.getConfig().getBoolean("blame", "showroot", false); //$NON-NLS-1$ //$NON-NLS-2$
+		}
 
-		if (showRawTimestamp)
+		if (showRawTimestamp) {
 			dateFmt = new SimpleDateFormat("ZZZZ"); //$NON-NLS-1$
-		else
+		} else {
 			dateFmt = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss ZZZZ"); //$NON-NLS-1$
+		}
 
-		reader = db.newObjectReader();
-		try (BlameGenerator generator = new BlameGenerator(db, file)) {
+		try (ObjectReader reader = db.newObjectReader();
+				BlameGenerator generator = new BlameGenerator(db, file)) {
 			RevFlag scanned = generator.newFlag("SCANNED"); //$NON-NLS-1$
 			generator.setTextComparator(comparator);
 
 			if (!reverseRange.isEmpty()) {
 				RevCommit rangeStart = null;
-				List<RevCommit> rangeEnd = new ArrayList<RevCommit>(2);
+				List<RevCommit> rangeEnd = new ArrayList<>(2);
 				for (RevCommit c : reverseRange) {
-					if (c.has(RevFlag.UNINTERESTING))
+					if (c.has(RevFlag.UNINTERESTING)) {
 						rangeStart = c;
-					else
+					} else {
 						rangeEnd.add(c);
+					}
 				}
 				generator.reverse(rangeStart, rangeEnd);
 			} else if (revision != null) {
-				generator.push(null, db.resolve(revision + "^{commit}")); //$NON-NLS-1$
-			} else {
-				generator.push(null, db.resolve(Constants.HEAD));
-				if (!db.isBare()) {
-					DirCache dc = db.readDirCache();
-					int entry = dc.findEntry(file);
-					if (0 <= entry)
-						generator.push(null, dc.getEntry(entry).getObjectId());
-
-					File inTree = new File(db.getWorkTree(), file);
-					if (db.getFS().isFile(inTree))
-						generator.push(null, new RawText(inTree));
+				ObjectId rev = db.resolve(revision + "^{commit}"); //$NON-NLS-1$
+				if (rev == null) {
+					throw die(MessageFormat.format(CLIText.get().noSuchRef,
+							revision));
 				}
+				generator.push(null, rev);
+			} else {
+				generator.prepareHead();
 			}
 
 			blame = BlameResult.create(generator);
+			if (blame == null) {
+				throw die(MessageFormat.format(CLIText.get().noSuchPathInRef,
+						file, revision != null ? revision : Constants.HEAD));
+			}
 			begin = 0;
 			end = blame.getResultContents().size();
-			if (rangeString != null)
+			if (rangeString != null) {
 				parseLineRangeOption();
+			}
 			blame.computeRange(begin, end);
 
 			int authorWidth = 8;
@@ -202,14 +180,21 @@ class Blame extends TextBuiltin {
 				RevCommit c = blame.getSourceCommit(line);
 				if (c != null && !c.has(scanned)) {
 					c.add(scanned);
-					if (autoAbbrev)
-						abbrev = Math.max(abbrev, uniqueAbbrevLen(c));
+					if (autoAbbrev) {
+						abbrev = Math.max(abbrev, uniqueAbbrevLen(reader, c));
+					}
+					authorWidth = Math.max(authorWidth, author(line).length());
+					dateWidth = Math.max(dateWidth, date(line).length());
+					pathWidth = Math.max(pathWidth, path(line).length());
+				} else if (c == null) {
 					authorWidth = Math.max(authorWidth, author(line).length());
 					dateWidth = Math.max(dateWidth, date(line).length());
 					pathWidth = Math.max(pathWidth, path(line).length());
 				}
-				while (line + 1 < end && blame.getSourceCommit(line + 1) == c)
+				while (line + 1 < end
+						&& sameCommit(blame.getSourceCommit(line + 1), c)) {
 					line++;
+				}
 				maxSourceLine = Math.max(maxSourceLine, blame.getSourceLine(line));
 			}
 
@@ -223,7 +208,7 @@ class Blame extends TextBuiltin {
 
 			for (int line = begin; line < end;) {
 				RevCommit c = blame.getSourceCommit(line);
-				String commit = abbreviate(c);
+				String commit = abbreviate(reader, c);
 				String author = null;
 				String date = null;
 				if (!noAuthor) {
@@ -232,25 +217,38 @@ class Blame extends TextBuiltin {
 				}
 				do {
 					outw.print(commit);
-					if (showSourcePath)
+					if (showSourcePath) {
 						outw.format(pathFmt, path(line));
-					if (showSourceLine)
+					}
+					if (showSourceLine) {
 						outw.format(numFmt, valueOf(blame.getSourceLine(line) + 1));
-					if (!noAuthor)
+					}
+					if (!noAuthor) {
 						outw.format(authorFmt, author, date);
+					}
 					outw.format(lineFmt, valueOf(line + 1));
 					outw.flush();
 					blame.getResultContents().writeLine(outs, line);
 					outs.flush();
 					outw.print('\n');
-				} while (++line < end && blame.getSourceCommit(line) == c);
+				} while (++line < end
+						&& sameCommit(blame.getSourceCommit(line), c));
 			}
-		} finally {
-			reader.close();
+		} catch (NoWorkTreeException | NoHeadException | IOException e) {
+			throw die(e.getMessage(), e);
 		}
 	}
 
-	private int uniqueAbbrevLen(RevCommit commit) throws IOException {
+	@SuppressWarnings("ReferenceEquality")
+	private static boolean sameCommit(RevCommit a, RevCommit b) {
+		// Reference comparison is intentional; BlameGenerator uses a single
+		// RevWalk which caches the RevCommit objects, and if a given commit
+		// is cached the RevWalk returns the same instance.
+		return a == b;
+	}
+
+	private int uniqueAbbrevLen(ObjectReader reader, RevCommit commit)
+			throws IOException {
 		return reader.abbreviate(commit, abbrev).length();
 	}
 
@@ -280,14 +278,14 @@ class Blame extends TextBuiltin {
 			}
 		}
 
-		if (beginStr.equals("")) //$NON-NLS-1$
+		if (beginStr.isEmpty())
 			begin = 0;
 		else if (beginStr.startsWith("/")) //$NON-NLS-1$
 			begin = findLine(0, beginStr);
 		else
 			begin = Math.max(0, Integer.parseInt(beginStr) - 1);
 
-		if (endStr.equals("")) //$NON-NLS-1$
+		if (endStr.isEmpty())
 			end = blame.getResultContents().size();
 		else if (endStr.startsWith("/")) //$NON-NLS-1$
 			end = findLine(begin, endStr);
@@ -329,10 +327,12 @@ class Blame extends TextBuiltin {
 	}
 
 	private String date(int line) {
-		if (blame.getSourceCommit(line) == null)
-			return ""; //$NON-NLS-1$
-
-		PersonIdent author = blame.getSourceAuthor(line);
+		PersonIdent author;
+		if (blame.getSourceCommit(line) == null) {
+			author = dummyDate;
+		} else {
+			author = blame.getSourceAuthor(line);
+		}
 		if (author == null)
 			return ""; //$NON-NLS-1$
 
@@ -344,33 +344,43 @@ class Blame extends TextBuiltin {
 				dateFmt.format(author.getWhen()));
 	}
 
-	private String abbreviate(RevCommit commit) throws IOException {
+	private String abbreviate(ObjectReader reader, RevCommit commit)
+			throws IOException {
 		String r = abbreviatedCommits.get(commit);
 		if (r != null)
 			return r;
 
-		if (showBlankBoundary && commit.getParentCount() == 0)
-			commit = null;
-
 		if (commit == null) {
-			int len = showLongRevision ? OBJECT_ID_STRING_LENGTH : (abbrev + 1);
-			StringBuilder b = new StringBuilder(len);
-			for (int i = 0; i < len; i++)
-				b.append(' ');
-			r = b.toString();
-
-		} else if (!root && commit.getParentCount() == 0) {
-			if (showLongRevision)
-				r = "^" + commit.name().substring(0, OBJECT_ID_STRING_LENGTH - 1); //$NON-NLS-1$
-			else
-				r = "^" + reader.abbreviate(commit, abbrev).name(); //$NON-NLS-1$
+			if (showLongRevision) {
+				r = ObjectId.zeroId().name();
+			} else {
+				r = ObjectId.zeroId().abbreviate(abbrev + 1).name();
+			}
 		} else {
-			if (showLongRevision)
-				r = commit.name();
-			else
-				r = reader.abbreviate(commit, abbrev + 1).name();
-		}
+			if (showBlankBoundary && commit.getParentCount() == 0)
+				commit = null;
 
+			if (commit == null) {
+				int len = showLongRevision ? OBJECT_ID_STRING_LENGTH
+						: (abbrev + 1);
+				StringBuilder b = new StringBuilder(len);
+				for (int i = 0; i < len; i++)
+					b.append(' ');
+				r = b.toString();
+
+			} else if (!root && commit.getParentCount() == 0) {
+				if (showLongRevision)
+					r = "^" + commit.name().substring(0, //$NON-NLS-1$
+							OBJECT_ID_STRING_LENGTH - 1);
+				else
+					r = "^" + reader.abbreviate(commit, abbrev).name(); //$NON-NLS-1$
+			} else {
+				if (showLongRevision)
+					r = commit.name();
+				else
+					r = reader.abbreviate(commit, abbrev + 1).name();
+			}
+		}
 		abbreviatedCommits.put(commit, r);
 		return r;
 	}

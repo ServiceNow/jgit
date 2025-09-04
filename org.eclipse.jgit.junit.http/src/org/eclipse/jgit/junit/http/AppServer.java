@@ -1,44 +1,11 @@
 /*
- * Copyright (C) 2010, 2012 Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, 2017 Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.junit.http;
@@ -46,29 +13,39 @@ package org.eclipse.jgit.junit.http;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import java.io.File;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.UnknownHostException;
+import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
+import org.eclipse.jetty.security.AbstractLoginService;
 import org.eclipse.jetty.security.Authenticator;
 import org.eclipse.jetty.security.ConstraintMapping;
 import org.eclipse.jetty.security.ConstraintSecurityHandler;
-import org.eclipse.jetty.security.MappedLoginService;
+import org.eclipse.jetty.security.RolePrincipal;
+import org.eclipse.jetty.security.UserPrincipal;
 import org.eclipse.jetty.security.authentication.BasicAuthenticator;
 import org.eclipse.jetty.server.Connector;
 import org.eclipse.jetty.server.HttpConfiguration;
 import org.eclipse.jetty.server.HttpConnectionFactory;
+import org.eclipse.jetty.server.SecureRequestCustomizer;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
-import org.eclipse.jetty.server.UserIdentity;
+import org.eclipse.jetty.server.SslConnectionFactory;
 import org.eclipse.jetty.server.handler.ContextHandlerCollection;
 import org.eclipse.jetty.servlet.ServletContextHandler;
 import org.eclipse.jetty.util.security.Constraint;
 import org.eclipse.jetty.util.security.Password;
+import org.eclipse.jetty.util.ssl.SslContextFactory;
 import org.eclipse.jgit.transport.URIish;
 
 /**
@@ -88,6 +65,12 @@ public class AppServer {
 	/** Password for {@link #username} in secured access areas. */
 	public static final String password = "letmein";
 
+	/** SSL keystore password; must have at least 6 characters. */
+	private static final String keyPassword = "mykeys";
+
+	/** Role for authentication. */
+	private static final String authRole = "can-access";
+
 	static {
 		// Install a logger that throws warning messages.
 		//
@@ -97,28 +80,86 @@ public class AppServer {
 
 	private final Server server;
 
+	private final HttpConfiguration config;
+
 	private final ServerConnector connector;
+
+	private final HttpConfiguration secureConfig;
+
+	private final ServerConnector secureConnector;
 
 	private final ContextHandlerCollection contexts;
 
 	private final TestRequestLog log;
 
+	private List<File> filesToDelete = new ArrayList<>();
+
+	/**
+	 * Constructor for <code>AppServer</code>.
+	 */
 	public AppServer() {
+		this(0, -1);
+	}
+
+	/**
+	 * Constructor for <code>AppServer</code>.
+	 *
+	 * @param port
+	 *            the http port number; may be zero to allocate a port
+	 *            dynamically
+	 * @since 4.2
+	 */
+	public AppServer(int port) {
+		this(port, -1);
+	}
+
+	/**
+	 * Constructor for <code>AppServer</code>.
+	 *
+	 * @param port
+	 *            for http, may be zero to allocate a port dynamically
+	 * @param sslPort
+	 *            for https,may be zero to allocate a port dynamically. If
+	 *            negative, the server will be set up without https support.
+	 * @since 4.9
+	 */
+	public AppServer(int port, int sslPort) {
 		server = new Server();
 
-		HttpConfiguration http_config = new HttpConfiguration();
-		http_config.setSecureScheme("https");
-		http_config.setSecurePort(8443);
-		http_config.setOutputBufferSize(32768);
+		config = new HttpConfiguration();
+		config.setSecureScheme("https");
+		config.setSecurePort(0);
+		config.setOutputBufferSize(32768);
 
 		connector = new ServerConnector(server,
-				new HttpConnectionFactory(http_config));
-		connector.setPort(0);
+				new HttpConnectionFactory(config));
+		connector.setPort(port);
+		String ip;
+		String hostName;
 		try {
 			final InetAddress me = InetAddress.getByName("localhost");
-			connector.setHost(me.getHostAddress());
+			ip = me.getHostAddress();
+			connector.setHost(ip);
+			hostName = InetAddress.getLocalHost().getCanonicalHostName();
 		} catch (UnknownHostException e) {
 			throw new RuntimeException("Cannot find localhost", e);
+		}
+
+		if (sslPort >= 0) {
+			SslContextFactory.Server sslContextFactory = createTestSslContextFactory(
+					hostName, ip);
+			secureConfig = new HttpConfiguration(config);
+			secureConfig.addCustomizer(new SecureRequestCustomizer());
+			HttpConnectionFactory http11 = new HttpConnectionFactory(
+					secureConfig);
+			SslConnectionFactory tls = new SslConnectionFactory(
+					sslContextFactory, http11.getProtocol());
+			secureConnector = new ServerConnector(server, tls, http11);
+			secureConnector.setPort(sslPort);
+			secureConnector.setHost(ip);
+		} else {
+			secureConfig = null;
+			secureConnector = null;
 		}
 
 		contexts = new ContextHandlerCollection();
@@ -126,8 +167,70 @@ public class AppServer {
 		log = new TestRequestLog();
 		log.setHandler(contexts);
 
-		server.setConnectors(new Connector[] { connector });
+		if (secureConnector == null) {
+			server.setConnectors(new Connector[] { connector });
+		} else {
+			server.setConnectors(
+					new Connector[] { connector, secureConnector });
+		}
 		server.setHandler(log);
+	}
+
+	private SslContextFactory.Server createTestSslContextFactory(
+			String hostName, String ip) {
+		SslContextFactory.Server factory = new SslContextFactory.Server();
+
+		String dName = "CN=localhost,OU=JGit,O=Eclipse,ST=Ontario,L=Toronto,C=CA";
+
+		try {
+			File tmpDir = Files.createTempDirectory("jks").toFile();
+			tmpDir.deleteOnExit();
+			makePrivate(tmpDir);
+			File keyStore = new File(tmpDir, "keystore.jks");
+			File keytool = new File(
+					new File(new File(System.getProperty("java.home")), "bin"),
+					"keytool");
+			Runtime.getRuntime().exec(
+					new String[] {
+							keytool.getAbsolutePath(), //
+							"-keystore", keyStore.getAbsolutePath(), //
+							"-storepass", keyPassword,
+							"-alias", hostName, //
+							"-ext", "bc=ca:true", //
+							"-ext",
+							String.format(
+									"san=ip:%s,ip:127.0.0.1,ip:[::1],DNS:%s",
+									ip, hostName), //
+							"-genkeypair", //
+							"-keyalg", "RSA", //
+							"-keypass", keyPassword, //
+							"-dname", dName, //
+							"-validity", "2" //
+					}).waitFor();
+			keyStore.deleteOnExit();
+			makePrivate(keyStore);
+			filesToDelete.add(keyStore);
+			filesToDelete.add(tmpDir);
+			factory.setKeyStorePath(keyStore.getAbsolutePath());
+			factory.setKeyStorePassword(keyPassword);
+			factory.setKeyManagerPassword(keyPassword);
+			factory.setTrustStorePath(keyStore.getAbsolutePath());
+			factory.setTrustStorePassword(keyPassword);
+		} catch (InterruptedException | IOException e) {
+			throw new RuntimeException("Cannot create ssl key/certificate", e);
+		}
+		return factory;
+	}
+
+	private void makePrivate(File file) {
+		file.setReadable(false);
+		file.setWritable(false);
+		file.setExecutable(false);
+		file.setReadable(true, true);
+		file.setWritable(true, true);
+		if (file.isDirectory()) {
+			file.setExecutable(true, true);
+		}
 	}
 
 	/**
@@ -153,39 +256,81 @@ public class AppServer {
 		return ctx;
 	}
 
-	public ServletContextHandler authBasic(ServletContextHandler ctx) {
+	/**
+	 * Configure basic authentication.
+	 *
+	 * @param ctx
+	 * @param methods
+	 * @return servlet context handler
+	 */
+	public ServletContextHandler authBasic(ServletContextHandler ctx,
+			String... methods) {
 		assertNotYetSetUp();
-		auth(ctx, new BasicAuthenticator());
+		auth(ctx, new BasicAuthenticator(), methods);
 		return ctx;
 	}
 
-	private void auth(ServletContextHandler ctx, Authenticator authType) {
-		final String role = "can-access";
+	static class TestMappedLoginService extends AbstractLoginService {
+		private RolePrincipal role;
 
-		MappedLoginService users = new MappedLoginService() {
-			@Override
-			protected UserIdentity loadUser(String who) {
+		protected final Map<String, UserPrincipal> users = new ConcurrentHashMap<>();
+
+		TestMappedLoginService(String role) {
+			this.role = new RolePrincipal(role);
+		}
+
+		@Override
+		protected void doStart() throws Exception {
+			UserPrincipal p = new UserPrincipal(username,
+					new Password(password));
+			users.put(username, p);
+			super.doStart();
+		}
+
+		@Override
+		protected UserPrincipal loadUserInfo(String user) {
+			return users.get(user);
+		}
+
+		@Override
+		protected List<RolePrincipal> loadRoleInfo(UserPrincipal user) {
+			if (users.get(user.getName()) == null) {
 				return null;
 			}
+			return Collections.singletonList(role);
+		}
+	}
 
-			@Override
-			protected void loadUsers() throws IOException {
-				putUser(username, new Password(password), new String[] { role });
-			}
-		};
-
+	private ConstraintMapping createConstraintMapping() {
 		ConstraintMapping cm = new ConstraintMapping();
 		cm.setConstraint(new Constraint());
 		cm.getConstraint().setAuthenticate(true);
 		cm.getConstraint().setDataConstraint(Constraint.DC_NONE);
-		cm.getConstraint().setRoles(new String[] { role });
+		cm.getConstraint().setRoles(new String[] { authRole });
 		cm.setPathSpec("/*");
+		return cm;
+	}
+
+	private void auth(ServletContextHandler ctx, Authenticator authType,
+			String... methods) {
+		AbstractLoginService users = new TestMappedLoginService(authRole);
+		List<ConstraintMapping> mappings = new ArrayList<>();
+		if (methods == null || methods.length == 0) {
+			mappings.add(createConstraintMapping());
+		} else {
+			for (String method : methods) {
+				ConstraintMapping cm = createConstraintMapping();
+				cm.setMethod(method.toUpperCase(Locale.ROOT));
+				mappings.add(cm);
+			}
+		}
 
 		ConstraintSecurityHandler sec = new ConstraintSecurityHandler();
 		sec.setRealmName(realm);
 		sec.setAuthenticator(authType);
 		sec.setLoginService(users);
-		sec.setConstraintMappings(new ConstraintMapping[] { cm });
+		sec.setConstraintMappings(
+				mappings.toArray(new ConstraintMapping[0]));
 		sec.setHandler(ctx);
 
 		contexts.removeHandler(ctx);
@@ -202,6 +347,10 @@ public class AppServer {
 		RecordingLogger.clear();
 		log.clear();
 		server.start();
+		config.setSecurePort(getSecurePort());
+		if (secureConfig != null) {
+			secureConfig.setSecurePort(getSecurePort());
+		}
 	}
 
 	/**
@@ -214,6 +363,10 @@ public class AppServer {
 		RecordingLogger.clear();
 		log.clear();
 		server.stop();
+		for (File f : filesToDelete) {
+			f.delete();
+		}
+		filesToDelete.clear();
 	}
 
 	/**
@@ -237,18 +390,38 @@ public class AppServer {
 		}
 	}
 
-	/** @return the local port number the server is listening on. */
+	/**
+	 * Get port.
+	 *
+	 * @return the local port number the server is listening on.
+	 */
 	public int getPort() {
 		assertAlreadySetUp();
 		return connector.getLocalPort();
 	}
 
-	/** @return all requests since the server was started. */
-	public List<AccessEvent> getRequests() {
-		return new ArrayList<AccessEvent>(log.getEvents());
+	/**
+	 * Get secure port.
+	 *
+	 * @return the HTTPS port or -1 if not configured.
+	 */
+	public int getSecurePort() {
+		assertAlreadySetUp();
+		return secureConnector != null ? secureConnector.getLocalPort() : -1;
 	}
 
 	/**
+	 * Get requests.
+	 *
+	 * @return all requests since the server was started.
+	 */
+	public List<AccessEvent> getRequests() {
+		return new ArrayList<>(log.getEvents());
+	}
+
+	/**
+	 * Get requests.
+	 *
 	 * @param base
 	 *            base URI used to access the server.
 	 * @param path
@@ -260,12 +433,14 @@ public class AppServer {
 	}
 
 	/**
+	 * Get requests.
+	 *
 	 * @param path
 	 *            the path to locate requests for.
 	 * @return all requests which match the given path.
 	 */
 	public List<AccessEvent> getRequests(String path) {
-		ArrayList<AccessEvent> r = new ArrayList<AccessEvent>();
+		ArrayList<AccessEvent> r = new ArrayList<>();
 		for (AccessEvent event : log.getEvents()) {
 			if (event.getPath().equals(path)) {
 				r.add(event);

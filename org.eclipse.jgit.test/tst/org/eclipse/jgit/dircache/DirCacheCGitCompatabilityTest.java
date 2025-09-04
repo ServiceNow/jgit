@@ -1,48 +1,16 @@
 /*
- * Copyright (C) 2008-2010, Google Inc.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, 2020, Google Inc. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.dircache;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.eclipse.jgit.junit.Assert.assertEquals;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
@@ -60,6 +28,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import org.eclipse.jgit.dircache.DirCache.DirCacheVersion;
 import org.eclipse.jgit.errors.CorruptObjectException;
 import org.eclipse.jgit.junit.JGitTestUtil;
 import org.eclipse.jgit.junit.LocalDiskRepositoryTestCase;
@@ -98,17 +67,18 @@ public class DirCacheCGitCompatabilityTest extends LocalDiskRepositoryTestCase {
 		assertEquals(ls.size(), dc.getEntryCount());
 		{
 			final Iterator<CGitIndexRecord> rItr = ls.values().iterator();
-			final TreeWalk tw = new TreeWalk(db);
-			tw.setRecursive(true);
-			tw.addTree(new DirCacheIterator(dc));
-			while (rItr.hasNext()) {
-				final DirCacheIterator dcItr;
+			try (TreeWalk tw = new TreeWalk(db)) {
+				tw.setRecursive(true);
+				tw.addTree(new DirCacheIterator(dc));
+				while (rItr.hasNext()) {
+					final DirCacheIterator dcItr;
 
-				assertTrue(tw.next());
-				dcItr = tw.getTree(0, DirCacheIterator.class);
-				assertNotNull(dcItr);
+					assertTrue(tw.next());
+					dcItr = tw.getTree(0, DirCacheIterator.class);
+					assertNotNull(dcItr);
 
-				assertEqual(rItr.next(), dcItr.getDirCacheEntry());
+					assertEqual(rItr.next(), dcItr.getDirCacheEntry());
+				}
 			}
 		}
 	}
@@ -177,8 +147,8 @@ public class DirCacheCGitCompatabilityTest extends LocalDiskRepositoryTestCase {
 				.getObjectId());
 		assertEquals(cList.size(), jTree.getEntrySpan());
 
-		final ArrayList<CGitLsTreeRecord> subtrees = new ArrayList<CGitLsTreeRecord>();
-		for (final CGitLsTreeRecord r : cTree.values()) {
+		final ArrayList<CGitLsTreeRecord> subtrees = new ArrayList<>();
+		for (CGitLsTreeRecord r : cTree.values()) {
 			if (FileMode.TREE.equals(r.mode))
 				subtrees.add(r);
 		}
@@ -219,6 +189,28 @@ public class DirCacheCGitCompatabilityTest extends LocalDiskRepositoryTestCase {
 		assertArrayEquals(expectedBytes, indexBytes);
 	}
 
+	@Test
+	public void testReadWriteV4() throws Exception {
+		final File file = pathOf("gitgit.index.v4");
+		final DirCache dc = new DirCache(file, FS.DETECTED);
+		dc.read();
+		assertEquals(DirCacheVersion.DIRC_VERSION_PATHCOMPRESS,
+				dc.getVersion());
+		assertEquals(5, dc.getEntryCount());
+		assertV4TreeEntry(0, "src/org/eclipse/jgit/atest/foo.txt", false, dc);
+		assertV4TreeEntry(1, "src/org/eclipse/jgit/atest/foobar.txt", false,
+				dc);
+		assertV4TreeEntry(2, "src/org/eclipse/jgit/other/bar.txt", true, dc);
+		assertV4TreeEntry(3, "test.txt", false, dc);
+		assertV4TreeEntry(4, "test.txt2", false, dc);
+
+		final ByteArrayOutputStream bos = new ByteArrayOutputStream();
+		dc.writeTo(null, bos);
+		final byte[] indexBytes = bos.toByteArray();
+		final byte[] expectedBytes = IO.readFully(file);
+		assertArrayEquals(expectedBytes, indexBytes);
+	}
+
 	private static void assertV3TreeEntry(int indexPosition, String path,
 			boolean skipWorkTree, boolean intentToAdd, DirCache dc) {
 		final DirCacheEntry entry = dc.getEntry(indexPosition);
@@ -227,38 +219,39 @@ public class DirCacheCGitCompatabilityTest extends LocalDiskRepositoryTestCase {
 		assertEquals(intentToAdd, entry.isIntentToAdd());
 	}
 
-	private static File pathOf(final String name) {
+	private static void assertV4TreeEntry(int indexPosition, String path,
+			boolean skipWorkTree, DirCache dc) {
+		final DirCacheEntry entry = dc.getEntry(indexPosition);
+		assertEquals(path, entry.getPathString());
+		assertEquals(skipWorkTree, entry.isSkipWorkTree());
+	}
+
+	private static File pathOf(String name) {
 		return JGitTestUtil.getTestResourceFile(name);
 	}
 
 	private static Map<String, CGitIndexRecord> readLsFiles() throws Exception {
-		final LinkedHashMap<String, CGitIndexRecord> r = new LinkedHashMap<String, CGitIndexRecord>();
-		final BufferedReader br = new BufferedReader(new InputStreamReader(
-				new FileInputStream(pathOf("gitgit.lsfiles")), "UTF-8"));
-		try {
+		final LinkedHashMap<String, CGitIndexRecord> r = new LinkedHashMap<>();
+		try (BufferedReader br = new BufferedReader(new InputStreamReader(
+				new FileInputStream(pathOf("gitgit.lsfiles")), UTF_8))) {
 			String line;
 			while ((line = br.readLine()) != null) {
 				final CGitIndexRecord cr = new CGitIndexRecord(line);
 				r.put(cr.path, cr);
 			}
-		} finally {
-			br.close();
 		}
 		return r;
 	}
 
 	private static Map<String, CGitLsTreeRecord> readLsTree() throws Exception {
-		final LinkedHashMap<String, CGitLsTreeRecord> r = new LinkedHashMap<String, CGitLsTreeRecord>();
-		final BufferedReader br = new BufferedReader(new InputStreamReader(
-				new FileInputStream(pathOf("gitgit.lstree")), "UTF-8"));
-		try {
+		final LinkedHashMap<String, CGitLsTreeRecord> r = new LinkedHashMap<>();
+		try (BufferedReader br = new BufferedReader(new InputStreamReader(
+				new FileInputStream(pathOf("gitgit.lstree")), UTF_8))) {
 			String line;
 			while ((line = br.readLine()) != null) {
 				final CGitLsTreeRecord cr = new CGitLsTreeRecord(line);
 				r.put(cr.path, cr);
 			}
-		} finally {
-			br.close();
 		}
 		return r;
 	}
@@ -272,7 +265,7 @@ public class DirCacheCGitCompatabilityTest extends LocalDiskRepositoryTestCase {
 
 		final String path;
 
-		CGitIndexRecord(final String line) {
+		CGitIndexRecord(String line) {
 			final int tab = line.indexOf('\t');
 			final int sp1 = line.indexOf(' ');
 			final int sp2 = line.indexOf(' ', sp1 + 1);
@@ -290,7 +283,7 @@ public class DirCacheCGitCompatabilityTest extends LocalDiskRepositoryTestCase {
 
 		final String path;
 
-		CGitLsTreeRecord(final String line) {
+		CGitLsTreeRecord(String line) {
 			final int tab = line.indexOf('\t');
 			final int sp1 = line.indexOf(' ');
 			final int sp2 = line.indexOf(' ', sp1 + 1);

@@ -42,20 +42,22 @@
 
 package org.eclipse.jgit.transport;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.eclipse.jgit.storage.pack.PackStatistics;
 
 /**
- * {@link PostUploadHook} that delegates to a list of other hooks.
+ * {@link org.eclipse.jgit.transport.PostUploadHook} that delegates to a list of
+ * other hooks.
  * <p>
  * Hooks are run in the order passed to the constructor.
  *
  * @since 4.1
  */
 public class PostUploadHookChain implements PostUploadHook {
-	private final PostUploadHook[] hooks;
-	private final int count;
+	private final List<PostUploadHook> hooks;
 
 	/**
 	 * Create a new hook chaining the given hooks together.
@@ -64,27 +66,29 @@ public class PostUploadHookChain implements PostUploadHook {
 	 *            hooks to execute, in order.
 	 * @return a new chain of the given hooks.
 	 */
-	public static PostUploadHook newChain(List<? extends PostUploadHook> hooks) {
-		PostUploadHook[] newHooks = new PostUploadHook[hooks.size()];
-		int i = 0;
-		for (PostUploadHook hook : hooks)
-			if (hook != PostUploadHook.NULL)
-				newHooks[i++] = hook;
-		if (i == 0)
+	public static PostUploadHook newChain(List<PostUploadHook> hooks) {
+		List<PostUploadHook> newHooks = hooks.stream()
+				.filter(hook -> !hook.equals(PostUploadHook.NULL))
+				.collect(Collectors.toList());
+
+		if (newHooks.isEmpty()) {
 			return PostUploadHook.NULL;
-		else if (i == 1)
-			return newHooks[0];
-		else
-			return new PostUploadHookChain(newHooks, i);
+		} else if (newHooks.size() == 1) {
+			return newHooks.get(0);
+		} else {
+			return new PostUploadHookChain(newHooks);
+		}
 	}
 
+	/** {@inheritDoc} */
+	@Override
 	public void onPostUpload(PackStatistics stats) {
-		for (int i = 0; i < count; i++)
-			hooks[i].onPostUpload(stats);
+		for (PostUploadHook hook : hooks) {
+			hook.onPostUpload(stats);
+		}
 	}
 
-	private PostUploadHookChain(PostUploadHook[] hooks, int count) {
-		this.hooks = hooks;
-		this.count = count;
+	private PostUploadHookChain(List<PostUploadHook> hooks) {
+		this.hooks = Collections.unmodifiableList(hooks);
 	}
 }

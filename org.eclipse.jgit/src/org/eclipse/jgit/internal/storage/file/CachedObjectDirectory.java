@@ -1,45 +1,12 @@
 /*
  * Copyright (C) 2010, Constantine Plotnikov <constantine.plotnikov@gmail.com>
- * Copyright (C) 2010, JetBrains s.r.o.
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2010, 2022 JetBrains s.r.o. and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.internal.storage.file;
@@ -47,12 +14,16 @@ package org.eclipse.jgit.internal.storage.file;
 import java.io.File;
 import java.io.IOException;
 import java.util.Collection;
+import java.util.HashSet;
+import java.util.Optional;
 import java.util.Set;
 
+import org.eclipse.jgit.internal.storage.file.ObjectDirectory.AlternateHandle;
 import org.eclipse.jgit.internal.storage.pack.ObjectToPack;
 import org.eclipse.jgit.internal.storage.pack.PackWriter;
 import org.eclipse.jgit.lib.AbbreviatedObjectId;
 import org.eclipse.jgit.lib.AnyObjectId;
+import org.eclipse.jgit.internal.storage.commitgraph.CommitGraph;
 import org.eclipse.jgit.lib.Config;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.ObjectDatabase;
@@ -90,7 +61,7 @@ class CachedObjectDirectory extends FileObjectDatabase {
 	}
 
 	private ObjectIdOwnerMap<UnpackedObjectId> scanLoose() {
-		ObjectIdOwnerMap<UnpackedObjectId> m = new ObjectIdOwnerMap<UnpackedObjectId>();
+		ObjectIdOwnerMap<UnpackedObjectId> m = new ObjectIdOwnerMap<>();
 		File objects = wrapped.getDirectory();
 		String[] fanout = objects.list();
 		if (fanout == null)
@@ -115,11 +86,13 @@ class CachedObjectDirectory extends FileObjectDatabase {
 		return m;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public void close() {
 		// Don't close anything.
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public ObjectDatabase newCachedDatabase() {
 		return this;
@@ -146,9 +119,14 @@ class CachedObjectDirectory extends FileObjectDatabase {
 	}
 
 	@Override
-	Set<ObjectId> getShallowCommits() throws IOException {
+	public Set<ObjectId> getShallowCommits() throws IOException {
 		return wrapped.getShallowCommits();
 	}
+
+    @Override
+    public void setShallowCommits(Set<ObjectId> shallowCommits) throws IOException {
+        wrapped.setShallowCommits(shallowCommits);
+    }
 
 	private CachedObjectDirectory[] myAlternates() {
 		if (alts == null) {
@@ -160,43 +138,71 @@ class CachedObjectDirectory extends FileObjectDatabase {
 		return alts;
 	}
 
-	@Override
-	void resolve(Set<ObjectId> matches, AbbreviatedObjectId id)
-			throws IOException {
-		// In theory we could accelerate the loose object scan using our
-		// unpackedObjects map, but its not worth the huge code complexity.
-		// Scanning a single loose directory is fast enough, and this is
-		// unlikely to be called anyway.
-		//
-		wrapped.resolve(matches, id);
+	private Set<AlternateHandle.Id> skipMe(Set<AlternateHandle.Id> skips) {
+		Set<AlternateHandle.Id> withMe = new HashSet<>();
+		if (skips != null) {
+			withMe.addAll(skips);
+		}
+		withMe.add(getAlternateId());
+		return withMe;
 	}
 
 	@Override
-	public boolean has(final AnyObjectId objectId) throws IOException {
-		if (unpackedObjects.contains(objectId))
+	void resolve(Set<ObjectId> matches, AbbreviatedObjectId id)
+			throws IOException {
+		wrapped.resolve(matches, id);
+	}
+
+	/** {@inheritDoc} */
+	@Override
+	public boolean has(AnyObjectId objectId) throws IOException {
+		return has(objectId, null);
+	}
+
+	private boolean has(AnyObjectId objectId, Set<AlternateHandle.Id> skips)
+			throws IOException {
+		if (unpackedObjects.contains(objectId)) {
 			return true;
-		if (wrapped.hasPackedObject(objectId))
+		}
+		if (wrapped.hasPackedObject(objectId)) {
 			return true;
+		}
+		skips = skipMe(skips);
 		for (CachedObjectDirectory alt : myAlternates()) {
-			if (alt.has(objectId))
-				return true;
+			if (!skips.contains(alt.getAlternateId())) {
+				if (alt.has(objectId, skips)) {
+					return true;
+				}
+			}
 		}
 		return false;
 	}
 
 	@Override
-	ObjectLoader openObject(final WindowCursor curs,
-			final AnyObjectId objectId) throws IOException {
+	ObjectLoader openObject(WindowCursor curs, AnyObjectId objectId)
+			throws IOException {
+		return openObject(curs, objectId, null);
+	}
+
+	private ObjectLoader openObject(final WindowCursor curs,
+			final AnyObjectId objectId, Set<AlternateHandle.Id> skips)
+			throws IOException {
 		ObjectLoader ldr = openLooseObject(curs, objectId);
-		if (ldr != null)
+		if (ldr != null) {
 			return ldr;
+		}
 		ldr = wrapped.openPackedObject(curs, objectId);
-		if (ldr != null)
+		if (ldr != null) {
 			return ldr;
+		}
+		skips = skipMe(skips);
 		for (CachedObjectDirectory alt : myAlternates()) {
-			ldr = alt.openObject(curs, objectId);
-			if (ldr != null)
-				return ldr;
+			if (!skips.contains(alt.getAlternateId())) {
+				ldr = alt.openObject(curs, objectId, skips);
+				if (ldr != null) {
+					return ldr;
+				}
+			}
 		}
 		return null;
 	}
@@ -240,7 +246,7 @@ class CachedObjectDirectory extends FileObjectDatabase {
 	}
 
 	@Override
-	PackFile openPack(File pack) throws IOException {
+	Pack openPack(File pack) throws IOException {
 		return wrapped.openPack(pack);
 	}
 
@@ -251,13 +257,36 @@ class CachedObjectDirectory extends FileObjectDatabase {
 	}
 
 	@Override
-	Collection<PackFile> getPacks() {
+	Collection<Pack> getPacks() {
 		return wrapped.getPacks();
+	}
+
+	/** {@inheritDoc} */
+	@Override
+	public Optional<CommitGraph> getCommitGraph() {
+		return wrapped.getCommitGraph();
 	}
 
 	private static class UnpackedObjectId extends ObjectIdOwnerMap.Entry {
 		UnpackedObjectId(AnyObjectId id) {
 			super(id);
 		}
+	}
+
+	private AlternateHandle.Id getAlternateId() {
+		return wrapped.getAlternateId();
+	}
+
+	@Override
+	public long getApproximateObjectCount() {
+		long count = 0;
+		for (Pack p : getPacks()) {
+			try {
+				count += p.getObjectCount();
+			} catch (IOException e) {
+				return -1;
+			}
+		}
+		return count;
 	}
 }

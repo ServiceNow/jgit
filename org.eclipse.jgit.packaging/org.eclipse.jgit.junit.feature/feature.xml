@@ -2,7 +2,7 @@
 <feature
       id="org.eclipse.jgit.junit"
       label="%featureName"
-      version="4.2.0.qualifier"
+      version="6.6.1.qualifier"
       provider-name="%providerName">
 
    <description url="http://www.eclipse.org/jgit/">
@@ -18,12 +18,13 @@
    </license>
 
    <url>
-      <update label="%updateSiteName" url="http://download.eclipse.org/egit/updates"/>
-      <discovery label="%updateSiteName" url="http://download.eclipse.org/egit/updates"/>
+      <update label="%updateSiteName" url="https://download.eclipse.org/egit/updates"/>
+      <discovery label="%updateSiteName" url="https://download.eclipse.org/egit/updates"/>
    </url>
 
    <requires>
       <import plugin="com.jcraft.jsch"/>
+      <import plugin="org.eclipse.jgit" version="6.6.1" match="equivalent"/>
    </requires>
 
    <plugin
@@ -41,6 +42,13 @@
          unpack="false"/>
 
    <plugin
+         id="org.eclipse.jgit.junit.ssh"
+         download-size="0"
+         install-size="0"
+         version="0.0.0"
+         unpack="false"/>
+
+   <plugin
          id="org.eclipse.jgit.http.server"
          download-size="0"
          install-size="0"
@@ -49,6 +57,20 @@
 
    <plugin
          id="org.apache.commons.logging"
+         download-size="0"
+         install-size="0"
+         version="0.0.0"
+         unpack="false"/>
+
+   <plugin
+         id="org.apache.sshd.osgi"
+         download-size="0"
+         install-size="0"
+         version="0.0.0"
+         unpack="false"/>
+
+   <plugin
+         id="org.apache.sshd.sftp"
          download-size="0"
          install-size="0"
          version="0.0.0"

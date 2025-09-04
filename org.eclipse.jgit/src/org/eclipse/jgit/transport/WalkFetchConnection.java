@@ -1,50 +1,15 @@
 /*
  * Copyright (C) 2008, Robin Rosenberg <robin.rosenberg@dewire.com>
- * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.transport;
-
-import static org.eclipse.jgit.lib.RefDatabase.ALL;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -58,7 +23,6 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 import org.eclipse.jgit.errors.CompoundException;
@@ -68,7 +32,6 @@ import org.eclipse.jgit.errors.TransportException;
 import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.internal.storage.file.ObjectDirectory;
 import org.eclipse.jgit.internal.storage.file.PackIndex;
-import org.eclipse.jgit.internal.storage.file.PackLock;
 import org.eclipse.jgit.internal.storage.file.UnpackedObject;
 import org.eclipse.jgit.lib.AnyObjectId;
 import org.eclipse.jgit.lib.Constants;
@@ -190,27 +153,27 @@ class WalkFetchConnection extends BaseFetchConnection {
 	/** Inserter to read objects from {@link #local}. */
 	private final ObjectReader reader;
 
-	WalkFetchConnection(final WalkTransport t, final WalkRemoteObjectDatabase w) {
+	WalkFetchConnection(WalkTransport t, WalkRemoteObjectDatabase w) {
 		Transport wt = (Transport)t;
 		local = wt.local;
 		objCheck = wt.getObjectChecker();
 		inserter = local.newObjectInserter();
-		reader = local.newObjectReader();
+		reader = inserter.newReader();
 
-		remotes = new ArrayList<WalkRemoteObjectDatabase>();
+		remotes = new ArrayList<>();
 		remotes.add(w);
 
-		unfetchedPacks = new LinkedList<RemotePack>();
-		packsConsidered = new HashSet<String>();
+		unfetchedPacks = new LinkedList<>();
+		packsConsidered = new HashSet<>();
 
-		noPacksYet = new LinkedList<WalkRemoteObjectDatabase>();
+		noPacksYet = new LinkedList<>();
 		noPacksYet.add(w);
 
-		noAlternatesYet = new LinkedList<WalkRemoteObjectDatabase>();
+		noAlternatesYet = new LinkedList<>();
 		noAlternatesYet.add(w);
 
-		fetchErrors = new HashMap<ObjectId, List<Throwable>>();
-		packLocks = new ArrayList<PackLock>(4);
+		fetchErrors = new HashMap<>();
+		packLocks = new ArrayList<>(4);
 
 		revWalk = new RevWalk(reader);
 		revWalk.setRetainBody(false);
@@ -220,13 +183,16 @@ class WalkFetchConnection extends BaseFetchConnection {
 		LOCALLY_SEEN = revWalk.newFlag("LOCALLY_SEEN"); //$NON-NLS-1$
 
 		localCommitQueue = new DateRevQueue();
-		workQueue = new LinkedList<ObjectId>();
+		workQueue = new LinkedList<>();
 	}
 
+	/** {@inheritDoc} */
+	@Override
 	public boolean didFetchTestConnectivity() {
 		return true;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	protected void doFetch(final ProgressMonitor monitor,
 			final Collection<Ref> want, final Set<ObjectId> have)
@@ -240,33 +206,48 @@ class WalkFetchConnection extends BaseFetchConnection {
 				downloadObject(monitor, id);
 			process(id);
 		}
+
+		try {
+			inserter.flush();
+		} catch (IOException e) {
+			throw new TransportException(e.getMessage(), e);
+		}
 	}
 
+	/** {@inheritDoc} */
+	@Override
 	public Collection<PackLock> getPackLocks() {
 		return packLocks;
 	}
 
-	public void setPackLockMessage(final String message) {
+	/** {@inheritDoc} */
+	@Override
+	public void setPackLockMessage(String message) {
 		lockMessage = message;
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public void close() {
 		inserter.close();
 		reader.close();
-		for (final RemotePack p : unfetchedPacks) {
+		for (RemotePack p : unfetchedPacks) {
 			if (p.tmpIdx != null)
 				p.tmpIdx.delete();
 		}
-		for (final WalkRemoteObjectDatabase r : remotes)
+		for (WalkRemoteObjectDatabase r : remotes)
 			r.close();
 	}
 
-	private void queueWants(final Collection<Ref> want)
+	private void queueWants(Collection<Ref> want)
 			throws TransportException {
-		final HashSet<ObjectId> inWorkQueue = new HashSet<ObjectId>();
-		for (final Ref r : want) {
+		final HashSet<ObjectId> inWorkQueue = new HashSet<>();
+		for (Ref r : want) {
 			final ObjectId id = r.getObjectId();
+			if (id == null) {
+				throw new NullPointerException(MessageFormat.format(
+						JGitText.get().transportProvidedRefWithNoObjectId, r.getName()));
+			}
 			try {
 				final RevObject obj = revWalk.parseAny(id);
 				if (obj.has(COMPLETE))
@@ -284,7 +265,7 @@ class WalkFetchConnection extends BaseFetchConnection {
 		}
 	}
 
-	private void process(final ObjectId id) throws TransportException {
+	private void process(ObjectId id) throws TransportException {
 		final RevObject obj;
 		try {
 			if (id instanceof RevObject) {
@@ -324,7 +305,7 @@ class WalkFetchConnection extends BaseFetchConnection {
 		fetchErrors.remove(id);
 	}
 
-	private void processBlob(final RevObject obj) throws TransportException {
+	private void processBlob(RevObject obj) throws TransportException {
 		try {
 			if (reader.has(obj, Constants.OBJ_BLOB))
 				obj.add(COMPLETE);
@@ -338,7 +319,7 @@ class WalkFetchConnection extends BaseFetchConnection {
 		}
 	}
 
-	private void processTree(final RevObject obj) throws TransportException {
+	private void processTree(RevObject obj) throws TransportException {
 		try {
 			treeWalk.reset(obj);
 			while (treeWalk.next()) {
@@ -366,22 +347,22 @@ class WalkFetchConnection extends BaseFetchConnection {
 		obj.add(COMPLETE);
 	}
 
-	private void processCommit(final RevObject obj) throws TransportException {
+	private void processCommit(RevObject obj) throws TransportException {
 		final RevCommit commit = (RevCommit) obj;
 		markLocalCommitsComplete(commit.getCommitTime());
 		needs(commit.getTree());
-		for (final RevCommit p : commit.getParents())
+		for (RevCommit p : commit.getParents())
 			needs(p);
 		obj.add(COMPLETE);
 	}
 
-	private void processTag(final RevObject obj) {
+	private void processTag(RevObject obj) {
 		final RevTag tag = (RevTag) obj;
 		needs(tag.getObject());
 		obj.add(COMPLETE);
 	}
 
-	private void needs(final RevObject obj) {
+	private void needs(RevObject obj) {
 		if (obj.has(COMPLETE))
 			return;
 		if (!obj.has(IN_WORK_QUEUE)) {
@@ -390,7 +371,7 @@ class WalkFetchConnection extends BaseFetchConnection {
 		}
 	}
 
-	private void downloadObject(final ProgressMonitor pm, final AnyObjectId id)
+	private void downloadObject(ProgressMonitor pm, AnyObjectId id)
 			throws TransportException {
 		if (alreadyHave(id))
 			return;
@@ -444,7 +425,7 @@ class WalkFetchConnection extends BaseFetchConnection {
 
 				if (packNameList == null || packNameList.isEmpty())
 					continue;
-				for (final String packName : packNameList) {
+				for (String packName : packNameList) {
 					if (packsConsidered.add(packName))
 						unfetchedPacks.add(new RemotePack(wrr, packName));
 				}
@@ -456,7 +437,7 @@ class WalkFetchConnection extends BaseFetchConnection {
 			//
 			Collection<WalkRemoteObjectDatabase> al = expandOneAlternate(id, pm);
 			if (al != null && !al.isEmpty()) {
-				for (final WalkRemoteObjectDatabase alt : al) {
+				for (WalkRemoteObjectDatabase alt : al) {
 					remotes.add(alt);
 					noPacksYet.add(alt);
 					noAlternatesYet.add(alt);
@@ -480,7 +461,7 @@ class WalkFetchConnection extends BaseFetchConnection {
 		}
 	}
 
-	private boolean alreadyHave(final AnyObjectId id) throws TransportException {
+	private boolean alreadyHave(AnyObjectId id) throws TransportException {
 		try {
 			return reader.has(id);
 		} catch (IOException error) {
@@ -489,6 +470,7 @@ class WalkFetchConnection extends BaseFetchConnection {
 		}
 	}
 
+	@SuppressWarnings("Finally")
 	private boolean downloadPackedObject(final ProgressMonitor monitor,
 			final AnyObjectId id) throws TransportException {
 		// Search for the object in a remote pack whose index we have,
@@ -528,6 +510,7 @@ class WalkFetchConnection extends BaseFetchConnection {
 			// and attach it to the local repository so we can use
 			// all of the contained objects.
 			//
+			Throwable e1 = null;
 			try {
 				pack.downloadPack(monitor);
 			} catch (IOException err) {
@@ -537,18 +520,23 @@ class WalkFetchConnection extends BaseFetchConnection {
 				// an alternate.
 				//
 				recordError(id, err);
+				e1 = err;
 				continue;
 			} finally {
 				// If the pack was good its in the local repository
-				// and Repository.hasObject(id) will succeed in the
-				// future, so we do not need this data anymore. If
-				// it failed the index and pack are unusable and we
-				// shouldn't consult them again.
+				// and Repository.getObjectDatabase().has(id) will
+				// succeed in the future, so we do not need this
+				// data any more. If it failed the index and pack
+				// are unusable and we shouldn't consult them again.
 				//
 				try {
-					if (pack.tmpIdx != null)
+					if (pack.tmpIdx != null) {
 						FileUtils.delete(pack.tmpIdx);
-				} catch (IOException e) {
+					}
+				} catch (Throwable e) {
+					if (e1 != null) {
+						e.addSuppressed(e1);
+					}
 					throw new TransportException(e.getMessage(), e);
 				}
 				packItr.remove();
@@ -584,7 +572,7 @@ class WalkFetchConnection extends BaseFetchConnection {
 
 	private Iterator<ObjectId> swapFetchQueue() {
 		final Iterator<ObjectId> r = workQueue.iterator();
-		workQueue = new LinkedList<ObjectId>();
+		workQueue = new LinkedList<>();
 		return r;
 	}
 
@@ -633,21 +621,21 @@ class WalkFetchConnection extends BaseFetchConnection {
 		final byte[] raw = uol.getCachedBytes();
 		if (objCheck != null) {
 			try {
-				objCheck.check(type, raw);
+				objCheck.check(id, type, raw);
 			} catch (CorruptObjectException e) {
-				throw new TransportException(MessageFormat.format(JGitText.get().transportExceptionInvalid
-						, Constants.typeString(type), id.name(), e.getMessage()));
+				throw new TransportException(MessageFormat.format(
+						JGitText.get().transportExceptionInvalid,
+						Constants.typeString(type), id.name(), e.getMessage()));
 			}
 		}
 
 		ObjectId act = inserter.insert(type, raw);
-		if (!AnyObjectId.equals(id, act)) {
+		if (!AnyObjectId.isEqual(id, act)) {
 			throw new TransportException(MessageFormat.format(
 					JGitText.get().incorrectHashFor, id.name(), act.name(),
 					Constants.typeString(type),
 					Integer.valueOf(compressed.length)));
 		}
-		inserter.flush();
 	}
 
 	private Collection<WalkRemoteObjectDatabase> expandOneAlternate(
@@ -671,21 +659,21 @@ class WalkFetchConnection extends BaseFetchConnection {
 		return null;
 	}
 
-	private void markLocalRefsComplete(final Set<ObjectId> have) throws TransportException {
-		Map<String, Ref> refs;
+	private void markLocalRefsComplete(Set<ObjectId> have) throws TransportException {
+		List<Ref> refs;
 		try {
-			refs = local.getRefDatabase().getRefs(ALL);
+			refs = local.getRefDatabase().getRefs();
 		} catch (IOException e) {
 			throw new TransportException(e.getMessage(), e);
 		}
-		for (final Ref r : refs.values()) {
+		for (Ref r : refs) {
 			try {
 				markLocalObjComplete(revWalk.parseAny(r.getObjectId()));
 			} catch (IOException readError) {
 				throw new TransportException(MessageFormat.format(JGitText.get().localRefIsMissingObjects, r.getName()), readError);
 			}
 		}
-		for (final ObjectId id : have) {
+		for (ObjectId id : have) {
 			try {
 				markLocalObjComplete(revWalk.parseAny(id));
 			} catch (IOException readError) {
@@ -714,7 +702,7 @@ class WalkFetchConnection extends BaseFetchConnection {
 		}
 	}
 
-	private void markLocalCommitsComplete(final int until)
+	private void markLocalCommitsComplete(int until)
 			throws TransportException {
 		try {
 			for (;;) {
@@ -724,7 +712,7 @@ class WalkFetchConnection extends BaseFetchConnection {
 				localCommitQueue.next();
 
 				markTreeComplete(c.getTree());
-				for (final RevCommit p : c.getParents())
+				for (RevCommit p : c.getParents())
 					pushLocalCommit(p);
 			}
 		} catch (IOException err) {
@@ -732,7 +720,7 @@ class WalkFetchConnection extends BaseFetchConnection {
 		}
 	}
 
-	private void pushLocalCommit(final RevCommit p)
+	private void pushLocalCommit(RevCommit p)
 			throws MissingObjectException, IOException {
 		if (p.has(LOCALLY_SEEN))
 			return;
@@ -743,7 +731,7 @@ class WalkFetchConnection extends BaseFetchConnection {
 		localCommitQueue.add(p);
 	}
 
-	private void markTreeComplete(final RevTree tree) throws IOException {
+	private void markTreeComplete(RevTree tree) throws IOException {
 		if (tree.has(COMPLETE))
 			return;
 		tree.add(COMPLETE);
@@ -777,11 +765,11 @@ class WalkFetchConnection extends BaseFetchConnection {
 		}
 	}
 
-	private void recordError(final AnyObjectId id, final Throwable what) {
+	private void recordError(AnyObjectId id, Throwable what) {
 		final ObjectId objId = id.copy();
 		List<Throwable> errors = fetchErrors.get(objId);
 		if (errors == null) {
-			errors = new ArrayList<Throwable>(2);
+			errors = new ArrayList<>(2);
 			fetchErrors.put(objId, errors);
 		}
 		errors.add(what);
@@ -798,7 +786,7 @@ class WalkFetchConnection extends BaseFetchConnection {
 
 		PackIndex index;
 
-		RemotePack(final WalkRemoteObjectDatabase c, final String pn) {
+		RemotePack(WalkRemoteObjectDatabase c, String pn) {
 			connection = c;
 			packName = pn;
 			idxName = packName.substring(0, packName.length() - 5) + ".idx"; //$NON-NLS-1$
@@ -816,7 +804,7 @@ class WalkFetchConnection extends BaseFetchConnection {
 			}
 		}
 
-		void openIndex(final ProgressMonitor pm) throws IOException {
+		void openIndex(ProgressMonitor pm) throws IOException {
 			if (index != null)
 				return;
 			if (tmpIdx == null)
@@ -835,17 +823,12 @@ class WalkFetchConnection extends BaseFetchConnection {
 			pm.beginTask("Get " + idxName.substring(0, 12) + "..idx", //$NON-NLS-1$ //$NON-NLS-2$
 					s.length < 0 ? ProgressMonitor.UNKNOWN
 							: (int) (s.length / 1024));
-			try {
-				final FileOutputStream fos = new FileOutputStream(tmpIdx);
-				try {
-					final byte[] buf = new byte[2048];
-					int cnt;
-					while (!pm.isCancelled() && (cnt = s.in.read(buf)) >= 0) {
-						fos.write(buf, 0, cnt);
-						pm.update(cnt / 1024);
-					}
-				} finally {
-					fos.close();
+			try (FileOutputStream fos = new FileOutputStream(tmpIdx)) {
+				final byte[] buf = new byte[2048];
+				int cnt;
+				while (!pm.isCancelled() && (cnt = s.in.read(buf)) >= 0) {
+					fos.write(buf, 0, cnt);
+					pm.update(cnt / 1024);
 				}
 			} catch (IOException err) {
 				FileUtils.delete(tmpIdx);
@@ -868,17 +851,20 @@ class WalkFetchConnection extends BaseFetchConnection {
 			}
 		}
 
-		void downloadPack(final ProgressMonitor monitor) throws IOException {
+		void downloadPack(ProgressMonitor monitor) throws IOException {
 			String name = "pack/" + packName; //$NON-NLS-1$
 			WalkRemoteObjectDatabase.FileStream s = connection.open(name);
-			PackParser parser = inserter.newPackParser(s.in);
-			parser.setAllowThin(false);
-			parser.setObjectChecker(objCheck);
-			parser.setLockMessage(lockMessage);
-			PackLock lock = parser.parse(monitor);
-			if (lock != null)
-				packLocks.add(lock);
-			inserter.flush();
+			try {
+				PackParser parser = inserter.newPackParser(s.in);
+				parser.setAllowThin(false);
+				parser.setObjectChecker(objCheck);
+				parser.setLockMessage(lockMessage);
+				PackLock lock = parser.parse(monitor);
+				if (lock != null)
+					packLocks.add(lock);
+			} finally {
+				s.in.close();
+			}
 		}
 	}
 }

@@ -42,12 +42,17 @@
 
 package org.eclipse.jgit.transport;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileReader;
+import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.regex.Matcher;
@@ -122,11 +127,11 @@ public class NetRC {
 
 	private File netrc;
 
-	private long lastModified;
+	private Instant lastModified;
 
-	private Map<String, NetRCEntry> hosts = new HashMap<String, NetRCEntry>();
+	private Map<String, NetRCEntry> hosts = new HashMap<>();
 
-	private static final TreeMap<String, State> STATE = new TreeMap<String, NetRC.State>() {
+	private static final TreeMap<String, State> STATE = new TreeMap<>() {
 		private static final long serialVersionUID = -4285910831814853334L;
 		{
 			put("machine", State.MACHINE); //$NON-NLS-1$
@@ -142,7 +147,9 @@ public class NetRC {
 		COMMAND, MACHINE, LOGIN, PASSWORD, DEFAULT, ACCOUNT, MACDEF
 	}
 
-	/** */
+	/**
+	 * <p>Constructor for NetRC.</p>
+	 */
 	public NetRC() {
 		netrc = getDefaultFile();
 		if (netrc != null)
@@ -150,6 +157,8 @@ public class NetRC {
 	}
 
 	/**
+	 * <p>Constructor for NetRC.</p>
+	 *
 	 * @param netrc
 	 *            the .netrc file
 	 */
@@ -175,14 +184,17 @@ public class NetRC {
 	 * Get entry by host name
 	 *
 	 * @param host
+	 *            the host name
 	 * @return entry associated with host name or null
 	 */
 	public NetRCEntry getEntry(String host) {
 		if (netrc == null)
 			return null;
 
-		if (this.lastModified != this.netrc.lastModified())
+		if (!this.lastModified
+				.equals(FS.DETECTED.lastModifiedInstant(this.netrc))) {
 			parse();
+		}
 
 		NetRCEntry entry = this.hosts.get(host);
 
@@ -193,6 +205,8 @@ public class NetRC {
 	}
 
 	/**
+	 * Get all entries collected from .netrc file
+	 *
 	 * @return all entries collected from .netrc file
 	 */
 	public Collection<NetRCEntry> getEntries() {
@@ -201,11 +215,10 @@ public class NetRC {
 
 	private void parse() {
 		this.hosts.clear();
-		this.lastModified = this.netrc.lastModified();
+		this.lastModified = FS.DETECTED.lastModifiedInstant(this.netrc);
 
-		BufferedReader r = null;
-		try {
-			r = new BufferedReader(new FileReader(netrc));
+		try (BufferedReader r = new BufferedReader(
+				new InputStreamReader(new FileInputStream(netrc), UTF_8))) {
 			String line = null;
 
 			NetRCEntry entry = new NetRCEntry();
@@ -230,7 +243,7 @@ public class NetRC {
 
 				matcher.reset(line);
 				while (matcher.find()) {
-					String command = matcher.group().toLowerCase();
+					String command = matcher.group().toLowerCase(Locale.ROOT);
 					if (command.startsWith("#")) { //$NON-NLS-1$
 						matcher.reset(""); //$NON-NLS-1$
 						continue;
@@ -307,13 +320,6 @@ public class NetRC {
 				hosts.put(entry.machine, entry);
 		} catch (IOException e) {
 			throw new RuntimeException(e);
-		} finally {
-			try {
-				if (r != null)
-					r.close();
-			} catch (IOException e) {
-				throw new RuntimeException(e);
-			}
 		}
 	}
 }

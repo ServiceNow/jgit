@@ -2,86 +2,73 @@
  * Copyright (C) 2007, Dave Watson <dwatson@mimvista.com>
  * Copyright (C) 2008-2010, Google Inc.
  * Copyright (C) 2006-2010, Robin Rosenberg <robin.rosenberg@dewire.com>
- * Copyright (C) 2006-2008, Shawn O. Pearce <spearce@spearce.org>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2006-2008, Shawn O. Pearce <spearce@spearce.org> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.internal.storage.file;
 
-import static org.eclipse.jgit.lib.RefDatabase.ALL;
+import static java.util.stream.Collectors.toList;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.text.MessageFormat;
+import java.text.ParseException;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
 import java.util.Set;
 
+import org.eclipse.jgit.annotations.NonNull;
+import org.eclipse.jgit.annotations.Nullable;
+import org.eclipse.jgit.api.errors.JGitInternalException;
 import org.eclipse.jgit.attributes.AttributesNode;
 import org.eclipse.jgit.attributes.AttributesNodeProvider;
 import org.eclipse.jgit.errors.ConfigInvalidException;
-import org.eclipse.jgit.events.ConfigChangedEvent;
-import org.eclipse.jgit.events.ConfigChangedListener;
 import org.eclipse.jgit.events.IndexChangedEvent;
 import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.internal.storage.file.ObjectDirectory.AlternateHandle;
 import org.eclipse.jgit.internal.storage.file.ObjectDirectory.AlternateRepository;
 import org.eclipse.jgit.lib.BaseRepositoryBuilder;
+import org.eclipse.jgit.lib.BatchRefUpdate;
 import org.eclipse.jgit.lib.ConfigConstants;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.CoreConfig.HideDotFiles;
 import org.eclipse.jgit.lib.CoreConfig.SymLinks;
+import org.eclipse.jgit.lib.NullProgressMonitor;
 import org.eclipse.jgit.lib.ObjectId;
+import org.eclipse.jgit.lib.ProgressMonitor;
 import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.lib.RefDatabase;
 import org.eclipse.jgit.lib.RefUpdate;
+import org.eclipse.jgit.lib.ReflogEntry;
 import org.eclipse.jgit.lib.ReflogReader;
 import org.eclipse.jgit.lib.Repository;
+import org.eclipse.jgit.lib.StoredConfig;
+import org.eclipse.jgit.revwalk.RevWalk;
 import org.eclipse.jgit.storage.file.FileBasedConfig;
 import org.eclipse.jgit.storage.file.FileRepositoryBuilder;
-import org.eclipse.jgit.util.FS;
+import org.eclipse.jgit.storage.pack.PackConfig;
+import org.eclipse.jgit.transport.ReceiveCommand;
 import org.eclipse.jgit.util.FileUtils;
+import org.eclipse.jgit.util.IO;
+import org.eclipse.jgit.util.RawParseUtils;
 import org.eclipse.jgit.util.StringUtils;
 import org.eclipse.jgit.util.SystemReader;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Represents a Git repository. A repository holds all objects and refs used for
@@ -106,19 +93,19 @@ import org.eclipse.jgit.util.SystemReader;
  * This class is thread-safe.
  * <p>
  * This implementation only handles a subtly undocumented subset of git features.
- *
  */
 public class FileRepository extends Repository {
-	private final FileBasedConfig systemConfig;
-
-	private final FileBasedConfig userConfig;
+	private static final Logger LOG = LoggerFactory
+			.getLogger(FileRepository.class);
+	private static final String UNNAMED = "Unnamed repository; edit this file to name it for gitweb."; //$NON-NLS-1$
 
 	private final FileBasedConfig repoConfig;
-
-	private final RefDatabase refs;
-
+	private RefDatabase refs;
 	private final ObjectDirectory objectDatabase;
 
+	private final Object snapshotLock = new Object();
+
+	// protected by snapshotLock
 	private FileSnapshot snapshot;
 
 	/**
@@ -126,8 +113,9 @@ public class FileRepository extends Repository {
 	 * <p>
 	 * The work tree, object directory, alternate object directories and index
 	 * file locations are deduced from the given git directory and the default
-	 * rules by running {@link FileRepositoryBuilder}. This constructor is the
-	 * same as saying:
+	 * rules by running
+	 * {@link org.eclipse.jgit.storage.file.FileRepositoryBuilder}. This
+	 * constructor is the same as saying:
 	 *
 	 * <pre>
 	 * new FileRepositoryBuilder().setGitDir(gitDir).build()
@@ -135,12 +123,12 @@ public class FileRepository extends Repository {
 	 *
 	 * @param gitDir
 	 *            GIT_DIR (the location of the repository metadata).
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the repository appears to already exist but cannot be
 	 *             accessed.
 	 * @see FileRepositoryBuilder
 	 */
-	public FileRepository(final File gitDir) throws IOException {
+	public FileRepository(File gitDir) throws IOException {
 		this(new FileRepositoryBuilder().setGitDir(gitDir).setup());
 	}
 
@@ -149,12 +137,12 @@ public class FileRepository extends Repository {
 	 *
 	 * @param gitDir
 	 *            GIT_DIR (the location of the repository metadata).
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the repository appears to already exist but cannot be
 	 *             accessed.
 	 * @see FileRepositoryBuilder
 	 */
-	public FileRepository(final String gitDir) throws IOException {
+	public FileRepository(String gitDir) throws IOException {
 		this(new File(gitDir));
 	}
 
@@ -163,45 +151,44 @@ public class FileRepository extends Repository {
 	 *
 	 * @param options
 	 *            description of the repository's important paths.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             the user configuration file or repository configuration file
 	 *             cannot be accessed.
 	 */
-	public FileRepository(final BaseRepositoryBuilder options) throws IOException {
+	public FileRepository(BaseRepositoryBuilder options) throws IOException {
 		super(options);
-
-		if (StringUtils.isEmptyOrNull(SystemReader.getInstance().getenv(
-				Constants.GIT_CONFIG_NOSYSTEM_KEY)))
-			systemConfig = SystemReader.getInstance().openSystemConfig(null,
-					getFS());
-		else
-			systemConfig = new FileBasedConfig(null, FS.DETECTED) {
-				public void load() {
-					// empty, do not load
-				}
-
-				public boolean isOutdated() {
-					// regular class would bomb here
-					return false;
-				}
-			};
-		userConfig = SystemReader.getInstance().openUserConfig(systemConfig,
-				getFS());
+		StoredConfig userConfig = null;
+		try {
+			userConfig = SystemReader.getInstance().getUserConfig();
+		} catch (ConfigInvalidException e) {
+			LOG.error(e.getMessage(), e);
+			throw new IOException(e.getMessage(), e);
+		}
 		repoConfig = new FileBasedConfig(userConfig, getFS().resolve(
 				getDirectory(), Constants.CONFIG),
 				getFS());
-
-		loadSystemConfig();
-		loadUserConfig();
 		loadRepoConfig();
 
-		repoConfig.addChangeListener(new ConfigChangedListener() {
-			public void onConfigChanged(ConfigChangedEvent event) {
-				fireEvent(event);
-			}
-		});
+		repoConfig.addChangeListener(this::fireEvent);
 
-		refs = new RefDirectory(this);
+		final long repositoryFormatVersion = getConfig().getLong(
+				ConfigConstants.CONFIG_CORE_SECTION, null,
+				ConfigConstants.CONFIG_KEY_REPO_FORMAT_VERSION, 0);
+
+		String reftype = repoConfig.getString(
+				ConfigConstants.CONFIG_EXTENSIONS_SECTION, null,
+				ConfigConstants.CONFIG_KEY_REF_STORAGE);
+		if (repositoryFormatVersion >= 1 && reftype != null) {
+			if (StringUtils.equalsIgnoreCase(reftype,
+					ConfigConstants.CONFIG_REF_STORAGE_REFTABLE)) {
+				refs = new FileReftableDatabase(this);
+			} else {
+				throw new IOException(JGitText.get().unknownRepositoryFormat);
+			}
+		} else {
+			refs = new RefDirectory(this);
+		}
+
 		objectDatabase = new ObjectDirectory(repoConfig, //
 				options.getObjectDirectory(), //
 				options.getAlternateObjectDirectories(), //
@@ -209,63 +196,32 @@ public class FileRepository extends Repository {
 				new File(getDirectory(), Constants.SHALLOW));
 
 		if (objectDatabase.exists()) {
-			final long repositoryFormatVersion = getConfig().getLong(
-					ConfigConstants.CONFIG_CORE_SECTION, null,
-					ConfigConstants.CONFIG_KEY_REPO_FORMAT_VERSION, 0);
-			if (repositoryFormatVersion > 0)
+			if (repositoryFormatVersion > 1)
 				throw new IOException(MessageFormat.format(
 						JGitText.get().unknownRepositoryFormat2,
 						Long.valueOf(repositoryFormatVersion)));
 		}
 
-		if (!isBare())
+		if (!isBare()) {
 			snapshot = FileSnapshot.save(getIndexFile());
-	}
-
-	private void loadSystemConfig() throws IOException {
-		try {
-			systemConfig.load();
-		} catch (ConfigInvalidException e1) {
-			IOException e2 = new IOException(MessageFormat.format(JGitText
-					.get().systemConfigFileInvalid, systemConfig.getFile()
-					.getAbsolutePath(), e1));
-			e2.initCause(e1);
-			throw e2;
-		}
-	}
-
-	private void loadUserConfig() throws IOException {
-		try {
-			userConfig.load();
-		} catch (ConfigInvalidException e1) {
-			IOException e2 = new IOException(MessageFormat.format(JGitText
-					.get().userConfigFileInvalid, userConfig.getFile()
-					.getAbsolutePath(), e1));
-			e2.initCause(e1);
-			throw e2;
 		}
 	}
 
 	private void loadRepoConfig() throws IOException {
 		try {
 			repoConfig.load();
-		} catch (ConfigInvalidException e1) {
-			IOException e2 = new IOException(JGitText.get().unknownRepositoryFormat);
-			e2.initCause(e1);
-			throw e2;
+		} catch (ConfigInvalidException e) {
+			throw new IOException(JGitText.get().unknownRepositoryFormat, e);
 		}
 	}
 
 	/**
+	 * {@inheritDoc}
+	 * <p>
 	 * Create a new Git repository initializing the necessary files and
 	 * directories.
-	 *
-	 * @param bare
-	 *            if true, a bare repository is created.
-	 *
-	 * @throws IOException
-	 *             in case of IO problem
 	 */
+	@Override
 	public void create(boolean bare) throws IOException {
 		final FileBasedConfig cfg = getConfig();
 		if (cfg.getFile().exists()) {
@@ -288,7 +244,7 @@ public class FileRepository extends Repository {
 
 		RefUpdate head = updateRef(Constants.HEAD);
 		head.disableRefLog();
-		head.link(Constants.R_HEADS + Constants.MASTER);
+		head.link(Constants.R_HEADS + getInitialBranch());
 
 		final boolean fileMode;
 		if (getFS().supportsExecute()) {
@@ -320,7 +276,7 @@ public class FileRepository extends Repository {
 		if (symLinks != null)
 			cfg.setString(ConfigConstants.CONFIG_CORE_SECTION, null,
 					ConfigConstants.CONFIG_KEY_SYMLINKS, symLinks.name()
-							.toLowerCase());
+							.toLowerCase(Locale.ROOT));
 		cfg.setInt(ConfigConstants.CONFIG_CORE_SECTION, null,
 				ConfigConstants.CONFIG_KEY_REPO_FORMAT_VERSION, 0);
 		cfg.setBoolean(ConfigConstants.CONFIG_CORE_SECTION, null,
@@ -341,7 +297,7 @@ public class FileRepository extends Repository {
 						ConfigConstants.CONFIG_KEY_WORKTREE, getWorkTree()
 								.getAbsolutePath());
 				LockFile dotGitLockFile = new LockFile(new File(workTree,
-						Constants.DOT_GIT), getFS());
+						Constants.DOT_GIT));
 				try {
 					if (dotGitLockFile.lock()) {
 						dotGitLockFile.write(Constants.encode(Constants.GITDIR
@@ -357,76 +313,153 @@ public class FileRepository extends Repository {
 	}
 
 	/**
+	 * Get the directory containing the objects owned by this repository
+	 *
 	 * @return the directory containing the objects owned by this repository.
 	 */
 	public File getObjectsDirectory() {
 		return objectDatabase.getDirectory();
 	}
 
-	/**
-	 * @return the object database which stores this repository's data.
-	 */
+	/** {@inheritDoc} */
+	@Override
 	public ObjectDirectory getObjectDatabase() {
 		return objectDatabase;
 	}
 
-	/** @return the reference database which stores the reference namespace. */
+	/** {@inheritDoc} */
+	@Override
 	public RefDatabase getRefDatabase() {
 		return refs;
 	}
 
-	/**
-	 * @return the configuration of this repository
-	 */
+	/** {@inheritDoc} */
+	@Override
+	public String getIdentifier() {
+		File directory = getDirectory();
+		if (directory != null) {
+			return directory.getPath();
+		}
+		throw new IllegalStateException();
+	}
+
+	/** {@inheritDoc} */
+	@Override
 	public FileBasedConfig getConfig() {
-		if (systemConfig.isOutdated()) {
-			try {
-				loadSystemConfig();
-			} catch (IOException e) {
-				throw new RuntimeException(e);
+		try {
+			SystemReader.getInstance().getUserConfig();
+			if (repoConfig.isOutdated()) {
+				loadRepoConfig();
 			}
-		}
-		if (userConfig.isOutdated()) {
-			try {
-				loadUserConfig();
-			} catch (IOException e) {
-				throw new RuntimeException(e);
-			}
-		}
-		if (repoConfig.isOutdated()) {
-				try {
-					loadRepoConfig();
-				} catch (IOException e) {
-					throw new RuntimeException(e);
-				}
+		} catch (IOException | ConfigInvalidException e) {
+			throw new RuntimeException(e);
 		}
 		return repoConfig;
 	}
 
+	/** {@inheritDoc} */
+	@Override
+	@Nullable
+	public String getGitwebDescription() throws IOException {
+		String d;
+		try {
+			d = RawParseUtils.decode(IO.readFully(descriptionFile()));
+		} catch (FileNotFoundException err) {
+			return null;
+		}
+		if (d != null) {
+			d = d.trim();
+			if (d.isEmpty() || UNNAMED.equals(d)) {
+				return null;
+			}
+		}
+		return d;
+	}
+
+	/** {@inheritDoc} */
+	@Override
+	public void setGitwebDescription(@Nullable String description)
+			throws IOException {
+		String old = getGitwebDescription();
+		if (Objects.equals(old, description)) {
+			return;
+		}
+
+		File path = descriptionFile();
+		LockFile lock = new LockFile(path);
+		if (!lock.lock()) {
+			throw new IOException(MessageFormat.format(JGitText.get().lockError,
+					path.getAbsolutePath()));
+		}
+		try {
+			String d = description;
+			if (d != null) {
+				d = d.trim();
+				if (!d.isEmpty()) {
+					d += '\n';
+				}
+			} else {
+				d = ""; //$NON-NLS-1$
+			}
+			lock.write(Constants.encode(d));
+			lock.commit();
+		} finally {
+			lock.unlock();
+		}
+	}
+
+	private File descriptionFile() {
+		return new File(getDirectory(), "description"); //$NON-NLS-1$
+	}
+
 	/**
-	 * Objects known to exist but not expressed by {@link #getAllRefs()}.
+	 * {@inheritDoc}
+	 * <p>
+	 * Objects known to exist but not expressed by {@code #getAllRefs()}.
 	 * <p>
 	 * When a repository borrows objects from another repository, it can
 	 * advertise that it safely has that other repository's references, without
-	 * exposing any other details about the other repository.  This may help
-	 * a client trying to push changes avoid pushing more than it needs to.
+	 * exposing any other details about the other repository. This may help a
+	 * client trying to push changes avoid pushing more than it needs to.
+	 *
+	 * @throws IOException
+	 */
+	@Override
+	public Set<ObjectId> getAdditionalHaves() throws IOException {
+		return getAdditionalHaves(null);
+	}
+
+	/**
+	 * Objects known to exist but not expressed by {@code #getAllRefs()}.
+	 * <p>
+	 * When a repository borrows objects from another repository, it can
+	 * advertise that it safely has that other repository's references, without
+	 * exposing any other details about the other repository. This may help a
+	 * client trying to push changes avoid pushing more than it needs to.
+	 *
+	 * @param skips
+	 *            Set of AlternateHandle Ids already seen
 	 *
 	 * @return unmodifiable collection of other known objects.
+	 * @throws IOException
+	 *             if getting refs hits an IO error
 	 */
-	public Set<ObjectId> getAdditionalHaves() {
-		HashSet<ObjectId> r = new HashSet<ObjectId>();
+	private Set<ObjectId> getAdditionalHaves(Set<AlternateHandle.Id> skips)
+			throws IOException {
+		HashSet<ObjectId> r = new HashSet<>();
+		skips = objectDatabase.addMe(skips);
 		for (AlternateHandle d : objectDatabase.myAlternates()) {
-			if (d instanceof AlternateRepository) {
-				Repository repo;
+			if (d instanceof AlternateRepository && !skips.contains(d.getId())) {
+				FileRepository repo;
 
 				repo = ((AlternateRepository) d).repository;
-				for (Ref ref : repo.getAllRefs().values()) {
+				for (Ref ref : repo.getRefDatabase().getRefs()) {
 					if (ref.getObjectId() != null)
 						r.add(ref.getObjectId());
 					if (ref.getPeeledObjectId() != null)
 						r.add(ref.getPeeledObjectId());
 				}
-				r.addAll(repo.getAdditionalHaves());
+				r.addAll(repo.getAdditionalHaves(skips));
 			}
 		}
 		return r;
@@ -437,53 +470,74 @@ public class FileRepository extends Repository {
 	 *
 	 * @param pack
 	 *            path of the pack file to open.
-	 * @throws IOException
+	 * @throws java.io.IOException
 	 *             index file could not be opened, read, or is not recognized as
 	 *             a Git pack file index.
 	 */
-	public void openPack(final File pack) throws IOException {
+	public void openPack(File pack) throws IOException {
 		objectDatabase.openPack(pack);
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public void scanForRepoChanges() throws IOException {
-		getRefDatabase().getRefs(ALL); // This will look for changes to refs
+		getRefDatabase().getRefs(); // This will look for changes to refs
 		detectIndexChanges();
 	}
 
-	/**
-	 * Detect index changes.
-	 */
+	/** Detect index changes. */
 	private void detectIndexChanges() {
-		if (isBare())
+		if (isBare()) {
 			return;
+		}
 
 		File indexFile = getIndexFile();
-		if (snapshot == null)
-			snapshot = FileSnapshot.save(indexFile);
-		else if (snapshot.isModified(indexFile))
-			notifyIndexChanged();
+		synchronized (snapshotLock) {
+			if (snapshot == null) {
+				snapshot = FileSnapshot.save(indexFile);
+				return;
+			}
+			if (!snapshot.isModified(indexFile)) {
+				return;
+			}
+		}
+		notifyIndexChanged(false);
+	}
+
+	/** {@inheritDoc} */
+	@Override
+	public void notifyIndexChanged(boolean internal) {
+		synchronized (snapshotLock) {
+			snapshot = FileSnapshot.save(getIndexFile());
+		}
+		fireEvent(new IndexChangedEvent(internal));
+	}
+
+	/** {@inheritDoc} */
+	@Override
+	public ReflogReader getReflogReader(String refName) throws IOException {
+		if (refs instanceof FileReftableDatabase) {
+			// Cannot use findRef: reftable stores log data for deleted or renamed
+			// branches.
+			return ((FileReftableDatabase)refs).getReflogReader(refName);
+		}
+
+		// TODO: use exactRef here, which offers more predictable and therefore preferable
+		// behavior.
+		Ref ref = findRef(refName);
+		if (ref == null) {
+			return null;
+		}
+		return new ReflogReaderImpl(this, ref.getName());
 	}
 
 	@Override
-	public void notifyIndexChanged() {
-		snapshot = FileSnapshot.save(getIndexFile());
-		fireEvent(new IndexChangedEvent());
+	public @NonNull ReflogReader getReflogReader(@NonNull Ref ref)
+			throws IOException {
+		return new ReflogReaderImpl(this, ref.getName());
 	}
 
-	/**
-	 * @param refName
-	 * @return a {@link ReflogReader} for the supplied refname, or null if the
-	 *         named ref does not exist.
-	 * @throws IOException the ref could not be accessed.
-	 */
-	public ReflogReader getReflogReader(String refName) throws IOException {
-		Ref ref = getRef(refName);
-		if (ref != null)
-			return new ReflogReaderImpl(this, ref.getName());
-		return null;
-	}
-
+	/** {@inheritDoc} */
 	@Override
 	public AttributesNodeProvider createAttributesNodeProvider() {
 		return new AttributesNodeProviderImpl(this);
@@ -514,6 +568,7 @@ public class FileRepository extends Repository {
 			globalAttributesNode = new GlobalAttributesNode(repo);
 		}
 
+		@Override
 		public AttributesNode getInfoAttributesNode() throws IOException {
 			if (infoAttributesNode instanceof InfoAttributesNode)
 				infoAttributesNode = ((InfoAttributesNode) infoAttributesNode)
@@ -521,6 +576,7 @@ public class FileRepository extends Repository {
 			return infoAttributesNode;
 		}
 
+		@Override
 		public AttributesNode getGlobalAttributesNode() throws IOException {
 			if (globalAttributesNode instanceof GlobalAttributesNode)
 				globalAttributesNode = ((GlobalAttributesNode) globalAttributesNode)
@@ -531,15 +587,250 @@ public class FileRepository extends Repository {
 		static void loadRulesFromFile(AttributesNode r, File attrs)
 				throws FileNotFoundException, IOException {
 			if (attrs.exists()) {
-				FileInputStream in = new FileInputStream(attrs);
-				try {
+				try (FileInputStream in = new FileInputStream(attrs)) {
 					r.parse(in);
-				} finally {
-					in.close();
 				}
 			}
 		}
 
 	}
 
+	private boolean shouldAutoDetach() {
+		return getConfig().getBoolean(ConfigConstants.CONFIG_GC_SECTION,
+				ConfigConstants.CONFIG_KEY_AUTODETACH, true);
+	}
+
+	/** {@inheritDoc} */
+	@SuppressWarnings("FutureReturnValueIgnored")
+	@Override
+	public void autoGC(ProgressMonitor monitor) {
+		GC gc = new GC(this);
+		gc.setPackConfig(new PackConfig(this));
+		gc.setProgressMonitor(monitor);
+		gc.setAuto(true);
+		gc.setBackground(shouldAutoDetach());
+		try {
+			gc.gc();
+		} catch (ParseException | IOException e) {
+			throw new JGitInternalException(JGitText.get().gcFailed, e);
+		}
+	}
+
+	/**
+	 * Converts the RefDatabase from reftable to RefDirectory. This operation is
+	 * not atomic.
+	 *
+	 * @param writeLogs
+	 *            whether to write reflogs
+	 * @param backup
+	 *            whether to rename or delete the old storage files. If set to
+	 *            {@code true}, the reftable list is left in {@code refs.old},
+	 *            and the {@code reftable/} dir is left alone. If set to
+	 *            {@code false}, the {@code reftable/} dir is removed, and
+	 *            {@code refs} file is removed.
+	 * @throws IOException
+	 *             on IO problem
+	 */
+	void convertToPackedRefs(boolean writeLogs, boolean backup) throws IOException {
+		List<Ref> all = refs.getRefs();
+		File packedRefs = new File(getDirectory(), Constants.PACKED_REFS);
+		if (packedRefs.exists()) {
+			throw new IOException(MessageFormat.format(JGitText.get().fileAlreadyExists,
+				packedRefs.getName()));
+		}
+
+		File refsFile = new File(getDirectory(), "refs"); //$NON-NLS-1$
+		File refsHeadsFile = new File(refsFile, "heads");//$NON-NLS-1$
+		File headFile = new File(getDirectory(), Constants.HEAD);
+		FileReftableDatabase oldDb = (FileReftableDatabase) refs;
+
+		// Remove the dummy files that ensure compatibility with older git
+		// versions (see convertToReftable). First make room for refs/heads/
+		refsHeadsFile.delete();
+		// RefDirectory wants to create the refs/ directory from scratch, so
+		// remove that too.
+			refsFile.delete();
+		// remove HEAD so its previous invalid value doesn't cause issues.
+		headFile.delete();
+
+		// This is not atomic, but there is no way to instantiate a RefDirectory
+		// that is disconnected from the current repo.
+		RefDirectory refDir = new RefDirectory(this);
+		refs = refDir;
+		refs.create();
+
+		ReflogWriter logWriter = refDir.newLogWriter(true);
+		List<Ref> symrefs = new ArrayList<>();
+		BatchRefUpdate bru = refs.newBatchUpdate();
+		for (Ref r : all) {
+			if (r.isSymbolic()) {
+				symrefs.add(r);
+			} else {
+				bru.addCommand(new ReceiveCommand(ObjectId.zeroId(),
+						r.getObjectId(), r.getName()));
+			}
+
+			if (writeLogs) {
+				List<ReflogEntry> logs = oldDb.getReflogReader(r.getName())
+						.getReverseEntries();
+				Collections.reverse(logs);
+				for (ReflogEntry e : logs) {
+					logWriter.log(r.getName(), e);
+				}
+			}
+		}
+
+		try (RevWalk rw = new RevWalk(this)) {
+			bru.execute(rw, NullProgressMonitor.INSTANCE);
+		}
+
+		oldDb.close();
+
+		List<String> failed = new ArrayList<>();
+		for (ReceiveCommand cmd : bru.getCommands()) {
+			if (cmd.getResult() != ReceiveCommand.Result.OK) {
+				failed.add(cmd.getRefName() + ": " + cmd.getResult()); //$NON-NLS-1$
+			}
+		}
+
+		if (!failed.isEmpty()) {
+			throw new IOException(String.format("%s: %s", //$NON-NLS-1$
+					JGitText.get().failedToConvert,
+					StringUtils.join(failed, ", "))); //$NON-NLS-1$
+		}
+
+		for (Ref s : symrefs) {
+			RefUpdate up = refs.newUpdate(s.getName(), false);
+			up.setForceUpdate(true);
+			RefUpdate.Result res = up.link(s.getTarget().getName());
+			if (res != RefUpdate.Result.NEW
+					&& res != RefUpdate.Result.NO_CHANGE) {
+				throw new IOException(
+						String.format("ref %s: %s", s.getName(), res)); //$NON-NLS-1$
+			}
+		}
+
+		if (!backup) {
+			File reftableDir = new File(getDirectory(), Constants.REFTABLE);
+			FileUtils.delete(reftableDir,
+					FileUtils.RECURSIVE | FileUtils.IGNORE_ERRORS);
+		}
+		repoConfig.unset(ConfigConstants.CONFIG_EXTENSIONS_SECTION, null,
+				ConfigConstants.CONFIG_KEY_REF_STORAGE);
+		repoConfig.save();
+	}
+
+	/**
+	 * Converts the RefDatabase from RefDirectory to reftable. This operation is
+	 * not atomic.
+	 *
+	 * @param writeLogs
+	 *            whether to write reflogs
+	 * @param backup
+	 *            whether to rename or delete the old storage files. If set to
+	 *            {@code true}, the loose refs are left in {@code refs.old}, the
+	 *            packed-refs in {@code packed-refs.old} and reflogs in
+	 *            {@code refs.old/}. HEAD is left in {@code HEAD.old} and also
+	 *            {@code .log} is appended to additional refs. If set to
+	 *            {@code false}, the {@code refs/} and {@code logs/} directories
+	 *            and {@code HEAD} and additional symbolic refs are removed.
+	 * @throws IOException
+	 *             on IO problem
+	 */
+	@SuppressWarnings("nls")
+	void convertToReftable(boolean writeLogs, boolean backup)
+			throws IOException {
+		File reftableDir = new File(getDirectory(), Constants.REFTABLE);
+		File headFile = new File(getDirectory(), Constants.HEAD);
+		if (reftableDir.exists() && FileUtils.hasFiles(reftableDir.toPath())) {
+			throw new IOException(JGitText.get().reftableDirExists);
+		}
+
+		// Ignore return value, as it is tied to temporary newRefs file.
+		FileReftableDatabase.convertFrom(this, writeLogs);
+
+		File refsFile = new File(getDirectory(), "refs");
+
+		// non-atomic: remove old data.
+		File packedRefs = new File(getDirectory(), Constants.PACKED_REFS);
+		File logsDir = new File(getDirectory(), Constants.LOGS);
+
+		List<String> additional = getRefDatabase().getAdditionalRefs().stream()
+				.map(Ref::getName).collect(toList());
+		additional.add(Constants.HEAD);
+		if (backup) {
+			FileUtils.rename(refsFile, new File(getDirectory(), "refs.old"));
+			if (packedRefs.exists()) {
+				FileUtils.rename(packedRefs, new File(getDirectory(),
+						Constants.PACKED_REFS + ".old"));
+			}
+			if (logsDir.exists()) {
+				FileUtils.rename(logsDir,
+						new File(getDirectory(), Constants.LOGS + ".old"));
+			}
+			for (String r : additional) {
+				FileUtils.rename(new File(getDirectory(), r),
+					new File(getDirectory(), r + ".old"));
+			}
+		} else {
+			FileUtils.delete(packedRefs, FileUtils.SKIP_MISSING);
+			FileUtils.delete(headFile, FileUtils.SKIP_MISSING);
+			FileUtils.delete(logsDir,
+					FileUtils.RECURSIVE | FileUtils.SKIP_MISSING);
+			FileUtils.delete(refsFile,
+					FileUtils.RECURSIVE | FileUtils.SKIP_MISSING);
+			for (String r : additional) {
+				new File(getDirectory(), r).delete();
+			}
+		}
+
+		FileUtils.mkdir(refsFile, true);
+
+		// By putting in a dummy HEAD, old versions of Git still detect a repo
+		// (that they can't read)
+		try (OutputStream os = new FileOutputStream(headFile)) {
+			os.write(Constants.encodeASCII("ref: refs/heads/.invalid"));
+		}
+
+		// Some tools might write directly into .git/refs/heads/BRANCH. By
+		// putting a file here, this fails spectacularly.
+		FileUtils.createNewFile(new File(refsFile, "heads"));
+
+		repoConfig.setString(ConfigConstants.CONFIG_EXTENSIONS_SECTION, null,
+				ConfigConstants.CONFIG_KEY_REF_STORAGE,
+				ConfigConstants.CONFIG_REF_STORAGE_REFTABLE);
+		repoConfig.setLong(ConfigConstants.CONFIG_CORE_SECTION, null,
+				ConfigConstants.CONFIG_KEY_REPO_FORMAT_VERSION, 1);
+		repoConfig.save();
+		refs.close();
+		refs = new FileReftableDatabase(this);
+	}
+
+	/**
+	 * Converts between ref storage formats.
+	 *
+	 * @param format
+	 *            the format to convert to, either "reftable" or "refdir"
+	 * @param writeLogs
+	 *            whether to write reflogs
+	 * @param backup
+	 *            whether to make a backup of the old data
+	 * @throws IOException
+	 *             on I/O problems.
+	 */
+	public void convertRefStorage(String format, boolean writeLogs,
+			boolean backup) throws IOException {
+		if (format.equals("reftable")) { //$NON-NLS-1$
+			if (refs instanceof RefDirectory) {
+				convertToReftable(writeLogs, backup);
+			}
+		} else if (format.equals("refdir")) {//$NON-NLS-1$
+			if (refs instanceof FileReftableDatabase) {
+				convertToPackedRefs(writeLogs, backup);
+			}
+		} else {
+			throw new IOException(MessageFormat
+					.format(JGitText.get().unknownRefStorageFormat, format));
+		}
+	}
 }

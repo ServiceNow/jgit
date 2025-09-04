@@ -1,46 +1,13 @@
 /*
  * Copyright (C) 2008-2009, Google Inc.
  * Copyright (C) 2009, Matthias Sohn <matthias.sohn@sap.com>
- * Copyright (C) 2012, Research In Motion Limited
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2012, Research In Motion Limited and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.merge;
@@ -49,6 +16,8 @@ import java.text.MessageFormat;
 import java.util.HashMap;
 
 import org.eclipse.jgit.internal.JGitText;
+import org.eclipse.jgit.lib.Config;
+import org.eclipse.jgit.lib.ObjectInserter;
 import org.eclipse.jgit.lib.Repository;
 
 /**
@@ -80,7 +49,7 @@ public abstract class MergeStrategy {
 	 */
 	public static final ThreeWayMergeStrategy RECURSIVE = new StrategyRecursive();
 
-	private static final HashMap<String, MergeStrategy> STRATEGIES = new HashMap<String, MergeStrategy>();
+	private static final HashMap<String, MergeStrategy> STRATEGIES = new HashMap<>();
 
 	static {
 		register(OURS);
@@ -95,10 +64,10 @@ public abstract class MergeStrategy {
 	 *
 	 * @param imp
 	 *            the strategy to register.
-	 * @throws IllegalArgumentException
+	 * @throws java.lang.IllegalArgumentException
 	 *             a strategy by the same name has already been registered.
 	 */
-	public static void register(final MergeStrategy imp) {
+	public static void register(MergeStrategy imp) {
 		register(imp.getName(), imp);
 	}
 
@@ -109,7 +78,7 @@ public abstract class MergeStrategy {
 	 *            name the strategy can be looked up under.
 	 * @param imp
 	 *            the strategy to register.
-	 * @throws IllegalArgumentException
+	 * @throws java.lang.IllegalArgumentException
 	 *             a strategy by the same name has already been registered.
 	 */
 	public static synchronized void register(final String name,
@@ -127,7 +96,7 @@ public abstract class MergeStrategy {
 	 *            name of the strategy to locate.
 	 * @return the strategy instance; null if no strategy matches the name.
 	 */
-	public static synchronized MergeStrategy get(final String name) {
+	public static synchronized MergeStrategy get(String name) {
 		return STRATEGIES.get(name);
 	}
 
@@ -144,7 +113,11 @@ public abstract class MergeStrategy {
 		return r;
 	}
 
-	/** @return default name of this strategy implementation. */
+	/**
+	 * Get default name of this strategy implementation.
+	 *
+	 * @return default name of this strategy implementation.
+	 */
 	public abstract String getName();
 
 	/**
@@ -170,4 +143,20 @@ public abstract class MergeStrategy {
 	 * @return the new merge instance which implements this strategy.
 	 */
 	public abstract Merger newMerger(Repository db, boolean inCore);
+
+	/**
+	 * Create a new merge instance.
+	 * <p>
+	 * The merge will happen in memory, working folder will not be modified, in
+	 * case of a non-trivial merge that requires manual resolution, the merger
+	 * will fail.
+	 *
+	 * @param inserter
+	 *            inserter to write results back to.
+	 * @param config
+	 *            repo config for reading diff algorithm settings.
+	 * @return the new merge instance which implements this strategy.
+	 * @since 4.8
+	 */
+	public abstract Merger newMerger(ObjectInserter inserter, Config config);
 }

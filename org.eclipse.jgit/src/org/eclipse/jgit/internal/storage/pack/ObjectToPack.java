@@ -1,45 +1,12 @@
 /*
  * Copyright (C) 2008-2010, Google Inc.
- * Copyright (C) 2008, Marek Zawirski <marek.zawirski@gmail.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, Marek Zawirski <marek.zawirski@gmail.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.internal.storage.pack;
@@ -50,7 +17,8 @@ import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.transport.PackedObjectInfo;
 
 /**
- * Per-object state used by {@link PackWriter}.
+ * Per-object state used by
+ * {@link org.eclipse.jgit.internal.storage.pack.PackWriter}.
  * <p>
  * {@code PackWriter} uses this class to track the things it needs to include in
  * the newly generated pack file, and how to efficiently obtain the raw data for
@@ -102,25 +70,31 @@ public class ObjectToPack extends PackedObjectInfo {
 	 * @param type
 	 *            real type code of the object, not its in-pack type.
 	 */
-	public ObjectToPack(AnyObjectId src, final int type) {
+	public ObjectToPack(AnyObjectId src, int type) {
 		super(src);
 		flags = type << TYPE_SHIFT;
 	}
 
 	/**
+	 * Get delta base object id if object is going to be packed in delta
+	 * representation
+	 *
 	 * @return delta base object id if object is going to be packed in delta
-	 *         representation; null otherwise - if going to be packed as a
-	 *         whole object.
+	 *         representation; null otherwise - if going to be packed as a whole
+	 *         object.
 	 */
 	public final ObjectId getDeltaBaseId() {
 		return deltaBase;
 	}
 
 	/**
+	 * Get delta base object to pack if object is going to be packed in delta
+	 * representation and delta is specified as object to pack
+	 *
 	 * @return delta base object to pack if object is going to be packed in
-	 *         delta representation and delta is specified as object to
-	 *         pack; null otherwise - if going to be packed as a whole
-	 *         object or delta base is specified only as id.
+	 *         delta representation and delta is specified as object to pack;
+	 *         null otherwise - if going to be packed as a whole object or delta
+	 *         base is specified only as id.
 	 */
 	public final ObjectToPack getDeltaBase() {
 		if (deltaBase instanceof ObjectToPack)
@@ -164,8 +138,9 @@ public class ObjectToPack extends PackedObjectInfo {
 	}
 
 	/**
-	 * @return true if object is going to be written as delta; false
-	 *         otherwise.
+	 * Whether object is going to be written as delta
+	 *
+	 * @return true if object is going to be written as delta; false otherwise.
 	 */
 	public final boolean isDeltaRepresentation() {
 		return deltaBase != null;
@@ -181,7 +156,8 @@ public class ObjectToPack extends PackedObjectInfo {
 		return 1 < getOffset(); // markWantWrite sets 1.
 	}
 
-	/** @return the type of this object. */
+	/** {@inheritDoc} */
+	@Override
 	public final int getType() {
 		return (flags >> TYPE_SHIFT) & 0x7;
 	}
@@ -215,6 +191,9 @@ public class ObjectToPack extends PackedObjectInfo {
 	}
 
 	/**
+	 * Whether an existing representation was selected to be reused as-is into
+	 * the pack stream.
+	 *
 	 * @return true if an existing representation was selected to be reused
 	 *         as-is into the pack stream.
 	 */
@@ -265,7 +244,11 @@ public class ObjectToPack extends PackedObjectInfo {
 			flags &= ~DELTA_ATTEMPTED;
 	}
 
-	/** @return the extended flags on this object, in the range [0x0, 0xf]. */
+	/**
+	 * Get the extended flags on this object, in the range [0x0, 0xf].
+	 *
+	 * @return the extended flags on this object, in the range [0x0, 0xf].
+	 */
 	protected final int getExtendedFlags() {
 		return (flags >>> EXT_SHIFT) & EXT_MASK;
 	}
@@ -362,9 +345,10 @@ public class ObjectToPack extends PackedObjectInfo {
 	 * Remember a specific representation for reuse at a later time.
 	 * <p>
 	 * Implementers should remember the representation chosen, so it can be
-	 * reused at a later time. {@link PackWriter} may invoke this method
-	 * multiple times for the same object, each time saving the current best
-	 * representation found.
+	 * reused at a later time.
+	 * {@link org.eclipse.jgit.internal.storage.pack.PackWriter} may invoke this
+	 * method multiple times for the same object, each time saving the current
+	 * best representation found.
 	 *
 	 * @param ref
 	 *            the object representation.
@@ -373,6 +357,7 @@ public class ObjectToPack extends PackedObjectInfo {
 		// Empty by default.
 	}
 
+	/** {@inheritDoc} */
 	@SuppressWarnings("nls")
 	@Override
 	public String toString() {

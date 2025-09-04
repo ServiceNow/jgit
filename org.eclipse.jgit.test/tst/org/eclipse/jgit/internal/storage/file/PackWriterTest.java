@@ -1,97 +1,78 @@
 /*
- * Copyright (C) 2008, Marek Zawirski <marek.zawirski@gmail.com>
- * and other copyright owners as documented in the project's IP log.
+ * Copyright (C) 2008, Marek Zawirski <marek.zawirski@gmail.com> and others
  *
- * This program and the accompanying materials are made available
- * under the terms of the Eclipse Distribution License v1.0 which
- * accompanies this distribution, is reproduced below, and is
- * available at http://www.eclipse.org/org/documents/edl-v10.php
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Distribution License v. 1.0 which is available at
+ * https://www.eclipse.org/org/documents/edl-v10.php.
  *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or
- * without modification, are permitted provided that the following
- * conditions are met:
- *
- * - Redistributions of source code must retain the above copyright
- *   notice, this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials provided
- *   with the distribution.
- *
- * - Neither the name of the Eclipse Foundation, Inc. nor the
- *   names of its contributors may be used to endorse or promote
- *   products derived from this software without specific prior
- *   written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 package org.eclipse.jgit.internal.storage.file;
 
+import static org.eclipse.jgit.internal.storage.pack.PackWriter.NONE;
+import static org.eclipse.jgit.lib.Constants.INFO_ALTERNATES;
+import static org.eclipse.jgit.lib.Constants.OBJ_BLOB;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.text.ParseException;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.errors.MissingObjectException;
 import org.eclipse.jgit.internal.storage.file.PackIndex.MutableEntry;
+import org.eclipse.jgit.internal.storage.pack.PackExt;
 import org.eclipse.jgit.internal.storage.pack.PackWriter;
-import org.eclipse.jgit.internal.storage.pack.PackWriter.ObjectIdSet;
 import org.eclipse.jgit.junit.JGitTestUtil;
 import org.eclipse.jgit.junit.TestRepository;
 import org.eclipse.jgit.junit.TestRepository.BranchBuilder;
-import org.eclipse.jgit.lib.AnyObjectId;
 import org.eclipse.jgit.lib.NullProgressMonitor;
 import org.eclipse.jgit.lib.ObjectId;
+import org.eclipse.jgit.lib.ObjectIdSet;
 import org.eclipse.jgit.lib.ObjectInserter;
+import org.eclipse.jgit.lib.Ref;
+import org.eclipse.jgit.lib.Repository;
+import org.eclipse.jgit.lib.Sets;
+import org.eclipse.jgit.revwalk.DepthWalk;
+import org.eclipse.jgit.revwalk.ObjectWalk;
 import org.eclipse.jgit.revwalk.RevBlob;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.revwalk.RevObject;
 import org.eclipse.jgit.revwalk.RevWalk;
 import org.eclipse.jgit.storage.pack.PackConfig;
+import org.eclipse.jgit.storage.pack.PackStatistics;
 import org.eclipse.jgit.test.resources.SampleDataRepositoryTestCase;
 import org.eclipse.jgit.transport.PackParser;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.mockito.Mockito;
 
 public class PackWriterTest extends SampleDataRepositoryTestCase {
 
-	private static final Set<ObjectId> EMPTY_SET_OBJECT = Collections
-			.<ObjectId> emptySet();
-
 	private static final List<RevObject> EMPTY_LIST_REVS = Collections
 			.<RevObject> emptyList();
+
+	private static final Set<ObjectIdSet> EMPTY_ID_SET = Collections
+			.<ObjectIdSet> emptySet();
 
 	private PackConfig config;
 
@@ -99,12 +80,33 @@ public class PackWriterTest extends SampleDataRepositoryTestCase {
 
 	private ByteArrayOutputStream os;
 
-	private PackFile pack;
+	private Pack pack;
 
 	private ObjectInserter inserter;
 
 	private FileRepository dst;
 
+	private RevBlob contentA;
+
+	private RevBlob contentB;
+
+	private RevBlob contentC;
+
+	private RevBlob contentD;
+
+	private RevBlob contentE;
+
+	private RevCommit c1;
+
+	private RevCommit c2;
+
+	private RevCommit c3;
+
+	private RevCommit c4;
+
+	private RevCommit c5;
+
+	@Override
 	@Before
 	public void setUp() throws Exception {
 		super.setUp();
@@ -112,11 +114,12 @@ public class PackWriterTest extends SampleDataRepositoryTestCase {
 		config = new PackConfig(db);
 
 		dst = createBareRepository();
-		File alt = new File(dst.getObjectDatabase().getDirectory(), "info/alternates");
+		File alt = new File(dst.getObjectDatabase().getDirectory(), INFO_ALTERNATES);
 		alt.getParentFile().mkdirs();
 		write(alt, db.getObjectDatabase().getDirectory().getAbsolutePath() + "\n");
 	}
 
+	@Override
 	@After
 	public void tearDown() throws Exception {
 		if (writer != null) {
@@ -170,7 +173,7 @@ public class PackWriterTest extends SampleDataRepositoryTestCase {
 	 */
 	@Test
 	public void testWriteEmptyPack1() throws IOException {
-		createVerifyOpenPack(EMPTY_SET_OBJECT, EMPTY_SET_OBJECT, false, false);
+		createVerifyOpenPack(NONE, NONE, false, false);
 
 		assertEquals(0, writer.getObjectCount());
 		assertEquals(0, pack.getObjectCount());
@@ -203,8 +206,7 @@ public class PackWriterTest extends SampleDataRepositoryTestCase {
 		final ObjectId nonExisting = ObjectId
 				.fromString("0000000000000000000000000000000000000001");
 		try {
-			createVerifyOpenPack(EMPTY_SET_OBJECT, Collections.singleton(
-					nonExisting), false, false);
+			createVerifyOpenPack(NONE, haves(nonExisting), false, false);
 			fail("Should have thrown MissingObjectException");
 		} catch (MissingObjectException x) {
 			// expected
@@ -220,8 +222,7 @@ public class PackWriterTest extends SampleDataRepositoryTestCase {
 	public void testIgnoreNonExistingObjects() throws IOException {
 		final ObjectId nonExisting = ObjectId
 				.fromString("0000000000000000000000000000000000000001");
-		createVerifyOpenPack(EMPTY_SET_OBJECT, Collections.singleton(
-				nonExisting), false, true);
+		createVerifyOpenPack(NONE, haves(nonExisting), false, true);
 		// shouldn't throw anything
 	}
 
@@ -230,17 +231,14 @@ public class PackWriterTest extends SampleDataRepositoryTestCase {
 	 * Use a repo with bitmap indexes because then PackWriter will use
 	 * PackWriterBitmapWalker which had problems with this situation.
 	 *
-	 * @throws IOException
-	 * @throws ParseException
+	 * @throws Exception
 	 */
 	@Test
-	public void testIgnoreNonExistingObjectsWithBitmaps() throws IOException,
-			ParseException {
+	public void testIgnoreNonExistingObjectsWithBitmaps() throws Exception {
 		final ObjectId nonExisting = ObjectId
 				.fromString("0000000000000000000000000000000000000001");
-		new GC(db).gc();
-		createVerifyOpenPack(EMPTY_SET_OBJECT,
-				Collections.singleton(nonExisting), false, true, true);
+		new GC(db).gc().get();
+		createVerifyOpenPack(NONE, haves(nonExisting), false, true, true);
 		// shouldn't throw anything
 	}
 
@@ -312,10 +310,10 @@ public class PackWriterTest extends SampleDataRepositoryTestCase {
 	 */
 	@Test
 	public void testWritePack2DeltasCRC32Copy() throws IOException {
-		final File packDir = new File(db.getObjectDatabase().getDirectory(), "pack");
-		final File crc32Pack = new File(packDir,
+		final File packDir = db.getObjectDatabase().getPackDirectory();
+		final PackFile crc32Pack = new PackFile(packDir,
 				"pack-34be9032ac282b11fa9babdc2b2a93ca996c9c2f.pack");
-		final File crc32Idx = new File(packDir,
+		final PackFile crc32Idx = new PackFile(packDir,
 				"pack-34be9032ac282b11fa9babdc2b2a93ca996c9c2f.idx");
 		copyFile(JGitTestUtil.getTestResourceFile(
 				"pack-34be9032ac282b11fa9babdc2b2a93ca996c9c2f.idxV2"),
@@ -341,14 +339,15 @@ public class PackWriterTest extends SampleDataRepositoryTestCase {
 				ObjectId.fromString("c59759f143fb1fe21c197981df75a7ee00290799"),
 				ObjectId.fromString("aabf2ffaec9b497f0950352b3e582d73035c2035"),
 				ObjectId.fromString("902d5476fa249b7abc9d84c611577a81381f0327"),
-				ObjectId.fromString("5b6e7c66c276e7610d4a73c70ec1a1f7c1003259"),
-				ObjectId.fromString("6ff87c4664981e4397625791c8ea3bbb5f2279a3") };
-		final RevWalk parser = new RevWalk(db);
-		final RevObject forcedOrderRevs[] = new RevObject[forcedOrder.length];
-		for (int i = 0; i < forcedOrder.length; i++)
-			forcedOrderRevs[i] = parser.parseAny(forcedOrder[i]);
+				ObjectId.fromString("6ff87c4664981e4397625791c8ea3bbb5f2279a3") ,
+				ObjectId.fromString("5b6e7c66c276e7610d4a73c70ec1a1f7c1003259") };
+		try (RevWalk parser = new RevWalk(db)) {
+			final RevObject forcedOrderRevs[] = new RevObject[forcedOrder.length];
+			for (int i = 0; i < forcedOrder.length; i++)
+				forcedOrderRevs[i] = parser.parseAny(forcedOrder[i]);
 
-		createVerifyOpenPack(Arrays.asList(forcedOrderRevs));
+			createVerifyOpenPack(Arrays.asList(forcedOrderRevs));
+		}
 
 		assertEquals(forcedOrder.length, writer.getObjectCount());
 		verifyObjectsOrder(forcedOrder);
@@ -388,6 +387,8 @@ public class PackWriterTest extends SampleDataRepositoryTestCase {
 	 */
 	@Test
 	public void testWritePack2SizeDeltasVsNoDeltas() throws Exception {
+		config.setReuseDeltas(false);
+		config.setDeltaCompress(false);
 		testWritePack2();
 		final long sizePack2NoDeltas = os.size();
 		tearDown();
@@ -438,14 +439,46 @@ public class PackWriterTest extends SampleDataRepositoryTestCase {
 	}
 
 	@Test
+	public void testDeltaStatistics() throws Exception {
+		config.setDeltaCompress(true);
+		// TestRepository will close repo
+		FileRepository repo = createBareRepository();
+		ArrayList<RevObject> blobs = new ArrayList<>();
+		try (TestRepository<FileRepository> testRepo = new TestRepository<>(
+				repo)) {
+			blobs.add(testRepo.blob(genDeltableData(1000)));
+			blobs.add(testRepo.blob(genDeltableData(1005)));
+			try (PackWriter pw = new PackWriter(repo)) {
+				NullProgressMonitor m = NullProgressMonitor.INSTANCE;
+				pw.preparePack(blobs.iterator());
+				pw.writePack(m, m, os);
+				PackStatistics stats = pw.getStatistics();
+				assertEquals(1, stats.getTotalDeltas());
+				assertTrue("Delta bytes not set.",
+						stats.byObjectType(OBJ_BLOB).getDeltaBytes() > 0);
+			}
+		}
+	}
+
+	// Generate consistent junk data for building files that delta well
+	private String genDeltableData(int length) {
+		assertTrue("Generated data must have a length > 0", length > 0);
+		char[] data = {'a', 'b', 'c', '\n'};
+		StringBuilder builder = new StringBuilder(length);
+		for (int i = 0; i < length; i++) {
+			builder.append(data[i % 4]);
+		}
+		return builder.toString();
+	}
+
+
+	@Test
 	public void testWriteIndex() throws Exception {
 		config.setIndexVersion(2);
 		writeVerifyPack4(false);
 
-		File packFile = pack.getPackFile();
-		String name = packFile.getName();
-		String base = name.substring(0, name.lastIndexOf('.'));
-		File indexFile = new File(packFile.getParentFile(), base + ".idx");
+		PackFile packFile = pack.getPackFile();
+		PackFile indexFile = packFile.create(PackExt.INDEX);
 
 		// Validate that IndexPack came up with the right CRC32 value.
 		final PackIndex idx1 = PackIndex.open(indexFile);
@@ -455,11 +488,8 @@ public class PackWriterTest extends SampleDataRepositoryTestCase {
 
 		// Validate that an index written by PackWriter is the same.
 		final File idx2File = new File(indexFile.getAbsolutePath() + ".2");
-		final FileOutputStream is = new FileOutputStream(idx2File);
-		try {
+		try (FileOutputStream is = new FileOutputStream(idx2File)) {
 			writer.writeIndex(is);
-		} finally {
-			is.close();
 		}
 		final PackIndex idx2 = PackIndex.open(idx2File);
 		assertTrue(idx2 instanceof PackIndexV2);
@@ -475,30 +505,97 @@ public class PackWriterTest extends SampleDataRepositoryTestCase {
 	}
 
 	@Test
+	public void testWriteObjectSizeIndex_noDeltas() throws Exception {
+		config.setMinBytesForObjSizeIndex(0);
+		HashSet<ObjectId> interesting = new HashSet<>();
+		interesting.add(ObjectId
+				.fromString("82c6b885ff600be425b4ea96dee75dca255b69e7"));
+
+		NullProgressMonitor m1 = NullProgressMonitor.INSTANCE;
+		writer = new PackWriter(config, db.newObjectReader());
+		writer.setUseBitmaps(false);
+		writer.setThin(false);
+		writer.setIgnoreMissingUninteresting(false);
+		writer.preparePack(m1, interesting, NONE);
+		writer.writePack(m1, m1, os);
+
+		PackIndex idx;
+		try (ByteArrayOutputStream is = new ByteArrayOutputStream()) {
+			writer.writeIndex(is);
+			idx = PackIndex.read(new ByteArrayInputStream(is.toByteArray()));
+		}
+
+		PackObjectSizeIndex objSizeIdx;
+		try (ByteArrayOutputStream objSizeStream = new ByteArrayOutputStream()) {
+			writer.writeObjectSizeIndex(objSizeStream);
+			objSizeIdx = PackObjectSizeIndexLoader.load(
+					new ByteArrayInputStream(objSizeStream.toByteArray()));
+		}
+		writer.close();
+
+		ObjectId knownBlob1 = ObjectId
+				.fromString("5b6e7c66c276e7610d4a73c70ec1a1f7c1003259");
+		ObjectId knownBlob2 = ObjectId
+				.fromString("6ff87c4664981e4397625791c8ea3bbb5f2279a3");
+		assertEquals(18009, objSizeIdx.getSize(idx.findPosition(knownBlob1)));
+		assertEquals(18787, objSizeIdx.getSize(idx.findPosition(knownBlob2)));
+	}
+
+	@Test
+	public void testWriteReverseIndexConfig() {
+		assertFalse(config.isWriteReverseIndex());
+		config.setWriteReverseIndex(true);
+		assertTrue(config.isWriteReverseIndex());
+	}
+
+	@Test
+	public void testWriteReverseIndexOff() throws Exception {
+		config.setWriteReverseIndex(false);
+		writer = new PackWriter(config, db.newObjectReader());
+		ByteArrayOutputStream reverseIndexOutput = new ByteArrayOutputStream();
+
+		writer.writeReverseIndex(reverseIndexOutput);
+
+		assertEquals(0, reverseIndexOutput.size());
+	}
+
+	@Test
+	public void testWriteReverseIndexOn() throws Exception {
+		config.setWriteReverseIndex(true);
+		writeVerifyPack4(false);
+		ByteArrayOutputStream reverseIndexOutput = new ByteArrayOutputStream();
+		int headerBytes = 12;
+		int bodyBytes = 12;
+		int footerBytes = 40;
+
+		writer.writeReverseIndex(reverseIndexOutput);
+
+		assertTrue(reverseIndexOutput.size() == headerBytes + bodyBytes
+				+ footerBytes);
+	}
+
+	@Test
 	public void testExclude() throws Exception {
+		// TestRepository closes repo
 		FileRepository repo = createBareRepository();
 
-		TestRepository<FileRepository> testRepo = new TestRepository<FileRepository>(
-				repo);
-		BranchBuilder bb = testRepo.branch("refs/heads/master");
-		RevBlob contentA = testRepo.blob("A");
-		RevCommit c1 = bb.commit().add("f", contentA).create();
-		testRepo.getRevWalk().parseHeaders(c1);
-		PackIndex pf1 = writePack(repo, Collections.singleton(c1),
-				Collections.<ObjectIdSet> emptySet());
-		assertContent(
-				pf1,
-				Arrays.asList(c1.getId(), c1.getTree().getId(),
-						contentA.getId()));
-		RevBlob contentB = testRepo.blob("B");
-		RevCommit c2 = bb.commit().add("f", contentB).create();
-		testRepo.getRevWalk().parseHeaders(c2);
-		PackIndex pf2 = writePack(repo, Collections.singleton(c2),
-				Collections.singleton(objectIdSet(pf1)));
-		assertContent(
-				pf2,
-				Arrays.asList(c2.getId(), c2.getTree().getId(),
-						contentB.getId()));
+		try (TestRepository<FileRepository> testRepo = new TestRepository<>(
+				repo)) {
+			BranchBuilder bb = testRepo.branch("refs/heads/master");
+			contentA = testRepo.blob("A");
+			c1 = bb.commit().add("f", contentA).create();
+			testRepo.getRevWalk().parseHeaders(c1);
+			PackIndex pf1 = writePack(repo, wants(c1), EMPTY_ID_SET);
+			assertContent(pf1, Arrays.asList(c1.getId(), c1.getTree().getId(),
+					contentA.getId()));
+			contentB = testRepo.blob("B");
+			c2 = bb.commit().add("f", contentB).create();
+			testRepo.getRevWalk().parseHeaders(c2);
+			PackIndex pf2 = writePack(repo, wants(c2),
+					Sets.of((ObjectIdSet) pf1));
+			assertContent(pf2, Arrays.asList(c2.getId(), c2.getTree().getId(),
+					contentB.getId()));
+		}
 	}
 
 	private static void assertContent(PackIndex pi, List<ObjectId> expected) {
@@ -511,27 +608,294 @@ public class PackWriterTest extends SampleDataRepositoryTestCase {
 					expected.contains(pi.getObjectId(i)));
 	}
 
+	@Test
+	public void testShallowIsMinimalDepth1() throws Exception {
+		try (FileRepository repo = setupRepoForShallowFetch()) {
+			PackIndex idx = writeShallowPack(repo, 1, wants(c2), NONE, NONE);
+			assertContent(idx, Arrays.asList(c2.getId(), c2.getTree().getId(),
+					contentA.getId(), contentB.getId()));
+
+			// Client already has blobs A and B, verify those are not packed.
+			idx = writeShallowPack(repo, 1, wants(c5), haves(c2), shallows(c2));
+			assertContent(idx, Arrays.asList(c5.getId(), c5.getTree().getId(),
+					contentC.getId(), contentD.getId(), contentE.getId()));
+		}
+	}
+
+	@Test
+	public void testShallowIsMinimalDepth2() throws Exception {
+		try (FileRepository repo = setupRepoForShallowFetch()) {
+			PackIndex idx = writeShallowPack(repo, 2, wants(c2), NONE, NONE);
+			assertContent(idx,
+					Arrays.asList(c1.getId(), c2.getId(), c1.getTree().getId(),
+							c2.getTree().getId(), contentA.getId(),
+							contentB.getId()));
+
+			// Client already has blobs A and B, verify those are not packed.
+			idx = writeShallowPack(repo, 2, wants(c5), haves(c1, c2),
+					shallows(c1));
+			assertContent(idx,
+					Arrays.asList(c4.getId(), c5.getId(), c4.getTree().getId(),
+							c5.getTree().getId(), contentC.getId(),
+							contentD.getId(), contentE.getId()));
+		}
+	}
+
+	@Test
+	public void testShallowFetchShallowParentDepth1() throws Exception {
+		try (FileRepository repo = setupRepoForShallowFetch()) {
+			PackIndex idx = writeShallowPack(repo, 1, wants(c5), NONE, NONE);
+			assertContent(idx, Arrays.asList(c5.getId(), c5.getTree().getId(),
+					contentA.getId(), contentB.getId(), contentC.getId(),
+					contentD.getId(), contentE.getId()));
+
+			idx = writeShallowPack(repo, 1, wants(c4), haves(c5), shallows(c5));
+			assertContent(idx, Arrays.asList(c4.getId(), c4.getTree().getId()));
+		}
+	}
+
+	@Test
+	public void testShallowFetchShallowParentDepth2() throws Exception {
+		try (FileRepository repo = setupRepoForShallowFetch()) {
+			PackIndex idx = writeShallowPack(repo, 2, wants(c5), NONE, NONE);
+			assertContent(idx,
+					Arrays.asList(c4.getId(), c5.getId(), c4.getTree().getId(),
+							c5.getTree().getId(), contentA.getId(),
+							contentB.getId(), contentC.getId(),
+							contentD.getId(), contentE.getId()));
+
+			idx = writeShallowPack(repo, 2, wants(c3), haves(c4, c5),
+					shallows(c4));
+			assertContent(idx, Arrays.asList(c2.getId(), c3.getId(),
+					c2.getTree().getId(), c3.getTree().getId()));
+		}
+	}
+
+	@Test
+	public void testShallowFetchShallowAncestorDepth1() throws Exception {
+		try (FileRepository repo = setupRepoForShallowFetch()) {
+			PackIndex idx = writeShallowPack(repo, 1, wants(c5), NONE, NONE);
+			assertContent(idx, Arrays.asList(c5.getId(), c5.getTree().getId(),
+					contentA.getId(), contentB.getId(), contentC.getId(),
+					contentD.getId(), contentE.getId()));
+
+			idx = writeShallowPack(repo, 1, wants(c3), haves(c5), shallows(c5));
+			assertContent(idx, Arrays.asList(c3.getId(), c3.getTree().getId()));
+		}
+	}
+
+	@Test
+	public void testShallowFetchShallowAncestorDepth2() throws Exception {
+		try (FileRepository repo = setupRepoForShallowFetch()) {
+			PackIndex idx = writeShallowPack(repo, 2, wants(c5), NONE, NONE);
+			assertContent(idx,
+					Arrays.asList(c4.getId(), c5.getId(), c4.getTree().getId(),
+							c5.getTree().getId(), contentA.getId(),
+							contentB.getId(), contentC.getId(),
+							contentD.getId(), contentE.getId()));
+
+			idx = writeShallowPack(repo, 2, wants(c2), haves(c4, c5),
+					shallows(c4));
+			assertContent(idx, Arrays.asList(c1.getId(), c2.getId(),
+					c1.getTree().getId(), c2.getTree().getId()));
+		}
+	}
+
+	@Test
+	public void testTotalPackFilesScanWhenSearchForReuseTimeoutNotSet()
+			throws Exception {
+		FileRepository fileRepository = setUpRepoWithMultiplePackfiles();
+		PackWriter mockedPackWriter = Mockito
+				.spy(new PackWriter(config, fileRepository.newObjectReader()));
+
+		doNothing().when(mockedPackWriter).select(any(), any());
+
+		try (FileOutputStream packOS = new FileOutputStream(
+				getPackFileToWrite(fileRepository, mockedPackWriter))) {
+			mockedPackWriter.writePack(NullProgressMonitor.INSTANCE,
+					NullProgressMonitor.INSTANCE, packOS);
+		}
+
+		long numberOfPackFiles = new GC(fileRepository)
+				.getStatistics().numberOfPackFiles;
+		int expectedSelectCalls =
+				// Objects contained in multiple packfiles * number of packfiles
+				2 * (int) numberOfPackFiles +
+				// Objects in single packfile
+						1;
+		verify(mockedPackWriter, times(expectedSelectCalls)).select(any(),
+				any());
+	}
+
+	@Test
+	public void testTotalPackFilesScanWhenSkippingSearchForReuseTimeoutCheck()
+			throws Exception {
+		FileRepository fileRepository = setUpRepoWithMultiplePackfiles();
+		PackConfig packConfig = new PackConfig();
+		packConfig.setSearchForReuseTimeout(Duration.ofSeconds(-1));
+		PackWriter mockedPackWriter = Mockito.spy(
+				new PackWriter(packConfig, fileRepository.newObjectReader()));
+
+		doNothing().when(mockedPackWriter).select(any(), any());
+
+		try (FileOutputStream packOS = new FileOutputStream(
+				getPackFileToWrite(fileRepository, mockedPackWriter))) {
+			mockedPackWriter.writePack(NullProgressMonitor.INSTANCE,
+					NullProgressMonitor.INSTANCE, packOS);
+		}
+
+		long numberOfPackFiles = new GC(fileRepository)
+				.getStatistics().numberOfPackFiles;
+		int expectedSelectCalls =
+				// Objects contained in multiple packfiles * number of packfiles
+				2 * (int) numberOfPackFiles +
+				// Objects contained in single packfile
+						1;
+		verify(mockedPackWriter, times(expectedSelectCalls)).select(any(),
+				any());
+	}
+
+	@Test
+	public void testPartialPackFilesScanWhenDoingSearchForReuseTimeoutCheck()
+			throws Exception {
+		FileRepository fileRepository = setUpRepoWithMultiplePackfiles();
+		PackConfig packConfig = new PackConfig();
+		packConfig.setSearchForReuseTimeout(Duration.ofSeconds(-1));
+		PackWriter mockedPackWriter = Mockito.spy(
+				new PackWriter(packConfig, fileRepository.newObjectReader()));
+		mockedPackWriter.enableSearchForReuseTimeout();
+
+		doNothing().when(mockedPackWriter).select(any(), any());
+
+		try (FileOutputStream packOS = new FileOutputStream(
+				getPackFileToWrite(fileRepository, mockedPackWriter))) {
+			mockedPackWriter.writePack(NullProgressMonitor.INSTANCE,
+					NullProgressMonitor.INSTANCE, packOS);
+		}
+
+		int expectedSelectCalls = 3; // Objects in packfiles
+		verify(mockedPackWriter, times(expectedSelectCalls)).select(any(),
+				any());
+	}
+
+	/**
+	 * Creates objects and packfiles in the following order:
+	 * <ul>
+	 * <li>Creates 2 objects (C1 = commit, T1 = tree)
+	 * <li>Creates packfile P1 (containing C1, T1)
+	 * <li>Creates 1 object (C2 commit)
+	 * <li>Creates packfile P2 (containing C1, T1, C2)
+	 * <li>Create 1 object (C3 commit)
+	 * </ul>
+	 *
+	 * @throws Exception
+	 */
+	private FileRepository setUpRepoWithMultiplePackfiles() throws Exception {
+		FileRepository fileRepository = createWorkRepository();
+		addRepoToClose(fileRepository);
+		try (Git git = new Git(fileRepository)) {
+			// Creates 2 objects (C1 = commit, T1 = tree)
+			git.commit().setMessage("First commit").call();
+			GC gc = new GC(fileRepository);
+			gc.setPackExpireAgeMillis(Long.MAX_VALUE);
+			gc.setExpireAgeMillis(Long.MAX_VALUE);
+			// Creates packfile P1 (containing C1, T1)
+			gc.gc().get();
+			// Creates 1 object (C2 commit)
+			git.commit().setMessage("Second commit").call();
+			// Creates packfile P2 (containing C1, T1, C2)
+			gc.gc().get();
+			// Create 1 object (C3 commit)
+			git.commit().setMessage("Third commit").call();
+		}
+		return fileRepository;
+	}
+
+	private PackFile getPackFileToWrite(FileRepository fileRepository,
+			PackWriter mockedPackWriter) throws IOException {
+		File packdir = fileRepository.getObjectDatabase().getPackDirectory();
+		PackFile packFile = new PackFile(packdir,
+				mockedPackWriter.computeName(), PackExt.PACK);
+
+		Set<ObjectId> all = new HashSet<>();
+		for (Ref r : fileRepository.getRefDatabase().getRefs()) {
+			all.add(r.getObjectId());
+		}
+
+		mockedPackWriter.preparePack(NullProgressMonitor.INSTANCE, all,
+				PackWriter.NONE);
+		return packFile;
+	}
+
+	private FileRepository setupRepoForShallowFetch() throws Exception {
+		FileRepository repo = createBareRepository();
+		// TestRepository will close the repo, but we need to return an open
+		// one!
+		repo.incrementOpen();
+		try (TestRepository<Repository> r = new TestRepository<>(repo)) {
+			BranchBuilder bb = r.branch("refs/heads/master");
+			contentA = r.blob("A");
+			contentB = r.blob("B");
+			contentC = r.blob("C");
+			contentD = r.blob("D");
+			contentE = r.blob("E");
+			c1 = bb.commit().add("a", contentA).create();
+			c2 = bb.commit().add("b", contentB).create();
+			c3 = bb.commit().add("c", contentC).create();
+			c4 = bb.commit().add("d", contentD).create();
+			c5 = bb.commit().add("e", contentE).create();
+			r.getRevWalk().parseHeaders(c5); // fully initialize the tip RevCommit
+			return repo;
+		}
+	}
+
 	private static PackIndex writePack(FileRepository repo,
 			Set<? extends ObjectId> want, Set<ObjectIdSet> excludeObjects)
-			throws IOException {
+					throws IOException {
+		try (RevWalk walk = new RevWalk(repo)) {
+			return writePack(repo, walk, 0, want, NONE, excludeObjects);
+		}
+	}
+
+	private static PackIndex writeShallowPack(FileRepository repo, int depth,
+			Set<? extends ObjectId> want, Set<? extends ObjectId> have,
+			Set<? extends ObjectId> shallow) throws IOException {
+		// During negotiation, UploadPack would have set up a DepthWalk and
+		// marked the client's "shallow" commits. Emulate that here.
+		try (DepthWalk.RevWalk walk = new DepthWalk.RevWalk(repo, depth - 1)) {
+			walk.assumeShallow(shallow);
+			return writePack(repo, walk, depth, want, have, EMPTY_ID_SET);
+		}
+	}
+
+	private static PackIndex writePack(FileRepository repo, RevWalk walk,
+			int depth, Set<? extends ObjectId> want,
+			Set<? extends ObjectId> have, Set<ObjectIdSet> excludeObjects)
+					throws IOException {
 		try (PackWriter pw = new PackWriter(repo)) {
 			pw.setDeltaBaseAsOffset(true);
 			pw.setReuseDeltaCommits(false);
-			for (ObjectIdSet idx : excludeObjects)
+			for (ObjectIdSet idx : excludeObjects) {
 				pw.excludeObjects(idx);
-			pw.preparePack(NullProgressMonitor.INSTANCE, want,
-					Collections.<ObjectId> emptySet());
-			String id = pw.computeName().getName();
-			File packdir = new File(repo.getObjectsDirectory(), "pack");
-			File packFile = new File(packdir, "pack-" + id + ".pack");
-			FileOutputStream packOS = new FileOutputStream(packFile);
-			pw.writePack(NullProgressMonitor.INSTANCE,
-					NullProgressMonitor.INSTANCE, packOS);
-			packOS.close();
-			File idxFile = new File(packdir, "pack-" + id + ".idx");
-			FileOutputStream idxOS = new FileOutputStream(idxFile);
-			pw.writeIndex(idxOS);
-			idxOS.close();
+			}
+			if (depth > 0) {
+				pw.setShallowPack(depth, null);
+			}
+			// ow doesn't need to be closed; caller closes walk.
+			ObjectWalk ow = walk.toObjectWalkWithSameObjects();
+
+			pw.preparePack(NullProgressMonitor.INSTANCE, ow, want, have, NONE);
+			File packdir = repo.getObjectDatabase().getPackDirectory();
+			PackFile packFile = new PackFile(packdir, pw.computeName(),
+					PackExt.PACK);
+			try (FileOutputStream packOS = new FileOutputStream(packFile)) {
+				pw.writePack(NullProgressMonitor.INSTANCE,
+						NullProgressMonitor.INSTANCE, packOS);
+			}
+			PackFile idxFile = packFile.create(PackExt.INDEX);
+			try (FileOutputStream idxOS = new FileOutputStream(idxFile)) {
+				pw.writeIndex(idxOS);
+			}
 			return PackIndex.open(idxFile);
 		}
 	}
@@ -540,10 +904,10 @@ public class PackWriterTest extends SampleDataRepositoryTestCase {
 	// TODO: testWritePackDeltasDepth()
 
 	private void writeVerifyPack1() throws IOException {
-		final HashSet<ObjectId> interestings = new HashSet<ObjectId>();
+		final HashSet<ObjectId> interestings = new HashSet<>();
 		interestings.add(ObjectId
 				.fromString("82c6b885ff600be425b4ea96dee75dca255b69e7"));
-		createVerifyOpenPack(interestings, EMPTY_SET_OBJECT, false, false);
+		createVerifyOpenPack(interestings, NONE, false, false);
 
 		final ObjectId expectedOrder[] = new ObjectId[] {
 				ObjectId.fromString("82c6b885ff600be425b4ea96dee75dca255b69e7"),
@@ -552,8 +916,8 @@ public class PackWriterTest extends SampleDataRepositoryTestCase {
 				ObjectId.fromString("aabf2ffaec9b497f0950352b3e582d73035c2035"),
 				ObjectId.fromString("902d5476fa249b7abc9d84c611577a81381f0327"),
 				ObjectId.fromString("4b825dc642cb6eb9a060e54bf8d69288fbee4904"),
-				ObjectId.fromString("5b6e7c66c276e7610d4a73c70ec1a1f7c1003259"),
-				ObjectId.fromString("6ff87c4664981e4397625791c8ea3bbb5f2279a3") };
+				ObjectId.fromString("6ff87c4664981e4397625791c8ea3bbb5f2279a3"),
+				ObjectId.fromString("5b6e7c66c276e7610d4a73c70ec1a1f7c1003259") };
 
 		assertEquals(expectedOrder.length, writer.getObjectCount());
 		verifyObjectsOrder(expectedOrder);
@@ -563,10 +927,10 @@ public class PackWriterTest extends SampleDataRepositoryTestCase {
 
 	private void writeVerifyPack2(boolean deltaReuse) throws IOException {
 		config.setReuseDeltas(deltaReuse);
-		final HashSet<ObjectId> interestings = new HashSet<ObjectId>();
+		final HashSet<ObjectId> interestings = new HashSet<>();
 		interestings.add(ObjectId
 				.fromString("82c6b885ff600be425b4ea96dee75dca255b69e7"));
-		final HashSet<ObjectId> uninterestings = new HashSet<ObjectId>();
+		final HashSet<ObjectId> uninterestings = new HashSet<>();
 		uninterestings.add(ObjectId
 				.fromString("540a36d136cf413e4b064c2b0e0a4db60f77feab"));
 		createVerifyOpenPack(interestings, uninterestings, false, false);
@@ -576,13 +940,11 @@ public class PackWriterTest extends SampleDataRepositoryTestCase {
 				ObjectId.fromString("c59759f143fb1fe21c197981df75a7ee00290799"),
 				ObjectId.fromString("aabf2ffaec9b497f0950352b3e582d73035c2035"),
 				ObjectId.fromString("902d5476fa249b7abc9d84c611577a81381f0327"),
-				ObjectId.fromString("5b6e7c66c276e7610d4a73c70ec1a1f7c1003259"),
-				ObjectId.fromString("6ff87c4664981e4397625791c8ea3bbb5f2279a3") };
-		if (deltaReuse) {
-			// objects order influenced (swapped) by delta-base first rule
-			ObjectId temp = expectedOrder[4];
-			expectedOrder[4] = expectedOrder[5];
-			expectedOrder[5] = temp;
+				ObjectId.fromString("6ff87c4664981e4397625791c8ea3bbb5f2279a3") ,
+				ObjectId.fromString("5b6e7c66c276e7610d4a73c70ec1a1f7c1003259") };
+		if (!config.isReuseDeltas() && !config.isDeltaCompress()) {
+			// If no deltas are in the file the final two entries swap places.
+			swap(expectedOrder, 4, 5);
 		}
 		assertEquals(expectedOrder.length, writer.getObjectCount());
 		verifyObjectsOrder(expectedOrder);
@@ -590,11 +952,17 @@ public class PackWriterTest extends SampleDataRepositoryTestCase {
 				.computeName().name());
 	}
 
+	private static void swap(ObjectId[] arr, int a, int b) {
+		ObjectId tmp = arr[a];
+		arr[a] = arr[b];
+		arr[b] = tmp;
+	}
+
 	private void writeVerifyPack4(final boolean thin) throws IOException {
-		final HashSet<ObjectId> interestings = new HashSet<ObjectId>();
+		final HashSet<ObjectId> interestings = new HashSet<>();
 		interestings.add(ObjectId
 				.fromString("82c6b885ff600be425b4ea96dee75dca255b69e7"));
-		final HashSet<ObjectId> uninterestings = new HashSet<ObjectId>();
+		final HashSet<ObjectId> uninterestings = new HashSet<>();
 		uninterestings.add(ObjectId
 				.fromString("c59759f143fb1fe21c197981df75a7ee00290799"));
 		createVerifyOpenPack(interestings, uninterestings, thin, false);
@@ -643,7 +1011,7 @@ public class PackWriterTest extends SampleDataRepositoryTestCase {
 		verifyOpenPack(thin);
 	}
 
-	private void createVerifyOpenPack(final List<RevObject> objectSource)
+	private void createVerifyOpenPack(List<RevObject> objectSource)
 			throws MissingObjectException, IOException {
 		NullProgressMonitor m = NullProgressMonitor.INSTANCE;
 		writer = new PackWriter(config, db.newObjectReader());
@@ -654,7 +1022,7 @@ public class PackWriterTest extends SampleDataRepositoryTestCase {
 		verifyOpenPack(false);
 	}
 
-	private void verifyOpenPack(final boolean thin) throws IOException {
+	private void verifyOpenPack(boolean thin) throws IOException {
 		final byte[] packData = os.toByteArray();
 
 		if (thin) {
@@ -672,27 +1040,24 @@ public class PackWriterTest extends SampleDataRepositoryTestCase {
 		p.setAllowThin(thin);
 		p.setIndexVersion(2);
 		p.parse(NullProgressMonitor.INSTANCE);
-		pack = p.getPackFile();
+		pack = p.getPack();
 		assertNotNull("have PackFile after parsing", pack);
 	}
 
-	private PackParser index(final byte[] packData) throws IOException {
+	private PackParser index(byte[] packData) throws IOException {
 		if (inserter == null)
 			inserter = dst.newObjectInserter();
 		return inserter.newPackParser(new ByteArrayInputStream(packData));
 	}
 
-	private void verifyObjectsOrder(final ObjectId objectsOrder[]) {
-		final List<PackIndex.MutableEntry> entries = new ArrayList<PackIndex.MutableEntry>();
+	private void verifyObjectsOrder(ObjectId objectsOrder[]) {
+		final List<PackIndex.MutableEntry> entries = new ArrayList<>();
 
 		for (MutableEntry me : pack) {
 			entries.add(me.cloneEntry());
 		}
-		Collections.sort(entries, new Comparator<PackIndex.MutableEntry>() {
-			public int compare(MutableEntry o1, MutableEntry o2) {
-				return Long.signum(o1.getOffset() - o2.getOffset());
-			}
-		});
+		Collections.sort(entries, (MutableEntry o1, MutableEntry o2) -> Long
+				.signum(o1.getOffset() - o2.getOffset()));
 
 		int i = 0;
 		for (MutableEntry me : entries) {
@@ -700,11 +1065,15 @@ public class PackWriterTest extends SampleDataRepositoryTestCase {
 		}
 	}
 
-	private static ObjectIdSet objectIdSet(final PackIndex idx) {
-		return new ObjectIdSet() {
-			public boolean contains(AnyObjectId objectId) {
-				return idx.hasObject(objectId);
-			}
-		};
+	private static Set<ObjectId> haves(ObjectId... objects) {
+		return Sets.of(objects);
+	}
+
+	private static Set<ObjectId> wants(ObjectId... objects) {
+		return Sets.of(objects);
+	}
+
+	private static Set<ObjectId> shallows(ObjectId... objects) {
+		return Sets.of(objects);
 	}
 }
