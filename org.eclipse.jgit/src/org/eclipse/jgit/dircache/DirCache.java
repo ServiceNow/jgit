@@ -429,6 +429,7 @@ public class DirCache {
 	 *
 	 * @return {@code true} if the memory state differs from the index file
 	 * @throws java.io.IOException
+	 *             if an IO error occurred
 	 */
 	public boolean isOutdated() throws IOException {
 		if (liveFile == null || !liveFile.exists())
@@ -1001,6 +1002,7 @@ public class DirCache {
 	 * Update any smudged entries with information from the working tree.
 	 *
 	 * @throws IOException
+	 *             if an IO error occurred
 	 */
 	private void updateSmudgedEntries() throws IOException {
 		List<String> paths = new ArrayList<>(128);
@@ -1035,7 +1037,12 @@ public class DirCache {
 		}
 	}
 
-	enum DirCacheVersion implements ConfigEnum {
+	/**
+	 * DirCache versions
+	 *
+	 * @since 7.2
+	 */
+	public enum DirCacheVersion implements ConfigEnum {
 
 		/** Minimum index version on-disk format that we support. */
 		DIRC_VERSION_MINIMUM(2),
@@ -1058,6 +1065,9 @@ public class DirCache {
 			this.version = versionCode;
 		}
 
+		/**
+		 * @return the version code for this version
+		 */
 		public int getVersionCode() {
 			return version;
 		}
@@ -1076,6 +1086,13 @@ public class DirCache {
 			}
 		}
 
+		/**
+		 * Create DirCacheVersion from integer value of the version code.
+		 *
+		 * @param val
+		 *            integer value of the version code.
+		 * @return the DirCacheVersion instance of the version code.
+		 */
 		public static DirCacheVersion fromInt(int val) {
 			for (DirCacheVersion v : DirCacheVersion.values()) {
 				if (val == v.getVersionCode()) {
@@ -1096,9 +1113,8 @@ public class DirCache {
 			boolean manyFiles = cfg.getBoolean(
 					ConfigConstants.CONFIG_FEATURE_SECTION,
 					ConfigConstants.CONFIG_KEY_MANYFILES, false);
-			indexVersion = cfg.getEnum(DirCacheVersion.values(),
-					ConfigConstants.CONFIG_INDEX_SECTION, null,
-					ConfigConstants.CONFIG_KEY_VERSION,
+			indexVersion = cfg.getEnum(ConfigConstants.CONFIG_INDEX_SECTION,
+					null, ConfigConstants.CONFIG_KEY_VERSION,
 					manyFiles ? DirCacheVersion.DIRC_VERSION_PATHCOMPRESS
 							: DirCacheVersion.DIRC_VERSION_EXTENDED);
 			skipHash = cfg.getBoolean(ConfigConstants.CONFIG_INDEX_SECTION,

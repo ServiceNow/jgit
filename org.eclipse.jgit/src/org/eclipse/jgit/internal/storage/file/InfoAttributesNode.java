@@ -39,13 +39,14 @@ public class InfoAttributesNode extends AttributesNode {
 	 *
 	 * @return the attributes node
 	 * @throws java.io.IOException
+	 *             if an IO error occurred
 	 */
 	public AttributesNode load() throws IOException {
 		AttributesNode r = new AttributesNode();
 
 		FS fs = repository.getFS();
 
-		File attributes = fs.resolve(repository.getDirectory(),
+		File attributes = fs.resolve(repository.getCommonDirectory(),
 				Constants.INFO_ATTRIBUTES);
 		FileRepository.AttributesNodeProviderImpl.loadRulesFromFile(r, attributes);
 

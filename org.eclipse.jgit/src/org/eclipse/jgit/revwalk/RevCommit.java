@@ -1,6 +1,6 @@
 /*
- * Copyright (C) 2008-2009, Google Inc.
- * Copyright (C) 2008, Shawn O. Pearce <spearce@spearce.org> and others
+ * Copyright (C) 2008, 2009 Google Inc.
+ * Copyright (C) 2008, 2024 Shawn O. Pearce <spearce@spearce.org> and others
  *
  * This program and the accompanying materials are made available under the
  * terms of the Eclipse Distribution License v. 1.0 which is available at
@@ -11,20 +11,18 @@
 
 package org.eclipse.jgit.revwalk;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.eclipse.jgit.util.RawParseUtils.guessEncoding;
 
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.charset.IllegalCharsetNameException;
 import java.nio.charset.UnsupportedCharsetException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 
 import org.eclipse.jgit.annotations.Nullable;
 import org.eclipse.jgit.errors.IncorrectObjectTypeException;
 import org.eclipse.jgit.errors.MissingObjectException;
+import org.eclipse.jgit.internal.storage.commitgraph.ChangedPathFilter;
 import org.eclipse.jgit.lib.AnyObjectId;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.MutableObjectId;
@@ -222,7 +220,6 @@ public class RevCommit extends RevObject {
 		flags |= PARSED;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public final int getType() {
 		return Constants.OBJ_COMMIT;
@@ -404,14 +401,14 @@ public class RevCommit extends RevObject {
 	 * @since 5.1
 	 */
 	public final byte[] getRawGpgSignature() {
-		final byte[] raw = buffer;
-		final byte[] header = { 'g', 'p', 'g', 's', 'i', 'g' };
-		final int start = RawParseUtils.headerStart(header, raw, 0);
+		byte[] raw = buffer;
+		byte[] header = { 'g', 'p', 'g', 's', 'i', 'g' };
+		int start = RawParseUtils.headerStart(header, raw, 0);
 		if (start < 0) {
 			return null;
 		}
-		final int end = RawParseUtils.headerEnd(raw, start);
-		return Arrays.copyOfRange(raw, start, end);
+		int end = RawParseUtils.nextLfSkippingSplitLines(raw, start);
+		return RawParseUtils.headerValue(raw, start, end);
 	}
 
 	/**
@@ -484,7 +481,8 @@ public class RevCommit extends RevObject {
 		if (msgB < 0) {
 			return ""; //$NON-NLS-1$
 		}
-		return RawParseUtils.decode(guessEncoding(), raw, msgB, raw.length);
+		return RawParseUtils.decode(guessEncoding(buffer), raw, msgB,
+				raw.length);
 	}
 
 	/**
@@ -510,7 +508,8 @@ public class RevCommit extends RevObject {
 		}
 
 		int msgE = RawParseUtils.endOfParagraph(raw, msgB);
-		String str = RawParseUtils.decode(guessEncoding(), raw, msgB, msgE);
+		String str = RawParseUtils.decode(guessEncoding(buffer), raw, msgB,
+				msgE);
 		if (hasLF(raw, msgB, msgE)) {
 			str = StringUtils.replaceLineBreaksWithSpace(str);
 		}
@@ -522,6 +521,30 @@ public class RevCommit extends RevObject {
 			if (r[b++] == '\n')
 				return true;
 		return false;
+	}
+
+	/**
+	 * Parse the commit message and return its first line, i.e., everything up
+	 * to but not including the first newline, if any.
+	 *
+	 * @return the first line of the decoded commit message as a string; never
+	 *         {@code null}.
+	 * @since 7.2
+	 */
+	public final String getFirstMessageLine() {
+		int msgB = RawParseUtils.commitMessage(buffer, 0);
+		if (msgB < 0) {
+			return ""; //$NON-NLS-1$
+		}
+		int msgE = msgB;
+		byte[] raw = buffer;
+		while (msgE < raw.length && raw[msgE] != '\n') {
+			msgE++;
+		}
+		if (msgE > msgB && msgE > 0 && raw[msgE - 1] == '\r') {
+			msgE--;
+		}
+		return RawParseUtils.decode(guessEncoding(buffer), buffer, msgB, msgE);
 	}
 
 	/**
@@ -562,14 +585,6 @@ public class RevCommit extends RevObject {
 		return RawParseUtils.parseEncoding(buffer);
 	}
 
-	private Charset guessEncoding() {
-		try {
-			return getEncoding();
-		} catch (IllegalCharsetNameException | UnsupportedCharsetException e) {
-			return UTF_8;
-		}
-	}
-
 	/**
 	 * Parse the footer lines (e.g. "Signed-off-by") for machine processing.
 	 * <p>
@@ -578,8 +593,9 @@ public class RevCommit extends RevObject {
 	 * the order of the line's appearance in the commit message itself.
 	 * <p>
 	 * A footer line's key must match the pattern {@code ^[A-Za-z0-9-]+:}, while
-	 * the value is free-form, but must not contain an LF. Very common keys seen
-	 * in the wild are:
+	 * the value is free-form. The Value may be split over multiple lines with
+	 * each subsequent line starting with at least one whitespace. Very common
+	 * keys seen in the wild are:
 	 * <ul>
 	 * <li>{@code Signed-off-by} (agrees to Developer Certificate of Origin)
 	 * <li>{@code Acked-by} (thinks change looks sane in context)
@@ -592,50 +608,14 @@ public class RevCommit extends RevObject {
 	 * @return ordered list of footer lines; empty list if no footers found.
 	 */
 	public final List<FooterLine> getFooterLines() {
-		final byte[] raw = buffer;
-		int ptr = raw.length - 1;
-		while (raw[ptr] == '\n') // trim any trailing LFs, not interesting
-			ptr--;
-
-		final int msgB = RawParseUtils.commitMessage(raw, 0);
-		final ArrayList<FooterLine> r = new ArrayList<>(4);
-		final Charset enc = guessEncoding();
-		for (;;) {
-			ptr = RawParseUtils.prevLF(raw, ptr);
-			if (ptr <= msgB)
-				break; // Don't parse commit headers as footer lines.
-
-			final int keyStart = ptr + 2;
-			if (raw[keyStart] == '\n')
-				break; // Stop at first paragraph break, no footers above it.
-
-			final int keyEnd = RawParseUtils.endOfFooterLineKey(raw, keyStart);
-			if (keyEnd < 0)
-				continue; // Not a well formed footer line, skip it.
-
-			// Skip over the ': *' at the end of the key before the value.
-			//
-			int valStart = keyEnd + 1;
-			while (valStart < raw.length && raw[valStart] == ' ')
-				valStart++;
-
-			// Value ends at the LF, and does not include it.
-			//
-			int valEnd = RawParseUtils.nextLF(raw, valStart);
-			if (raw[valEnd - 1] == '\n')
-				valEnd--;
-
-			r.add(new FooterLine(raw, enc, keyStart, keyEnd, valStart, valEnd));
-		}
-		Collections.reverse(r);
-		return r;
+		return FooterLine.fromMessage(buffer);
 	}
 
 	/**
 	 * Get the values of all footer lines with the given key.
 	 *
 	 * @param keyName
-	 *            footer key to find values of, case insensitive.
+	 *            footer key to find values of, case-insensitive.
 	 * @return values of footers with key of {@code keyName}, ordered by their
 	 *         order of appearance. Duplicates may be returned if the same
 	 *         footer appeared more than once. Empty list if no footers appear
@@ -643,30 +623,22 @@ public class RevCommit extends RevObject {
 	 * @see #getFooterLines()
 	 */
 	public final List<String> getFooterLines(String keyName) {
-		return getFooterLines(new FooterKey(keyName));
+		return FooterLine.getValues(getFooterLines(), keyName);
 	}
 
 	/**
 	 * Get the values of all footer lines with the given key.
 	 *
-	 * @param keyName
-	 *            footer key to find values of, case insensitive.
+	 * @param key
+	 *            footer key to find values of, case-insensitive.
 	 * @return values of footers with key of {@code keyName}, ordered by their
 	 *         order of appearance. Duplicates may be returned if the same
 	 *         footer appeared more than once. Empty list if no footers appear
 	 *         with the specified key, or there are no footers at all.
 	 * @see #getFooterLines()
 	 */
-	public final List<String> getFooterLines(FooterKey keyName) {
-		final List<FooterLine> src = getFooterLines();
-		if (src.isEmpty())
-			return Collections.emptyList();
-		final ArrayList<String> r = new ArrayList<>(src.size());
-		for (FooterLine f : src) {
-			if (f.matches(keyName))
-				r.add(f.getValue());
-		}
-		return r;
+	public final List<String> getFooterLines(FooterKey key) {
+		return FooterLine.getValues(getFooterLines(), key);
 	}
 
 	/**
@@ -685,6 +657,21 @@ public class RevCommit extends RevObject {
 	 */
 	int getGeneration() {
 		return Constants.COMMIT_GENERATION_UNKNOWN;
+	}
+
+	/**
+	 * Get the changed path filter of the commit.
+	 * <p>
+	 * This is null when there is no commit graph file, the commit is not in the
+	 * commit graph file, or the commit graph file was generated without changed
+	 * path filters.
+	 *
+	 * @param rw A revwalk to load the commit graph (if available)
+	 * @return the changed path filter
+	 * @since 6.7
+	 */
+	public ChangedPathFilter getChangedPathFilter(RevWalk rw) {
+		return null;
 	}
 
 	/**
@@ -713,7 +700,6 @@ public class RevCommit extends RevObject {
 		buffer = null;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public String toString() {
 		final StringBuilder s = new StringBuilder();

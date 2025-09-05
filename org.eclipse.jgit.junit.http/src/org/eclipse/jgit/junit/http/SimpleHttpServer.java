@@ -13,10 +13,10 @@ package org.eclipse.jgit.junit.http;
 import java.net.URI;
 import java.net.URISyntaxException;
 
-import javax.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
 
-import org.eclipse.jetty.servlet.ServletContextHandler;
-import org.eclipse.jetty.servlet.ServletHolder;
+import org.eclipse.jetty.ee10.servlet.ServletContextHandler;
+import org.eclipse.jetty.ee10.servlet.ServletHolder;
 import org.eclipse.jgit.errors.RepositoryNotFoundException;
 import org.eclipse.jgit.http.server.GitServlet;
 import org.eclipse.jgit.lib.Repository;
@@ -40,6 +40,7 @@ public class SimpleHttpServer {
 	 * Constructor for <code>SimpleHttpServer</code>.
 	 *
 	 * @param repository
+	 *            the repository
 	 */
 	public SimpleHttpServer(Repository repository) {
 		this(repository, false);
@@ -49,7 +50,9 @@ public class SimpleHttpServer {
 	 * Constructor for <code>SimpleHttpServer</code>.
 	 *
 	 * @param repository
+	 *            the repository
 	 * @param withSsl
+	 *            whether to encrypt the communication
 	 */
 	public SimpleHttpServer(Repository repository, boolean withSsl) {
 		this.db = repository;
@@ -60,6 +63,7 @@ public class SimpleHttpServer {
 	 * Start the server
 	 *
 	 * @throws Exception
+	 *             if an error occurred
 	 */
 	public void start() throws Exception {
 		ServletContextHandler sBasic = server.authBasic(smart("/sbasic"));
@@ -76,6 +80,7 @@ public class SimpleHttpServer {
 	 * Stop the server.
 	 *
 	 * @throws Exception
+	 *             if an error occurred
 	 */
 	public void stop() throws Exception {
 		server.tearDown();

@@ -70,6 +70,11 @@ import org.eclipse.jgit.util.FileUtils;
  * considered.
  */
 public class ObjectDirectory extends FileObjectDatabase {
+	@FunctionalInterface
+	private interface TriFunctionThrowsException<A, A2, A3, R, E extends Exception> {
+		R apply(A a, A2 a2, A3 a3) throws E;
+	}
+
 	/** Maximum number of candidates offered as resolutions of abbreviation. */
 	private static final int RESOLVE_ABBREV_LIMIT = 256;
 
@@ -145,7 +150,6 @@ public class ObjectDirectory extends FileObjectDatabase {
 		}
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public final File getDirectory() {
 		return loose.getDirectory();
@@ -169,13 +173,11 @@ public class ObjectDirectory extends FileObjectDatabase {
 		return preserved.getDirectory();
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public boolean exists() {
 		return fs.exists(objects);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public void create() throws IOException {
 		loose.create();
@@ -183,7 +185,6 @@ public class ObjectDirectory extends FileObjectDatabase {
 		packed.create();
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public ObjectDirectoryInserter newInserter() {
 		return new ObjectDirectoryInserter(this, config);
@@ -199,12 +200,12 @@ public class ObjectDirectory extends FileObjectDatabase {
 		return new PackInserter(this);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public void close() {
 		loose.close();
 
 		packed.close();
+		preserved.close();
 
 		// Fully close all loaded alternates and clear the alternate list.
 		AlternateHandle[] alt = alternates.get();
@@ -214,13 +215,11 @@ public class ObjectDirectory extends FileObjectDatabase {
 		}
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public Collection<Pack> getPacks() {
 		return packed.getPacks();
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public long getApproximateObjectCount() {
 		long count = 0;
@@ -234,7 +233,6 @@ public class ObjectDirectory extends FileObjectDatabase {
 		return count;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public Optional<CommitGraph> getCommitGraph() {
 		if (config.get(CoreConfig.KEY).enableCommitGraph()) {
@@ -244,7 +242,6 @@ public class ObjectDirectory extends FileObjectDatabase {
 	}
 
 	/**
-	 * {@inheritDoc}
 	 * <p>
 	 * Add a single existing pack to the list of available pack files.
 	 */
@@ -268,18 +265,16 @@ public class ObjectDirectory extends FileObjectDatabase {
 		}
 
 		PackFile bitmapIdx = pf.create(BITMAP_INDEX);
-		Pack res = new Pack(pack, bitmapIdx.exists() ? bitmapIdx : null);
+		Pack res = new Pack(config, pack, bitmapIdx.exists() ? bitmapIdx : null);
 		packed.insert(res);
 		return res;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public String toString() {
 		return "ObjectDirectory[" + getDirectory() + "]"; //$NON-NLS-1$ //$NON-NLS-2$
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public boolean has(AnyObjectId objectId) {
 		return loose.hasCached(objectId)
@@ -358,9 +353,13 @@ public class ObjectDirectory extends FileObjectDatabase {
 	@Override
 	ObjectLoader openObject(WindowCursor curs, AnyObjectId objectId)
 			throws IOException {
-		ObjectLoader ldr = openObjectWithoutRestoring(curs, objectId);
-		if (ldr == null && restoreFromSelfOrAlternate(objectId, null)) {
+		ObjectLoader ldr = getFromLocalObjectToPack(curs, objectId,
+				(p, c, l) -> p.load(c, l.offset));
+		if (ldr == null) {
 			ldr = openObjectWithoutRestoring(curs, objectId);
+			if (ldr == null && restoreFromSelfOrAlternate(objectId, null)) {
+				ldr = openObjectWithoutRestoring(curs, objectId);
+			}
 		}
 		return ldr;
 	}
@@ -429,11 +428,16 @@ public class ObjectDirectory extends FileObjectDatabase {
 		return loose.open(curs, id);
 	}
 
+	@SuppressWarnings("boxing")
 	@Override
 	long getObjectSize(WindowCursor curs, AnyObjectId id) throws IOException {
-		long sz = getObjectSizeWithoutRestoring(curs, id);
-		if (0 > sz && restoreFromSelfOrAlternate(id, null)) {
+		Long sz = getFromLocalObjectToPack(curs, id,
+				(p, c, l) -> p.getObjectSize(c, l));
+		if (sz == null) {
 			sz = getObjectSizeWithoutRestoring(curs, id);
+			if (sz < 0 && restoreFromSelfOrAlternate(id, null)) {
+				sz = getObjectSizeWithoutRestoring(curs, id);
+			}
 		}
 		return sz;
 	}
@@ -442,12 +446,12 @@ public class ObjectDirectory extends FileObjectDatabase {
 			AnyObjectId id) throws IOException {
 		if (loose.hasCached(id)) {
 			long len = loose.getSize(curs, id);
-			if (0 <= len) {
+			if (len >= 0) {
 				return len;
 			}
 		}
 		long len = getPackedSizeFromSelfOrAlternate(curs, id, null);
-		if (0 <= len) {
+		if (len >= 0) {
 			return len;
 		}
 		return getLooseSizeFromSelfOrAlternate(curs, id, null);
@@ -457,14 +461,14 @@ public class ObjectDirectory extends FileObjectDatabase {
 			AnyObjectId id, Set<AlternateHandle.Id> skips)
 			throws PackMismatchException {
 		long len = packed.getSize(curs, id);
-		if (0 <= len) {
+		if (len >= 0) {
 			return len;
 		}
 		skips = addMe(skips);
 		for (AlternateHandle alt : myAlternates()) {
 			if (!skips.contains(alt.getId())) {
 				len = alt.db.getPackedSizeFromSelfOrAlternate(curs, id, skips);
-				if (0 <= len) {
+				if (len >= 0) {
 					return len;
 				}
 			}
@@ -475,19 +479,37 @@ public class ObjectDirectory extends FileObjectDatabase {
 	private long getLooseSizeFromSelfOrAlternate(WindowCursor curs,
 			AnyObjectId id, Set<AlternateHandle.Id> skips) throws IOException {
 		long len = loose.getSize(curs, id);
-		if (0 <= len) {
+		if (len >= 0) {
 			return len;
 		}
 		skips = addMe(skips);
 		for (AlternateHandle alt : myAlternates()) {
 			if (!skips.contains(alt.getId())) {
 				len = alt.db.getLooseSizeFromSelfOrAlternate(curs, id, skips);
-				if (0 <= len) {
+				if (len >= 0) {
 					return len;
 				}
 			}
 		}
 		return -1;
+	}
+
+	private <R> R getFromLocalObjectToPack(WindowCursor curs,
+			AnyObjectId objectId,
+			TriFunctionThrowsException<Pack, WindowCursor, LocalObjectToPack, R, IOException> func) {
+		if (objectId instanceof LocalObjectToPack) {
+			LocalObjectToPack lotp = (LocalObjectToPack) objectId;
+			Pack pack = lotp.pack;
+			if (pack != null) {
+				try {
+					return func.apply(pack, curs, lotp);
+				} catch (IOException e) {
+					// lotp potentially repacked, continue as if lotp not
+					// provided
+				}
+			}
+		}
+		return null;
 	}
 
 	@Override
@@ -559,11 +581,11 @@ public class ObjectDirectory extends FileObjectDatabase {
 		// If the object is already in the repository, remove temporary file.
 		//
 		if (loose.hasCached(id)) {
-			FileUtils.delete(tmp, FileUtils.RETRY);
+			FileUtils.delete(tmp, FileUtils.RETRY | FileUtils.SKIP_MISSING);
 			return InsertLooseObjectResult.EXISTS_LOOSE;
 		}
 		if (!createDuplicate && has(id)) {
-			FileUtils.delete(tmp, FileUtils.RETRY);
+			FileUtils.delete(tmp, FileUtils.RETRY | FileUtils.SKIP_MISSING);
 			return InsertLooseObjectResult.EXISTS_PACKED;
 		}
 		return loose.insert(tmp, id);
@@ -811,7 +833,6 @@ public class ObjectDirectory extends FileObjectDatabase {
 		}
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public ObjectDatabase newCachedDatabase() {
 		return newCachedFileObjectDatabase();

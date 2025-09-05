@@ -35,23 +35,6 @@ public abstract class AnyObjectId implements Comparable<AnyObjectId> {
 	 * @param secondObjectId
 	 *            the second identifier to compare. Must not be null.
 	 * @return true if the two identifiers are the same.
-	 * @deprecated use {@link #isEqual(AnyObjectId, AnyObjectId)} instead
-	 */
-	@Deprecated
-	@SuppressWarnings("AmbiguousMethodReference")
-	public static boolean equals(final AnyObjectId firstObjectId,
-			final AnyObjectId secondObjectId) {
-		return isEqual(firstObjectId, secondObjectId);
-	}
-
-	/**
-	 * Compare two object identifier byte sequences for equality.
-	 *
-	 * @param firstObjectId
-	 *            the first identifier to compare. Must not be null.
-	 * @param secondObjectId
-	 *            the second identifier to compare. Must not be null.
-	 * @return true if the two identifiers are the same.
 	 * @since 5.4
 	 */
 	public static boolean isEqual(final AnyObjectId firstObjectId,
@@ -248,7 +231,6 @@ public abstract class AnyObjectId implements Comparable<AnyObjectId> {
 		return abbr.prefixCompare(this) == 0;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public final int hashCode() {
 		return w2;
@@ -266,7 +248,6 @@ public abstract class AnyObjectId implements Comparable<AnyObjectId> {
 		return other != null ? isEqual(this, other) : false;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public final boolean equals(Object o) {
 		if (o instanceof AnyObjectId) {
@@ -477,7 +458,6 @@ public abstract class AnyObjectId implements Comparable<AnyObjectId> {
 			dst[o--] = '0';
 	}
 
-	/** {@inheritDoc} */
 	@SuppressWarnings("nls")
 	@Override
 	public String toString() {

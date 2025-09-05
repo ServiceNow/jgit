@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
+import java.nio.ByteBuffer;
 
 import org.eclipse.jgit.annotations.Nullable;
 import org.eclipse.jgit.errors.InvalidObjectIdException;
@@ -152,6 +153,22 @@ public class ObjectId extends AnyObjectId implements Serializable {
 	}
 
 	/**
+	 * Convert an ObjectId from raw binary representation
+	 *
+	 * @param bb
+	 *            a bytebuffer with the objectid encoded as 5 consecutive ints.
+	 *            This is the reverse of {@link ObjectId#copyRawTo(ByteBuffer)}
+	 *
+	 * @return the converted object id.
+	 *
+	 * @since 7.0
+	 */
+	public static final ObjectId fromRaw(ByteBuffer bb) {
+		return new ObjectId(bb.getInt(), bb.getInt(), bb.getInt(), bb.getInt(),
+				bb.getInt());
+	}
+
+	/**
 	 * Convert an ObjectId from raw binary representation.
 	 *
 	 * @param is
@@ -262,7 +279,6 @@ public class ObjectId extends AnyObjectId implements Serializable {
 		w5 = src.w5;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public ObjectId toObjectId() {
 		return this;

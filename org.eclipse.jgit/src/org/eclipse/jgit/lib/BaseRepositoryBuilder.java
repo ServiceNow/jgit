@@ -13,20 +13,24 @@ package org.eclipse.jgit.lib;
 import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_CORE_SECTION;
 import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_KEY_BARE;
 import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_KEY_WORKTREE;
+import static org.eclipse.jgit.lib.Constants.CONFIG;
 import static org.eclipse.jgit.lib.Constants.DOT_GIT;
+import static org.eclipse.jgit.lib.Constants.GITDIR_FILE;
 import static org.eclipse.jgit.lib.Constants.GIT_ALTERNATE_OBJECT_DIRECTORIES_KEY;
 import static org.eclipse.jgit.lib.Constants.GIT_CEILING_DIRECTORIES_KEY;
+import static org.eclipse.jgit.lib.Constants.GIT_COMMON_DIR_KEY;
 import static org.eclipse.jgit.lib.Constants.GIT_DIR_KEY;
 import static org.eclipse.jgit.lib.Constants.GIT_INDEX_FILE_KEY;
 import static org.eclipse.jgit.lib.Constants.GIT_OBJECT_DIRECTORY_KEY;
 import static org.eclipse.jgit.lib.Constants.GIT_WORK_TREE_KEY;
+import static org.eclipse.jgit.lib.Constants.OBJECTS;
 
 import java.io.File;
 import java.io.IOException;
 import java.security.AccessControlException;
 import java.text.MessageFormat;
+import java.util.ArrayList;
 import java.util.Collection;
-import java.util.LinkedList;
 import java.util.List;
 
 import org.eclipse.jgit.annotations.NonNull;
@@ -71,7 +75,21 @@ public class BaseRepositoryBuilder<B extends BaseRepositoryBuilder, R extends Re
 				&& ref[7] == ' ';
 	}
 
-	private static File getSymRef(File workTree, File dotGit, FS fs)
+	/**
+	 * Read symbolic reference file
+	 *
+	 * @param workTree
+	 *            the work tree path
+	 * @param dotGit
+	 *            the .git file
+	 * @param fs
+	 *            th FS util
+	 * @return the file read from symbolic reference file
+	 * @throws java.io.IOException
+	 *             the dotGit file is invalid reference
+	 * @since 7.0
+	 */
+	static File getSymRef(File workTree, File dotGit, FS fs)
 			throws IOException {
 		byte[] content = IO.readFully(dotGit);
 		if (!isSymRef(content)) {
@@ -102,6 +120,8 @@ public class BaseRepositoryBuilder<B extends BaseRepositoryBuilder, R extends Re
 	private FS fs;
 
 	private File gitDir;
+
+	private File gitCommonDir;
 
 	private File objectDirectory;
 
@@ -173,6 +193,30 @@ public class BaseRepositoryBuilder<B extends BaseRepositoryBuilder, R extends Re
 	}
 
 	/**
+	 * Set common dir.
+	 *
+	 * @param gitCommonDir
+	 *            {@code GIT_COMMON_DIR}, the common repository meta directory.
+	 * @return {@code this} (for chaining calls).
+	 * @since 7.0
+	 */
+	public B setGitCommonDir(File gitCommonDir) {
+		this.gitCommonDir = gitCommonDir;
+		this.config = null;
+		return self();
+	}
+
+	/**
+	 * Get common dir.
+	 *
+	 * @return common dir; null if not set.
+	 * @since 7.0
+	 */
+	public File getGitCommonDir() {
+		return gitCommonDir;
+	}
+
+	/**
 	 * Set the directory storing the repository's objects.
 	 *
 	 * @param objectDirectory
@@ -206,8 +250,9 @@ public class BaseRepositoryBuilder<B extends BaseRepositoryBuilder, R extends Re
 	 */
 	public B addAlternateObjectDirectory(File other) {
 		if (other != null) {
-			if (alternateObjectDirectories == null)
-				alternateObjectDirectories = new LinkedList<>();
+			if (alternateObjectDirectories == null) {
+				alternateObjectDirectories = new ArrayList<>();
+			}
 			alternateObjectDirectories.add(other);
 		}
 		return self();
@@ -396,9 +441,9 @@ public class BaseRepositoryBuilder<B extends BaseRepositoryBuilder, R extends Re
 	 * Read standard Git environment variables and configure from those.
 	 * <p>
 	 * This method tries to read the standard Git environment variables, such as
-	 * {@code GIT_DIR} and {@code GIT_WORK_TREE} to configure this builder
-	 * instance. If an environment variable is set, it overrides the value
-	 * already set in this builder.
+	 * {@code GIT_DIR}, {@code GIT_COMMON_DIR}, {@code GIT_WORK_TREE} etc. to
+	 * configure this builder instance. If an environment variable is set, it
+	 * overrides the value already set in this builder.
 	 *
 	 * @return {@code this} (for chaining calls).
 	 */
@@ -410,9 +455,9 @@ public class BaseRepositoryBuilder<B extends BaseRepositoryBuilder, R extends Re
 	 * Read standard Git environment variables and configure from those.
 	 * <p>
 	 * This method tries to read the standard Git environment variables, such as
-	 * {@code GIT_DIR} and {@code GIT_WORK_TREE} to configure this builder
-	 * instance. If a property is already set in the builder, the environment
-	 * variable is not used.
+	 * {@code GIT_DIR}, {@code GIT_COMMON_DIR}, {@code GIT_WORK_TREE} etc. to
+	 * configure this builder instance. If a property is already set in the
+	 * builder, the environment variable is not used.
 	 *
 	 * @param sr
 	 *            the SystemReader abstraction to access the environment.
@@ -421,60 +466,67 @@ public class BaseRepositoryBuilder<B extends BaseRepositoryBuilder, R extends Re
 	public B readEnvironment(SystemReader sr) {
 		if (getGitDir() == null) {
 			try {
-				String val = sr.getenv(GIT_DIR_KEY);
-				if (val != null)
-					setGitDir(new File(val));
+			String val = sr.getenv(GIT_DIR_KEY);
+			if (val != null)
+				setGitDir(new File(val));
 			} catch (AccessControlException ignored) {
+		}
+		}
+
+		if (getGitCommonDir() == null) {
+			String val = sr.getenv(GIT_COMMON_DIR_KEY);
+			if (val != null) {
+				setGitCommonDir(new File(val));
 			}
 		}
 
 		if (getObjectDirectory() == null) {
 			try {
-				String val = sr.getenv(GIT_OBJECT_DIRECTORY_KEY);
-				if (val != null)
-					setObjectDirectory(new File(val));
+			String val = sr.getenv(GIT_OBJECT_DIRECTORY_KEY);
+			if (val != null)
+				setObjectDirectory(new File(val));
 			} catch (AccessControlException ignored) {
 			}
 		}
 
 		if (getAlternateObjectDirectories() == null) {
 			try {
-				String val = sr.getenv(GIT_ALTERNATE_OBJECT_DIRECTORIES_KEY);
-				if (val != null) {
-					for (String path : val.split(File.pathSeparator))
-						addAlternateObjectDirectory(new File(path));
-				}
+			String val = sr.getenv(GIT_ALTERNATE_OBJECT_DIRECTORIES_KEY);
+			if (val != null) {
+				for (String path : val.split(File.pathSeparator, -1))
+					addAlternateObjectDirectory(new File(path));
+			}
 			} catch (AccessControlException ignored) {
 			}
 		}
 
 		if (getWorkTree() == null) {
 			try {
-				String val = sr.getenv(GIT_WORK_TREE_KEY);
-				if (val != null)
-					setWorkTree(new File(val));
+			String val = sr.getenv(GIT_WORK_TREE_KEY);
+			if (val != null)
+				setWorkTree(new File(val));
 			} catch (AccessControlException ignored) {
 			}
 		}
 
 		if (getIndexFile() == null) {
 			try {
-				String val = sr.getenv(GIT_INDEX_FILE_KEY);
-				if (val != null)
-					setIndexFile(new File(val));
+			String val = sr.getenv(GIT_INDEX_FILE_KEY);
+			if (val != null)
+				setIndexFile(new File(val));
 			} catch (AccessControlException ignored) {
-			}
+		}
 		}
 
 		if (ceilingDirectories == null) {
 			try {
-				String val = sr.getenv(GIT_CEILING_DIRECTORIES_KEY);
-				if (val != null) {
-					for (String path : val.split(File.pathSeparator))
-						addCeilingDirectory(new File(path));
-				}
-			} catch (AccessControlException ignored) {
+			String val = sr.getenv(GIT_CEILING_DIRECTORIES_KEY);
+			if (val != null) {
+				for (String path : val.split(File.pathSeparator, -1))
+					addCeilingDirectory(new File(path));
 			}
+			} catch (AccessControlException ignored) {
+		}
 		}
 		return self();
 	}
@@ -491,8 +543,9 @@ public class BaseRepositoryBuilder<B extends BaseRepositoryBuilder, R extends Re
 	 */
 	public B addCeilingDirectory(File root) {
 		if (root != null) {
-			if (ceilingDirectories == null)
-				ceilingDirectories = new LinkedList<>();
+			if (ceilingDirectories == null) {
+				ceilingDirectories = new ArrayList<>();
+			}
 			ceilingDirectories.add(root);
 		}
 		return self();
@@ -617,6 +670,7 @@ public class BaseRepositoryBuilder<B extends BaseRepositoryBuilder, R extends Re
 	public B setup() throws IllegalArgumentException, IOException {
 		requireGitDirOrWorkTree();
 		setupGitDir();
+		setupCommonDir();
 		setupWorkTree();
 		setupInternals();
 		return self();
@@ -674,6 +728,20 @@ public class BaseRepositoryBuilder<B extends BaseRepositoryBuilder, R extends Re
 	}
 
 	/**
+	 * Perform standard common dir initialization.
+	 *
+	 * @throws java.io.IOException
+	 *             the repository could not be accessed
+	 * @since 7.0
+	 */
+	protected void setupCommonDir() throws IOException {
+		// no gitCommonDir? Try to get it from gitDir
+		if (getGitCommonDir() == null) {
+			setGitCommonDir(safeFS().getCommonDir(getGitDir()));
+		}
+	}
+
+	/**
 	 * Perform standard work-tree initialization.
 	 * <p>
 	 * This is a method typically invoked inside of {@link #setup()}, near the
@@ -711,8 +779,12 @@ public class BaseRepositoryBuilder<B extends BaseRepositoryBuilder, R extends Re
 	 *             the repository could not be accessed
 	 */
 	protected void setupInternals() throws IOException {
-		if (getObjectDirectory() == null && getGitDir() != null)
-			setObjectDirectory(safeFS().resolve(getGitDir(), Constants.OBJECTS));
+		if (getObjectDirectory() == null) {
+			File commonDir = getGitCommonDir();
+			if (commonDir != null) {
+				setObjectDirectory(safeFS().resolve(commonDir, OBJECTS));
+			}
+	}
 	}
 
 	/**
@@ -739,12 +811,13 @@ public class BaseRepositoryBuilder<B extends BaseRepositoryBuilder, R extends Re
 	 *             the configuration is not available.
 	 */
 	protected Config loadConfig() throws IOException {
-		if (getGitDir() != null) {
+		File commonDir = getGitCommonDir();
+		if (commonDir != null) {
 			// We only want the repository's configuration file, and not
 			// the user file, as these parameters must be unique to this
 			// repository and not inherited from other files.
 			//
-			File path = safeFS().resolve(getGitDir(), Constants.CONFIG);
+			File path = safeFS().resolve(commonDir, CONFIG);
 			FileBasedConfig cfg = new FileBasedConfig(path, safeFS());
 			try {
 				cfg.load();
@@ -765,8 +838,29 @@ public class BaseRepositoryBuilder<B extends BaseRepositoryBuilder, R extends Re
 		//
 		String path = cfg.getString(CONFIG_CORE_SECTION, null,
 				CONFIG_KEY_WORKTREE);
-		if (path != null)
+		if (path != null) {
 			return safeFS().resolve(getGitDir(), path).getCanonicalFile();
+		}
+
+		/*
+		 * We are in worktree's $GIT_DIR folder
+		 * ".git/worktrees/&lt;worktree-name&gt;" and want to get the working
+		 * tree (checkout) path; so here we have an opposite link in file
+		 * "gitdir" showing to the ".git" file located in the working tree read
+		 * it and convert it to absolute path if it's relative
+		 */
+		File gitDirFile = new File(getGitDir(), GITDIR_FILE);
+		if (gitDirFile.isFile()) {
+			String workDirPath = new String(IO.readFully(gitDirFile)).trim();
+			File workTreeDotGitFile = new File(workDirPath);
+			if (!workTreeDotGitFile.isAbsolute()) {
+				workTreeDotGitFile = new File(getGitDir(), workDirPath)
+						.getCanonicalFile();
+			}
+			if (workTreeDotGitFile != null) {
+				return workTreeDotGitFile.getParentFile();
+			}
+		}
 
 		// If core.bare is set, honor its value. Assume workTree is
 		// the parent directory of the repository.

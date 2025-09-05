@@ -43,7 +43,7 @@ import org.eclipse.jgit.util.RawParseUtils;
  * Tree and blob objects reachable from interesting commits are automatically
  * scheduled for inclusion in the results of {@link #nextObject()}, returning
  * each object exactly once. Objects are sorted and returned according to the
- * the commits that reference them and the order they appear within a tree.
+ * commits that reference them and the order they appear within a tree.
  * Ordering can be affected by changing the
  * {@link org.eclipse.jgit.revwalk.RevSort} used to order the commits that are
  * returned first.
@@ -164,29 +164,6 @@ public class ObjectWalk extends RevWalk {
 	}
 
 	/**
-	 * Create an object reachability checker that will use bitmaps if possible.
-	 *
-	 * This reachability checker accepts any object as target. For checks
-	 * exclusively between commits, see
-	 * {@link RevWalk#createReachabilityChecker()}.
-	 *
-	 * @return an object reachability checker, using bitmaps if possible.
-	 *
-	 * @throws IOException
-	 *             when the index fails to load.
-	 *
-	 * @since 5.8
-	 * @deprecated use
-	 *             {@code ObjectReader#createObjectReachabilityChecker(ObjectWalk)}
-	 *             instead.
-	 */
-	@Deprecated
-	public final ObjectReachabilityChecker createObjectReachabilityChecker()
-			throws IOException {
-		return reader.createObjectReachabilityChecker(this);
-	}
-
-	/**
 	 * Mark an object or commit to start graph traversal from.
 	 * <p>
 	 * Callers are encouraged to use
@@ -300,14 +277,12 @@ public class ObjectWalk extends RevWalk {
 			addObject(o);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public void sort(RevSort s) {
 		super.sort(s);
 		boundary = hasRevSort(RevSort.BOUNDARY);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public void sort(RevSort s, boolean use) {
 		super.sort(s, use);
@@ -357,7 +332,6 @@ public class ObjectWalk extends RevWalk {
 		visitationPolicy = requireNonNull(policy);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public RevCommit next() throws MissingObjectException,
 			IncorrectObjectTypeException, IOException {
@@ -645,6 +619,8 @@ public class ObjectWalk extends RevWalk {
 	}
 
 	/**
+	 * Get the current traversal depth from the root tree object
+	 *
 	 * @return the current traversal depth from the root tree object
 	 * @since 5.4
 	 */
@@ -762,7 +738,6 @@ public class ObjectWalk extends RevWalk {
 		pathBuf = newBuf;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public void dispose() {
 		super.dispose();
@@ -771,7 +746,6 @@ public class ObjectWalk extends RevWalk {
 		freeVisit = null;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	protected void reset(int retainFlags) {
 		super.reset(retainFlags);

@@ -27,6 +27,7 @@ public class PackFile extends File {
 	private static final long serialVersionUID = 1L;
 
 	private static final String PREFIX = "pack-"; //$NON-NLS-1$
+	private static final String TMP_GC_PREFIX = ".tmp-"; //$NON-NLS-1$
 
 	private final String base; // PREFIX + id i.e.
 								// pack-0123456789012345678901234567890123456789
@@ -126,6 +127,13 @@ public class PackFile extends File {
 	}
 
 	/**
+	 * @return whether the file is a temporary GC file
+	 */
+	public boolean isTmpGCFile() {
+		return id.startsWith(TMP_GC_PREFIX);
+	}
+
+	/**
 	 * Create a new similar PackFile with the given extension instead.
 	 *
 	 * @param ext
@@ -177,7 +185,11 @@ public class PackFile extends File {
 
 	private static PackExt getPackExt(String endsWithExtension) {
 		for (PackExt ext : PackExt.values()) {
-			if (endsWithExtension.endsWith(ext.getExtension())) {
+			if (endsWithExtension.equals(ext.getExtension())) {
+				return ext;
+			}
+
+			if (endsWithExtension.equals("old-" + ext.getExtension())) {
 				return ext;
 			}
 		}

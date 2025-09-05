@@ -24,6 +24,7 @@ import java.nio.ByteBuffer;
 import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.FileTime;
 import java.text.MessageFormat;
@@ -31,6 +32,7 @@ import java.time.Instant;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.jgit.internal.JGitText;
+import org.eclipse.jgit.internal.util.ShutdownHook;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.util.FS;
@@ -79,6 +81,7 @@ public class LockFile {
 	 * Get the lock file corresponding to the given file.
 	 *
 	 * @param file
+	 *            given file
 	 * @return lock file
 	 */
 	static File getLockFile(File file) {
@@ -112,6 +115,8 @@ public class LockFile {
 
 	private LockToken token;
 
+	private ShutdownHook.Listener shutdownListener = this::unlock;
+
 	/**
 	 * Create a new lock for any file.
 	 *
@@ -137,15 +142,15 @@ public class LockFile {
 			throw new IllegalStateException(
 					MessageFormat.format(JGitText.get().lockAlreadyHeld, ref));
 		}
-		FileUtils.mkdirs(lck.getParentFile(), true);
 		try {
-			token = FS.DETECTED.createNewFileAtomic(lck);
+			token = createLockFileWithRetry();
 		} catch (IOException e) {
 			LOG.error(JGitText.get().failedCreateLockFile, lck, e);
 			throw e;
 		}
 		boolean obtainedLock = token.isCreated();
 		if (obtainedLock) {
+			ShutdownHook.INSTANCE.register(shutdownListener);
 			haveLck = true;
 			isAppend = false;
 			written = false;
@@ -153,6 +158,19 @@ public class LockFile {
 			closeToken();
 		}
 		return obtainedLock;
+	}
+
+	private FS.LockToken createLockFileWithRetry() throws IOException {
+		try {
+			return createLockFile();
+		} catch (NoSuchFileException e) {
+			return createLockFile();
+		}
+	}
+
+	private FS.LockToken createLockFile() throws IOException {
+		FileUtils.mkdirs(lck.getParentFile(), true);
+		return FS.DETECTED.createNewFileAtomic(lck);
 	}
 
 	/**
@@ -470,6 +488,7 @@ public class LockFile {
 	 *             the lock is not held.
 	 */
 	public boolean commit() {
+		ShutdownHook.INSTANCE.unregister(shutdownListener);
 		if (os != null) {
 			unlock();
 			throw new IllegalStateException(MessageFormat.format(JGitText.get().lockOnNotClosed, ref));
@@ -509,17 +528,6 @@ public class LockFile {
 	 * Get the modification time of the output file when it was committed.
 	 *
 	 * @return modification time of the lock file right before we committed it.
-	 * @deprecated use {@link #getCommitLastModifiedInstant()} instead
-	 */
-	@Deprecated
-	public long getCommitLastModified() {
-		return commitSnapshot.lastModified();
-	}
-
-	/**
-	 * Get the modification time of the output file when it was committed.
-	 *
-	 * @return modification time of the lock file right before we committed it.
 	 */
 	public Instant getCommitLastModifiedInstant() {
 		return commitSnapshot.lastModifiedInstant();
@@ -550,6 +558,7 @@ public class LockFile {
 	 * The temporary file (if created) is deleted before returning.
 	 */
 	public void unlock() {
+		ShutdownHook.INSTANCE.unregister(shutdownListener);
 		if (os != null) {
 			try {
 				os.close();
@@ -575,7 +584,6 @@ public class LockFile {
 		written = false;
 	}
 
-	/** {@inheritDoc} */
 	@SuppressWarnings("nls")
 	@Override
 	public String toString() {

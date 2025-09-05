@@ -58,9 +58,8 @@ import org.eclipse.jgit.errors.MissingObjectException;
 import org.eclipse.jgit.errors.SearchForReuseTimeout;
 import org.eclipse.jgit.errors.StoredObjectRepresentationNotAvailableException;
 import org.eclipse.jgit.internal.JGitText;
+import org.eclipse.jgit.internal.storage.file.BasePackIndexWriter;
 import org.eclipse.jgit.internal.storage.file.PackBitmapIndexBuilder;
-import org.eclipse.jgit.internal.storage.file.PackBitmapIndexWriterV1;
-import org.eclipse.jgit.internal.storage.file.PackIndexWriter;
 import org.eclipse.jgit.internal.storage.file.PackObjectSizeIndexWriter;
 import org.eclipse.jgit.internal.storage.file.PackReverseIndexWriter;
 import org.eclipse.jgit.lib.AnyObjectId;
@@ -119,9 +118,9 @@ import org.eclipse.jgit.util.TemporaryBuffer;
  * {@link #preparePack(ProgressMonitor, Set, Set)}, and streaming with
  * {@link #writePack(ProgressMonitor, ProgressMonitor, OutputStream)}. If the
  * pack is being stored as a file the matching index can be written out after
- * writing the pack by {@link #writeIndex(OutputStream)}. An optional bitmap
+ * writing the pack by {@link #writeIndex(PackIndexWriter)}. An optional bitmap
  * index can be made by calling {@link #prepareBitmapIndex(ProgressMonitor)}
- * followed by {@link #writeBitmapIndex(OutputStream)}.
+ * followed by {@link #writeBitmapIndex(PackBitmapIndexWriter)}.
  * </p>
  * <p>
  * Class provide set of configurable options and
@@ -146,44 +145,46 @@ public class PackWriter implements AutoCloseable {
 	private static final Map<WeakReference<PackWriter>, Boolean> instances =
 			new ConcurrentHashMap<>();
 
-	private static final Iterable<PackWriter> instancesIterable = () -> new Iterator<>() {
+	private static Iterator<PackWriter> instancesIterable() {
+		return new Iterator<>() {
 
-		private final Iterator<WeakReference<PackWriter>> it = instances
-				.keySet().iterator();
+			private final Iterator<WeakReference<PackWriter>> it = instances
+					.keySet().iterator();
 
-		private PackWriter next;
+			private PackWriter next;
 
-		@Override
-		public boolean hasNext() {
-			if (next != null) {
-				return true;
-			}
-			while (it.hasNext()) {
-				WeakReference<PackWriter> ref = it.next();
-				next = ref.get();
+			@Override
+			public boolean hasNext() {
 				if (next != null) {
 					return true;
 				}
-				it.remove();
+				while (it.hasNext()) {
+					WeakReference<PackWriter> ref = it.next();
+					next = ref.get();
+					if (next != null) {
+						return true;
+					}
+					it.remove();
+				}
+				return false;
 			}
-			return false;
-		}
 
-		@Override
-		public PackWriter next() {
-			if (hasNext()) {
-				PackWriter result = next;
-				next = null;
-				return result;
+			@Override
+			public PackWriter next() {
+				if (hasNext()) {
+					PackWriter result = next;
+					next = null;
+					return result;
+				}
+				throw new NoSuchElementException();
 			}
-			throw new NoSuchElementException();
-		}
 
-		@Override
-		public void remove() {
-			throw new UnsupportedOperationException();
-		}
-	};
+			@Override
+			public void remove() {
+				throw new UnsupportedOperationException();
+			}
+		};
+	}
 
 	/**
 	 * Get all allocated, non-released PackWriters instances.
@@ -191,7 +192,7 @@ public class PackWriter implements AutoCloseable {
 	 * @return all allocated, non-released PackWriters instances.
 	 */
 	public static Iterable<PackWriter> getInstances() {
-		return instancesIterable;
+		return PackWriter::instancesIterable;
 	}
 
 	@SuppressWarnings("unchecked")
@@ -299,19 +300,6 @@ public class PackWriter implements AutoCloseable {
 	 */
 	public PackWriter(Repository repo) {
 		this(repo, repo.newObjectReader());
-	}
-
-	/**
-	 * Create a writer to load objects from the specified reader.
-	 * <p>
-	 * Objects for packing are specified in {@link #preparePack(Iterator)} or
-	 * {@link #preparePack(ProgressMonitor, Set, Set)}.
-	 *
-	 * @param reader
-	 *            reader to read from the repository with.
-	 */
-	public PackWriter(ObjectReader reader) {
-		this(new PackConfig(), reader);
 	}
 
 	/**
@@ -679,7 +667,10 @@ public class PackWriter implements AutoCloseable {
 	}
 
 	/**
-	 * @param filter the filter which indicates what and what not this writer
+	 * Set filter spec
+	 *
+	 * @param filter
+	 *            the filter which indicates what and what not this writer
 	 *            should include
 	 */
 	public void setFilterSpec(@NonNull FilterSpec filter) {
@@ -687,7 +678,10 @@ public class PackWriter implements AutoCloseable {
 	}
 
 	/**
-	 * @param config configuration related to packfile URIs
+	 * Set packfile URI config
+	 *
+	 * @param config
+	 *            configuration related to packfile URIs
 	 * @since 5.5
 	 */
 	public void setPackfileUriConfig(PackfileUriConfig config) {
@@ -1084,7 +1078,7 @@ public class PackWriter implements AutoCloseable {
 		if (indexVersion <= 0) {
 			for (BlockList<ObjectToPack> objs : objectsLists)
 				indexVersion = Math.max(indexVersion,
-						PackIndexWriter.oldestPossibleFormat(objs));
+						BasePackIndexWriter.oldestPossibleFormat(objs));
 		}
 		return indexVersion;
 	}
@@ -1105,12 +1099,28 @@ public class PackWriter implements AutoCloseable {
 	 *             the index data could not be written to the supplied stream.
 	 */
 	public void writeIndex(OutputStream indexStream) throws IOException {
+		writeIndex(BasePackIndexWriter.createVersion(indexStream,
+				getIndexVersion()));
+	}
+
+	/**
+	 * Create an index file to match the pack file just written.
+	 * <p>
+	 * Called after
+	 * {@link #writePack(ProgressMonitor, ProgressMonitor, OutputStream)}.
+	 * <p>
+	 * Writing an index is only required for local pack storage. Packs sent on
+	 * the network do not need to create an index.
+	 *
+	 * @param iw
+	 *            an {@link PackIndexWriter} instance to write the index
+	 * @throws java.io.IOException
+	 *             the index data could not be written to the supplied stream.
+	 */
+	public void writeIndex(PackIndexWriter iw) throws IOException {
 		if (isIndexDisabled())
 			throw new IOException(JGitText.get().cachedPacksPreventsIndexCreation);
-
 		long writeStart = System.currentTimeMillis();
-		final PackIndexWriter iw = PackIndexWriter.createVersion(
-				indexStream, getIndexVersion());
 		iw.write(sortByName(), packcsum);
 		stats.timeWriting += System.currentTimeMillis() - writeStart;
 	}
@@ -1122,7 +1132,7 @@ public class PackWriter implements AutoCloseable {
 	 * Called after
 	 * {@link #writePack(ProgressMonitor, ProgressMonitor, OutputStream)} that
 	 * populates the list of objects to pack and before
-	 * {@link #writeBitmapIndex(OutputStream)} that destroys it.
+	 * {@link #writeBitmapIndex(PackBitmapIndexWriter)} that destroys it.
 	 * <p>
 	 * Writing this index is only required for local pack storage. Packs sent on
 	 * the network do not need to create an object size index.
@@ -1196,20 +1206,18 @@ public class PackWriter implements AutoCloseable {
 	 * <p>
 	 * Called after {@link #prepareBitmapIndex(ProgressMonitor)}.
 	 *
-	 * @param bitmapIndexStream
-	 *            output for the bitmap index data. Caller is responsible for
-	 *            closing this stream.
+	 * @param bitmapIndexWriter
+	 *            a writer to store the bitmap index in this object database
 	 * @throws java.io.IOException
-	 *             the index data could not be written to the supplied stream.
+	 *             the index data could not be written using the supplied writer
 	 */
-	public void writeBitmapIndex(OutputStream bitmapIndexStream)
+	public void writeBitmapIndex(PackBitmapIndexWriter bitmapIndexWriter)
 			throws IOException {
 		if (writeBitmaps == null)
 			throw new IOException(JGitText.get().bitmapsMustBePrepared);
 
 		long writeStart = System.currentTimeMillis();
-		final PackBitmapIndexWriterV1 iw = new PackBitmapIndexWriterV1(bitmapIndexStream);
-		iw.write(writeBitmaps, packcsum);
+		bitmapIndexWriter.write(writeBitmaps, packcsum);
 		stats.timeWriting += System.currentTimeMillis() - writeStart;
 	}
 
@@ -2008,8 +2016,10 @@ public class PackWriter implements AutoCloseable {
 		final long countingStart = System.currentTimeMillis();
 		beginPhase(PackingPhase.COUNTING, countingMonitor, ProgressMonitor.UNKNOWN);
 
-		stats.interestingObjects = Collections.unmodifiableSet(new HashSet<ObjectId>(want));
-		stats.uninterestingObjects = Collections.unmodifiableSet(new HashSet<ObjectId>(have));
+		stats.interestingObjects = Collections
+				.unmodifiableSet(new HashSet<>(want));
+		stats.uninterestingObjects = Collections
+				.unmodifiableSet(new HashSet<>(have));
 		excludeFromBitmapSelection = noBitmaps;
 
 		canBuildBitmaps = config.isBuildBitmaps()
@@ -2019,8 +2029,8 @@ public class PackWriter implements AutoCloseable {
 		if (!shallowPack && useBitmaps) {
 			BitmapIndex bitmapIndex = reader.getBitmapIndex();
 			if (bitmapIndex != null) {
-				BitmapWalker bitmapWalker = new BitmapWalker(
-						walker, bitmapIndex, countingMonitor);
+				BitmapWalker bitmapWalker = new BitmapWalker(walker,
+						bitmapIndex, countingMonitor);
 				findObjectsToPackUsingBitmaps(bitmapWalker, want, have);
 				endPhase(countingMonitor);
 				stats.timeCounting = System.currentTimeMillis() - countingStart;
@@ -2308,7 +2318,7 @@ public class PackWriter implements AutoCloseable {
 
 	/**
 	 * Determines if the object should be omitted from the pack as a result of
-	 * its depth (probably because of the tree:<depth> filter).
+	 * its depth (probably because of the tree:&lt;depth&gt; filter).
 	 * <p>
 	 * Causes {@code walker} to skip traversing the current tree, which ought to
 	 * have just started traversal, assuming this method is called as soon as a
@@ -2384,17 +2394,46 @@ public class PackWriter implements AutoCloseable {
 	 * this method once for each representation available for an object, to
 	 * allow the writer to find the most suitable one for the output.
 	 *
+	 * This method tries to take a very simple approach to avoiding delta chains
+	 * during object reuse by selecting from the oldest pack that contains them.
+	 * This helps select many objects from the same pack which helps make good
+	 * use of any WindowCache caching, and it helps prevent cycles because a
+	 * pack must not have a cycle in the delta chain. If both objects A and B
+	 * are chosen out of the same source pack then there cannot be an A->B->A
+	 * cycle.
+	 *
+	 * The oldest pack is also the most likely to have the smallest deltas. It
+	 * generally is the biggest pack in the system and probably came from the
+	 * clone (or last GC) of this repository, where all objects were previously
+	 * considered and packed tightly together. If an object appears again (for
+	 * example due to a revert and a push into this repository) the newer copy
+	 * won't be nearly as small as the older delta version of it, even if the
+	 * newer one is also itself a delta.
+	 *
+	 * Thus this method is optimized for being called in an order that presumes
+	 * that earlier representations are better than later ones, and it expects
+	 * representations from older pack files to be tested first, and it will
+	 * shortcut any searching once it is satisfied with the selected
+	 * representation. Perhaps ideally representation testing ordering should be
+	 * based on packfile object count instead of age since file age can be
+	 * altered, and be deceiving for other reasons. Perhaps the presence of a
+	 * bitmap file for a pack file should prioritize it to be tested even
+	 * earlier than object count?
+	 *
 	 * @param otp
 	 *            the object being packed.
 	 * @param next
 	 *            the next available representation from the repository.
+	 * @return whether the search should continue in the hopes of finding a
+	 *         better representation
 	 */
-	public void select(ObjectToPack otp, StoredObjectRepresentation next) {
+	public boolean select(ObjectToPack otp, StoredObjectRepresentation next) {
 		int nFmt = next.getFormat();
 
 		if (!cachedPacks.isEmpty()) {
-			if (otp.isEdge())
-				return;
+			if (otp.isEdge()) {
+				return false;
+			}
 			if (nFmt == PACK_WHOLE || nFmt == PACK_DELTA) {
 				for (CachedPack pack : cachedPacks) {
 					if (pack.hasObject(otp, next)) {
@@ -2402,7 +2441,7 @@ public class PackWriter implements AutoCloseable {
 						otp.clearDeltaBase();
 						otp.clearReuseAsIs();
 						pruneCurrentObjectList = true;
-						return;
+						return false;
 					}
 				}
 			}
@@ -2412,23 +2451,22 @@ public class PackWriter implements AutoCloseable {
 			ObjectId baseId = next.getDeltaBase();
 			ObjectToPack ptr = objectsMap.get(baseId);
 			if (ptr != null && !ptr.isEdge()) {
-				otp.setDeltaBase(ptr);
-				otp.setReuseAsIs();
-			} else if (thin && have(ptr, baseId)) {
-				otp.setDeltaBase(baseId);
-				otp.setReuseAsIs();
-			} else {
-				otp.clearDeltaBase();
-				otp.clearReuseAsIs();
+				return useDelta(otp, next, ptr);
 			}
+			if (thin && have(ptr, baseId)) {
+				return useDelta(otp, next, baseId);
+			}
+			otp.clearDeltaBase();
+			otp.clearReuseAsIs();
 		} else if (nFmt == PACK_WHOLE && config.isReuseObjects()) {
 			int nWeight = next.getWeight();
 			if (otp.isReuseAsIs() && !otp.isDeltaRepresentation()) {
 				// We've chosen another PACK_WHOLE format for this object,
 				// choose the one that has the smaller compressed size.
 				//
-				if (otp.getWeight() <= nWeight)
-					return;
+				if (otp.getWeight() < nWeight) {
+					return true;
+				}
 			}
 			otp.clearDeltaBase();
 			otp.setReuseAsIs();
@@ -2440,6 +2478,15 @@ public class PackWriter implements AutoCloseable {
 
 		otp.setDeltaAttempted(reuseDeltas && next.wasDeltaAttempted());
 		otp.select(next);
+		return true;
+	}
+
+	private boolean useDelta(ObjectToPack otp, StoredObjectRepresentation rep, ObjectId base) {
+		otp.setDeltaBase(base);
+		otp.setReuseAsIs();
+		otp.setDeltaAttempted(reuseDeltas && rep.wasDeltaAttempted());
+		otp.select(rep);
+		return false;
 	}
 
 	private final boolean have(ObjectToPack ptr, AnyObjectId objectId) {
@@ -2454,11 +2501,12 @@ public class PackWriter implements AutoCloseable {
 	 * object graph at selected commits. Writing a bitmap index is an optional
 	 * feature that not all pack users may require.
 	 * <p>
-	 * Called after {@link #writeIndex(OutputStream)}.
+	 * Called after {@link #writeIndex(PackIndexWriter)}.
 	 * <p>
 	 * To reduce memory internal state is cleared during this method, rendering
 	 * the PackWriter instance useless for anything further than a call to write
-	 * out the new bitmaps with {@link #writeBitmapIndex(OutputStream)}.
+	 * out the new bitmaps with
+	 * {@link #writeBitmapIndex(PackBitmapIndexWriter)}.
 	 *
 	 * @param pm
 	 *            progress monitor to report bitmap building work.
@@ -2612,17 +2660,29 @@ public class PackWriter implements AutoCloseable {
 			this.bytesUsed = bytesUsed;
 		}
 
-		/** @return the PackConfig used to build the writer. */
+		/**
+		 * Get pack config
+		 *
+		 * @return the PackConfig used to build the writer.
+		 */
 		public PackConfig getConfig() {
 			return config;
 		}
 
-		/** @return the current phase of the writer. */
+		/**
+		 * Get packing phase
+		 *
+		 * @return the current phase of the writer.
+		 */
 		public PackingPhase getPhase() {
 			return phase;
 		}
 
-		/** @return an estimate of the total memory used by the writer. */
+		/**
+		 * Get estimate of memory by the writer
+		 *
+		 * @return an estimate of the total memory used by the writer.
+		 */
 		public long estimateBytesUsed() {
 			return bytesUsed;
 		}

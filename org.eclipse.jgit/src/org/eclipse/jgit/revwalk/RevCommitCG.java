@@ -14,6 +14,7 @@ import java.io.IOException;
 
 import org.eclipse.jgit.errors.IncorrectObjectTypeException;
 import org.eclipse.jgit.errors.MissingObjectException;
+import org.eclipse.jgit.internal.storage.commitgraph.ChangedPathFilter;
 import org.eclipse.jgit.internal.storage.commitgraph.CommitGraph;
 import org.eclipse.jgit.lib.AnyObjectId;
 import org.eclipse.jgit.lib.Constants;
@@ -44,7 +45,6 @@ class RevCommitCG extends RevCommit {
 		this.graphPosition = graphPosition;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	void parseCanonical(RevWalk walk, byte[] raw) throws IOException {
 		if (walk.isRetainBody()) {
@@ -53,7 +53,6 @@ class RevCommitCG extends RevCommit {
 		parseInGraph(walk);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	void parseHeaders(RevWalk walk) throws MissingObjectException,
 			IncorrectObjectTypeException, IOException {
@@ -98,9 +97,14 @@ class RevCommitCG extends RevCommit {
 		flags |= PARSED;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	int getGeneration() {
 		return generation;
+	}
+
+	/** {@inheritDoc} */
+	@Override
+	public ChangedPathFilter getChangedPathFilter(RevWalk rw) {
+		return rw.commitGraph().getChangedPathFilter(graphPosition);
 	}
 }

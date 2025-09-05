@@ -13,6 +13,10 @@
 
 package org.eclipse.jgit.treewalk.filter;
 
+import java.util.Arrays;
+import java.util.Set;
+import java.util.stream.Collectors;
+
 import org.eclipse.jgit.util.RawParseUtils;
 
 /**
@@ -39,6 +43,7 @@ class ByteArraySet {
 	 * Create an empty set.
 	 *
 	 * @param capacity
+	 *            initial capacity of the set
 	 */
 	ByteArraySet(int capacity) {
 		initTable(1 << Integer.highestOneBit((capacity * 2) - 1));
@@ -136,13 +141,19 @@ class ByteArraySet {
 	}
 
 	/**
+	 * Returns number of arrays in the set
+	 *
 	 * @return number of arrays in the set
 	 */
 	int size() {
 		return size;
 	}
 
-	/** @return true if {@link #size()} is 0. */
+	/**
+	 * Returns true if {@link #size()} is 0
+	 *
+	 * @return true if {@link #size()} is 0
+	 */
 	boolean isEmpty() {
 		return size == 0;
 	}
@@ -180,7 +191,6 @@ class ByteArraySet {
 		table = new byte[sz][];
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public String toString() {
 		StringBuilder sb = new StringBuilder();
@@ -289,6 +299,10 @@ class ByteArraySet {
 				ret[i++] = entry;
 		}
 		return ret;
+	}
+
+	Set<byte[]> toSet() {
+		return Arrays.stream(toArray()).collect(Collectors.toSet());
 	}
 
 }

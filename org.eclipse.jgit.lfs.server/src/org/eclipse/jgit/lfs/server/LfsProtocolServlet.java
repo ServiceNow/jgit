@@ -33,10 +33,10 @@ import java.io.Writer;
 import java.text.MessageFormat;
 import java.util.List;
 
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServlet;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServlet;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 import org.eclipse.jgit.lfs.errors.LfsBandwidthLimitExceeded;
 import org.eclipse.jgit.lfs.errors.LfsException;
@@ -140,6 +140,8 @@ public abstract class LfsProtocolServlet extends HttpServlet {
 		}
 
 		/**
+		 * Whether operation is upload
+		 *
 		 * @return true if the operation is upload.
 		 * @since 4.7
 		 */
@@ -148,6 +150,8 @@ public abstract class LfsProtocolServlet extends HttpServlet {
 		}
 
 		/**
+		 * Whether the operation is download
+		 *
 		 * @return true if the operation is download.
 		 * @since 4.7
 		 */
@@ -156,6 +160,8 @@ public abstract class LfsProtocolServlet extends HttpServlet {
 		}
 
 		/**
+		 * Whether the operation is verify
+		 *
 		 * @return true if the operation is verify.
 		 * @since 4.7
 		 */
@@ -164,7 +170,6 @@ public abstract class LfsProtocolServlet extends HttpServlet {
 		}
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	protected void doPost(HttpServletRequest req, HttpServletResponse res)
 			throws ServletException, IOException {

@@ -33,6 +33,7 @@ import java.util.List;
 import java.util.regex.Pattern;
 
 import org.eclipse.jgit.api.errors.CanceledException;
+import org.eclipse.jgit.attributes.Attribute;
 import org.eclipse.jgit.diff.DiffAlgorithm.SupportedAlgorithm;
 import org.eclipse.jgit.diff.DiffEntry.ChangeType;
 import org.eclipse.jgit.dircache.DirCacheIterator;
@@ -699,9 +700,9 @@ public class DiffFormatter implements AutoCloseable {
 	 * Format the diff entries by filtering out the noise from the given delta filter pattern
 	 * The filter acts only for files that have MODIFY change Type.
 	 * If there are no changes detected, we will remove the diff entry.
-	 * @param entries
-	 * @param deltaFilterPattern
-	 * @throws IOException
+	 * @param entries Diff entries
+	 * @param deltaFilterPattern filter pattern
+	 * @throws IOException The function throws IOException
 	 */
 
 	public void format(List<? extends DiffEntry> entries, Pattern deltaFilterPattern) throws IOException {
@@ -730,9 +731,9 @@ public class DiffFormatter implements AutoCloseable {
 	 * Format the diff entries by filtering out the noise from the given delta filter pattern
 	 * The filter acts only for files that have MODIFY change Type.
 	 * If there are no changes detected, we will remove the diff entry.
-	 * @param entries
-	 * @param deltaFilterPattern
-	 * @throws IOException
+	 * @param entries Diff entries
+	 * @param deltaFilterPattern filter pattern
+	 * @throws IOException The function throws IOException
 	 */
 
 	public void filterModifiedFiles(List<? extends DiffEntry> entries, Pattern deltaFilterPattern) throws IOException {
@@ -766,7 +767,7 @@ public class DiffFormatter implements AutoCloseable {
 	 */
 	public void format(DiffEntry ent) throws IOException {
 		FormatResult res = createFormatResult(ent);
-		format(res.header, res.a, res.b);
+		format(res.header, res.a, res.b, getDiffDriver(ent));
 	}
 
 	private static byte[] writeGitLinkText(AbbreviatedObjectId id) {
@@ -812,11 +813,14 @@ public class DiffFormatter implements AutoCloseable {
 	 *            text source for the post-image version of the content. This
 	 *            must match the content of
 	 *            {@link org.eclipse.jgit.patch.FileHeader#getNewId()}.
+	 * @param diffDriver
+	 *            the diff driver used to obtain function names in hunk headers
 	 * @throws java.io.IOException
-	 *             writing to the supplied stream failed.
+	 *            writing to the supplied stream failed.
+	 * @since 6.10.1
 	 */
-	public void format(FileHeader head, RawText a, RawText b)
-			throws IOException {
+	public void format(FileHeader head, RawText a, RawText b,
+			DiffDriver diffDriver) throws IOException {
 		// Reuse the existing FileHeader as-is by blindly copying its
 		// header lines, but avoiding its hunks. Instead we recreate
 		// the hunks from the text instances we have been supplied.
@@ -826,8 +830,49 @@ public class DiffFormatter implements AutoCloseable {
 		if (!head.getHunks().isEmpty())
 			end = head.getHunks().get(0).getStartOffset();
 		out.write(head.getBuffer(), start, end - start);
-		if (head.getPatchType() == PatchType.UNIFIED)
-			format(head.toEditList(), a, b);
+		if (head.getPatchType() == PatchType.UNIFIED) {
+			format(head.toEditList(), a, b, diffDriver);
+		}
+	}
+
+	/**
+	 * Format a patch script, reusing a previously parsed FileHeader.
+	 * <p>
+	 * This formatter is primarily useful for editing an existing patch script
+	 * to increase or reduce the number of lines of context within the script.
+	 * All header lines are reused as-is from the supplied FileHeader.
+	 *
+	 * @param head
+	 * 		existing file header containing the header lines to copy.
+	 * @param a
+	 * 		text source for the pre-image version of the content. This must match
+	 * 		the content of {@link org.eclipse.jgit.patch.FileHeader#getOldId()}.
+	 * @param b
+	 * 		text source for the post-image version of the content. This must match
+	 * 		the content of {@link org.eclipse.jgit.patch.FileHeader#getNewId()}.
+	 * @throws java.io.IOException
+	 * 		writing to the supplied stream failed.
+	 */
+	public void format(FileHeader head, RawText a, RawText b)
+			throws IOException {
+		format(head, a, b, null);
+	}
+
+	/**
+	 * Formats a list of edits in unified diff format
+	 *
+	 * @param edits
+	 * 		some differences which have been calculated between A and B
+	 * @param a
+	 * 		the text A which was compared
+	 * @param b
+	 * 		the text B which was compared
+	 * @throws java.io.IOException
+	 * 		if an IO error occurred
+	 */
+	public void format(EditList edits, RawText a, RawText b)
+			throws IOException {
+		format(edits, a, b, null);
 	}
 
 	/**
@@ -839,10 +884,14 @@ public class DiffFormatter implements AutoCloseable {
 	 *            the text A which was compared
 	 * @param b
 	 *            the text B which was compared
+	 * @param diffDriver
+	 *            the diff driver used to obtain function names in hunk headers
 	 * @throws java.io.IOException
+	 *             if an IO error occurred
+	 * @since 6.10.1
 	 */
-	public void format(EditList edits, RawText a, RawText b)
-			throws IOException {
+	public void format(EditList edits, RawText a, RawText b,
+			DiffDriver diffDriver) throws IOException {
 		for (int curIdx = 0; curIdx < edits.size();) {
 			Edit curEdit = edits.get(curIdx);
 			final int endIdx = findCombinedEnd(edits, curIdx);
@@ -853,7 +902,8 @@ public class DiffFormatter implements AutoCloseable {
 			final int aEnd = (int) Math.min(a.size(), (long) endEdit.getEndA() + context);
 			final int bEnd = (int) Math.min(b.size(), (long) endEdit.getEndB() + context);
 
-			writeHunkHeader(aCur, aEnd, bCur, bEnd);
+			writeHunkHeader(aCur, aEnd, bCur, bEnd,
+					getFuncName(a, aCur - 1, diffDriver));
 
 			while (aCur < aEnd || bCur < bEnd) {
 				if (aCur < curEdit.getBeginA() || endIdx + 1 < curIdx) {
@@ -888,6 +938,7 @@ public class DiffFormatter implements AutoCloseable {
 	 * @param line
 	 *            the line number within text
 	 * @throws java.io.IOException
+	 *             if an IO error occurred
 	 */
 	protected void writeContextLine(RawText text, int line)
 			throws IOException {
@@ -906,6 +957,7 @@ public class DiffFormatter implements AutoCloseable {
 	 * @param line
 	 *            the line number within text
 	 * @throws java.io.IOException
+	 *             if an IO error occurred
 	 */
 	protected void writeAddedLine(RawText text, int line)
 			throws IOException {
@@ -920,6 +972,7 @@ public class DiffFormatter implements AutoCloseable {
 	 * @param line
 	 *            the line number within text
 	 * @throws java.io.IOException
+	 *             if an IO error occurred
 	 */
 	protected void writeRemovedLine(RawText text, int line)
 			throws IOException {
@@ -938,9 +991,32 @@ public class DiffFormatter implements AutoCloseable {
 	 * @param bEndLine
 	 *            within second source
 	 * @throws java.io.IOException
+	 *             if an IO error occurred
 	 */
-	protected void writeHunkHeader(int aStartLine, int aEndLine,
-			int bStartLine, int bEndLine) throws IOException {
+	protected void writeHunkHeader(int aStartLine, int aEndLine, int bStartLine,
+			int bEndLine) throws IOException {
+		writeHunkHeader(aStartLine, aEndLine, bStartLine, bEndLine, null);
+	}
+
+	/**
+	 * Output a hunk header
+	 *
+	 * @param aStartLine
+	 *            within first source
+	 * @param aEndLine
+	 *            within first source
+	 * @param bStartLine
+	 *            within second source
+	 * @param bEndLine
+	 *            within second source
+	 * @param funcName
+	 *            function name of this hunk
+	 * @throws java.io.IOException
+	 *             if an IO error occurred
+	 * @since 6.10.1
+	 */
+	protected void writeHunkHeader(int aStartLine, int aEndLine, int bStartLine,
+			int bEndLine, String funcName) throws IOException {
 		out.write('@');
 		out.write('@');
 		writeRange('-', aStartLine + 1, aEndLine - aStartLine);
@@ -948,6 +1024,10 @@ public class DiffFormatter implements AutoCloseable {
 		out.write(' ');
 		out.write('@');
 		out.write('@');
+		if (funcName != null) {
+			out.write(' ');
+			out.write(funcName.getBytes());
+		}
 		out.write('\n');
 	}
 
@@ -1304,5 +1384,51 @@ public class DiffFormatter implements AutoCloseable {
 
 	private static boolean end(Edit edit, int a, int b) {
 		return edit.getEndA() <= a && edit.getEndB() <= b;
+	}
+
+	private String getFuncName(RawText text, int startAt,
+			DiffDriver diffDriver) {
+		if (diffDriver != null) {
+			while (startAt > 0) {
+				String line = text.getString(startAt);
+				startAt--;
+				if (matchesAny(diffDriver.getNegatePatterns(), line)) {
+					continue;
+				}
+				if (matchesAny(diffDriver.getMatchPatterns(), line)) {
+					String funcName = line.replaceAll("^[ \\t]+", ""); //$NON-NLS-1$//$NON-NLS-2$
+					return funcName.substring(0,
+							Math.min(funcName.length(), 80)).trim();
+				}
+			}
+		}
+		return null;
+	}
+
+	private boolean matchesAny(List<Pattern> patterns, String text) {
+		if (patterns != null) {
+			for (Pattern p : patterns) {
+				if (p.matcher(text).find()) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	private DiffDriver getDiffDriver(DiffEntry entry) {
+		Attribute diffAttr = entry.getDiffAttribute();
+		if (diffAttr == null) {
+			return null;
+		}
+		String diffAttrValue = diffAttr.getValue();
+		if (diffAttrValue == null) {
+			return null;
+		}
+		try {
+			return DiffDriver.valueOf(diffAttrValue);
+		} catch (IllegalArgumentException e) {
+			return null;
+		}
 	}
 }

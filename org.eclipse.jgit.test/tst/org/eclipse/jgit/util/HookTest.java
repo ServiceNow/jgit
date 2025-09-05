@@ -12,7 +12,6 @@ package org.eclipse.jgit.util;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
-import static org.junit.Assert.fail;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -166,7 +165,7 @@ public class HookTest extends RepositoryTestCase {
 			git.commit().setMessage("commit")
 					.setHookOutputStream(new PrintStream(out)).call();
 		} catch (AbortedByHookException e) {
-			fail("unexpected hook failure");
+			throw new AssertionError("unexpected hook failure", e);
 		}
 		/*assertEquals("unexpected hook output",
 				"test pre-commit\ntest commit-msg .git/COMMIT_EDITMSG\ntest post-commit\n",

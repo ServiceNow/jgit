@@ -18,12 +18,13 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.text.MessageFormat;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -86,7 +87,6 @@ import org.eclipse.jgit.util.RawParseUtils;
  * supported options and arguments of this command and a {@link #call()} method
  * to finally execute the command. Each instance of this class should only be
  * used for one invocation of the command (means: one call to {@link #call()})
- * <p>
  *
  * @see <a
  *      href="http://www.kernel.org/pub/software/scm/git/docs/git-rebase.html"
@@ -290,13 +290,17 @@ public class RebaseCommand extends GitCommand<RebaseResult> {
 					}
 				}
 				RebaseResult res = initFilesAndRewind();
-				if (stopAfterInitialization)
+				if (stopAfterInitialization) {
 					return RebaseResult.INTERACTIVE_PREPARED_RESULT;
+				}
 				if (res != null) {
-					autoStashApply();
-					if (rebaseState.getDir().exists())
+					if (!autoStashApply()) {
+						res = RebaseResult.STASH_APPLY_CONFLICTS_RESULT;
+					}
+					if (rebaseState.getDir().exists()) {
 						FileUtils.delete(rebaseState.getDir(),
 								FileUtils.RECURSIVE);
+					}
 					return res;
 				}
 			}
@@ -382,7 +386,7 @@ public class RebaseCommand extends GitCommand<RebaseResult> {
 	}
 
 	private boolean autoStashApply() throws IOException, GitAPIException {
-		boolean conflicts = false;
+		boolean success = true;
 		if (rebaseState.getFile(AUTOSTASH).exists()) {
 			String stash = rebaseState.readFile(AUTOSTASH);
 			try (Git git = Git.wrap(repo)) {
@@ -390,7 +394,7 @@ public class RebaseCommand extends GitCommand<RebaseResult> {
 						.ignoreRepositoryState(true).setStrategy(strategy)
 						.call();
 			} catch (StashApplyFailureException e) {
-				conflicts = true;
+				success = false;
 				try (RevWalk rw = new RevWalk(repo)) {
 					ObjectId stashId = repo.resolve(stash);
 					RevCommit commit = rw.parseCommit(stashId);
@@ -399,7 +403,7 @@ public class RebaseCommand extends GitCommand<RebaseResult> {
 				}
 			}
 		}
-		return conflicts;
+		return success;
 	}
 
 	private void updateStashRef(ObjectId commitId, PersonIdent refLogIdent,
@@ -724,13 +728,15 @@ public class RebaseCommand extends GitCommand<RebaseResult> {
 			boolean lastStepIsForward) throws IOException, GitAPIException {
 		String headName = rebaseState.readFile(HEAD_NAME);
 		updateHead(headName, finalHead, upstreamCommit);
-		boolean stashConflicts = autoStashApply();
+		boolean unstashSuccessful = autoStashApply();
 		getRepository().autoGC(monitor);
 		FileUtils.delete(rebaseState.getDir(), FileUtils.RECURSIVE);
-		if (stashConflicts)
+		if (!unstashSuccessful) {
 			return RebaseResult.STASH_APPLY_CONFLICTS_RESULT;
-		if (lastStepIsForward || finalHead == null)
+		}
+		if (lastStepIsForward || finalHead == null) {
 			return RebaseResult.FAST_FORWARD_RESULT;
+		}
 		return RebaseResult.OK_RESULT;
 	}
 
@@ -1000,7 +1006,9 @@ public class RebaseCommand extends GitCommand<RebaseResult> {
 	/**
 	 * @return the commit if we had to do a commit, otherwise null
 	 * @throws GitAPIException
+	 *             if JGit API failed
 	 * @throws IOException
+	 *             if an IO error occurred
 	 */
 	private RevCommit continueRebase() throws GitAPIException, IOException {
 		// if there are still conflicts, we throw a specific Exception
@@ -1057,12 +1065,16 @@ public class RebaseCommand extends GitCommand<RebaseResult> {
 		String authorScript = toAuthorScript(author);
 		rebaseState.createFile(AUTHOR_SCRIPT, authorScript);
 		rebaseState.createFile(MESSAGE, commitToPick.getFullMessage());
-		ByteArrayOutputStream bos = new ByteArrayOutputStream();
-		try (DiffFormatter df = new DiffFormatter(bos)) {
-			df.setRepository(repo);
-			df.format(commitToPick.getParent(0), commitToPick);
+		if (commitToPick.getParentCount() > 0) {
+			ByteArrayOutputStream bos = new ByteArrayOutputStream();
+			try (DiffFormatter df = new DiffFormatter(bos)) {
+				df.setRepository(repo);
+				df.format(commitToPick.getParent(0), commitToPick);
+			}
+			rebaseState.createFile(PATCH, new String(bos.toByteArray(), UTF_8));
+		} else {
+			rebaseState.createFile(PATCH, ""); //$NON-NLS-1$
 		}
-		rebaseState.createFile(PATCH, new String(bos.toByteArray(), UTF_8));
 		rebaseState.createFile(STOPPED_SHA,
 				repo.newObjectReader()
 				.abbreviate(
@@ -1102,13 +1114,15 @@ public class RebaseCommand extends GitCommand<RebaseResult> {
 	 * that can not be parsed as steps
 	 *
 	 * @param numSteps
+	 *            number of steps to remove
 	 * @throws IOException
+	 *             if an IO error occurred
 	 */
 	private void popSteps(int numSteps) throws IOException {
 		if (numSteps == 0)
 			return;
-		List<RebaseTodoLine> todoLines = new LinkedList<>();
-		List<RebaseTodoLine> poppedLines = new LinkedList<>();
+		List<RebaseTodoLine> todoLines = new ArrayList<>();
+		List<RebaseTodoLine> poppedLines = new ArrayList<>();
 
 		for (RebaseTodoLine line : repo.readRebaseTodo(
 				rebaseState.getPath(GIT_REBASE_TODO), true)) {
@@ -1146,7 +1160,7 @@ public class RebaseCommand extends GitCommand<RebaseResult> {
 		if (!isInteractive() && walk.isMergedInto(upstream, headCommit))
 			return RebaseResult.UP_TO_DATE_RESULT;
 		else if (!isInteractive() && walk.isMergedInto(headCommit, upstream)) {
-			// head is already merged into upstream, fast-foward
+			// head is already merged into upstream, fast-forward
 			monitor.beginTask(MessageFormat.format(
 					JGitText.get().resettingHead,
 					upstreamCommit.getShortMessage()), ProgressMonitor.UNKNOWN);
@@ -1297,7 +1311,9 @@ public class RebaseCommand extends GitCommand<RebaseResult> {
 	 *            if we can fast-forward to.
 	 * @return the new head, or null
 	 * @throws java.io.IOException
+	 *             if an IO error occurred
 	 * @throws org.eclipse.jgit.api.errors.GitAPIException
+	 *             if a JGit API exception occurred
 	 */
 	public RevCommit tryFastForward(RevCommit newCommit) throws IOException,
 			GitAPIException {
@@ -1442,13 +1458,14 @@ public class RebaseCommand extends GitCommand<RebaseResult> {
 				throw new JGitInternalException(
 						JGitText.get().abortingRebaseFailed);
 			}
-			boolean stashConflicts = autoStashApply();
+			boolean unstashSuccessful = autoStashApply();
 			// cleanup the files
 			FileUtils.delete(rebaseState.getDir(), FileUtils.RECURSIVE);
 			repo.writeCherryPickHead(null);
 			repo.writeMergeHeads(null);
-			if (stashConflicts)
+			if (!unstashSuccessful) {
 				return RebaseResult.STASH_APPLY_CONFLICTS_RESULT;
+			}
 			return result;
 
 		} finally {
@@ -1548,6 +1565,7 @@ public class RebaseCommand extends GitCommand<RebaseResult> {
 	 *            the name of the upstream branch
 	 * @return {@code this}
 	 * @throws org.eclipse.jgit.api.errors.RefNotFoundException
+	 *             if {@code upstream} Ref couldn't be resolved
 	 */
 	public RebaseCommand setUpstream(String upstream)
 			throws RefNotFoundException {
@@ -1819,23 +1837,26 @@ public class RebaseCommand extends GitCommand<RebaseResult> {
 
 		// the time is saved as <seconds since 1970> <timezone offset>
 		int timeStart = 0;
-		if (time.startsWith("@")) //$NON-NLS-1$
+		if (time.startsWith("@")) { //$NON-NLS-1$
 			timeStart = 1;
-		else
+		} else {
 			timeStart = 0;
-		long when = Long
-				.parseLong(time.substring(timeStart, time.indexOf(' '))) * 1000;
+		}
+		Instant when = Instant.ofEpochSecond(
+				Long.parseLong(time.substring(timeStart, time.indexOf(' '))));
 		String tzOffsetString = time.substring(time.indexOf(' ') + 1);
 		int multiplier = -1;
-		if (tzOffsetString.charAt(0) == '+')
+		if (tzOffsetString.charAt(0) == '+') {
 			multiplier = 1;
+		}
 		int hours = Integer.parseInt(tzOffsetString.substring(1, 3));
 		int minutes = Integer.parseInt(tzOffsetString.substring(3, 5));
 		// this is in format (+/-)HHMM (hours and minutes)
-		// we need to convert into minutes
-		int tz = (hours * 60 + minutes) * multiplier;
-		if (name != null && email != null)
+		ZoneOffset tz = ZoneOffset.ofHoursMinutes(hours * multiplier,
+				minutes * multiplier);
+		if (name != null && email != null) {
 			return new PersonIdent(name, email, when, tz);
+		}
 		return null;
 	}
 

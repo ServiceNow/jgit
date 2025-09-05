@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011, Robin Rosenberg and others
+ * Copyright (C) 2011, 2024 Robin Rosenberg and others
  *
  * This program and the accompanying materials are made available under the
  * terms of the Eclipse Distribution License v. 1.0 which is available at
@@ -29,6 +29,7 @@ import org.eclipse.jgit.junit.RepositoryTestCase;
 import org.eclipse.jgit.lib.ConfigConstants;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.FileMode;
+import org.eclipse.jgit.lib.RefDatabase;
 import org.eclipse.jgit.lib.ReflogReader;
 import org.eclipse.jgit.lib.RepositoryState;
 import org.eclipse.jgit.merge.ResolveMerger.MergeFailureReason;
@@ -39,6 +40,7 @@ import org.junit.Test;
  * Test revert command
  */
 public class RevertCommandTest extends RepositoryTestCase {
+
 	@Test
 	public void testRevert() throws IOException, JGitInternalException,
 			GitAPIException {
@@ -58,7 +60,9 @@ public class RevertCommandTest extends RepositoryTestCase {
 			writeTrashFile("a",
 					"first line\nsecond line\nthird line\nfourth line\n");
 			git.add().addFilepattern("a").call();
-			RevCommit fixingA = git.commit().setMessage("fixed a").call();
+			// Commit message with a non-empty second line on purpose
+			RevCommit fixingA = git.commit().setMessage("fixed a\nsecond line")
+					.call();
 
 			writeTrashFile("b", "first line\n");
 			git.add().addFilepattern("b").call();
@@ -77,20 +81,58 @@ public class RevertCommandTest extends RepositoryTestCase {
 					+ "This reverts commit " + fixingA.getId().getName() + ".\n";
 			assertEquals(expectedMessage, revertCommit.getFullMessage());
 			assertEquals("fixed b", history.next().getFullMessage());
-			assertEquals("fixed a", history.next().getFullMessage());
+			assertEquals("fixed a\nsecond line",
+					history.next().getFullMessage());
 			assertEquals("enlarged a", history.next().getFullMessage());
 			assertEquals("create b", history.next().getFullMessage());
 			assertEquals("create a", history.next().getFullMessage());
 			assertFalse(history.hasNext());
 
-			ReflogReader reader = db.getReflogReader(Constants.HEAD);
+			RefDatabase refDb = db.getRefDatabase();
+			ReflogReader reader = refDb.getReflogReader(Constants.HEAD);
 			assertTrue(reader.getLastEntry().getComment()
 					.startsWith("revert: Revert \""));
-			reader = db.getReflogReader(db.getBranch());
+			reader = refDb.getReflogReader(db.getFullBranch());
 			assertTrue(reader.getLastEntry().getComment()
 					.startsWith("revert: Revert \""));
 		}
+	}
 
+	@Test
+	public void testRevertWithChangeId()
+			throws IOException, JGitInternalException, GitAPIException {
+		try (Git git = new Git(db)) {
+			writeTrashFile("a", "first line\nthird line\n");
+			git.add().addFilepattern("a").call();
+			git.commit().setMessage("create a").call();
+
+			writeTrashFile("a", "first line\nsecond line\nthird line\n");
+			git.add().addFilepattern("a").call();
+			RevCommit second = git.commit().setMessage("changed a").call();
+
+			writeTrashFile("a",
+					"first line\nsecond line\nthird line\nfourth line\n");
+			git.add().addFilepattern("a").call();
+			git.commit().setMessage("changed a again").call();
+
+			git.revert().include(second).setInsertChangeId(true).call();
+
+			assertEquals(RepositoryState.SAFE, db.getRepositoryState());
+
+			checkFile(new File(db.getWorkTree(), "a"),
+					"first line\nthird line\nfourth line\n");
+			Iterator<RevCommit> history = git.log().call().iterator();
+			RevCommit revertCommit = history.next();
+			String expectedMessage = "Revert \"changed a\"\n\n"
+					+ "This reverts commit " + second.getId().getName() + ".\n";
+			String commitMessage = revertCommit.getFullMessage();
+			assertTrue(commitMessage.matches("^\\Q" + expectedMessage
+					+ "\\E\nChange-Id: I[a-fA-F0-9]{40}\n$"));
+			assertEquals("changed a again", history.next().getFullMessage());
+			assertEquals("changed a", history.next().getFullMessage());
+			assertEquals("create a", history.next().getFullMessage());
+			assertFalse(history.hasNext());
+		}
 	}
 
 	@Test
@@ -130,10 +172,11 @@ public class RevertCommandTest extends RepositoryTestCase {
 			assertEquals("add first", history.next().getFullMessage());
 			assertFalse(history.hasNext());
 
-			ReflogReader reader = db.getReflogReader(Constants.HEAD);
+			RefDatabase refDb = db.getRefDatabase();
+			ReflogReader reader = refDb.getReflogReader(Constants.HEAD);
 			assertTrue(reader.getLastEntry().getComment()
 					.startsWith("revert: Revert \""));
-			reader = db.getReflogReader(db.getBranch());
+			reader = refDb.getReflogReader(db.getFullBranch());
 			assertTrue(reader.getLastEntry().getComment()
 					.startsWith("revert: Revert \""));
 		}
@@ -183,10 +226,11 @@ public class RevertCommandTest extends RepositoryTestCase {
 			assertEquals("add first", history.next().getFullMessage());
 			assertFalse(history.hasNext());
 
-			ReflogReader reader = db.getReflogReader(Constants.HEAD);
+			RefDatabase refDb = db.getRefDatabase();
+			ReflogReader reader = refDb.getReflogReader(Constants.HEAD);
 			assertTrue(reader.getLastEntry().getComment()
 					.startsWith("revert: Revert \""));
-			reader = db.getReflogReader(db.getBranch());
+			reader = refDb.getReflogReader(db.getFullBranch());
 			assertTrue(reader.getLastEntry().getComment()
 					.startsWith("revert: Revert \""));
 		}
@@ -391,12 +435,13 @@ public class RevertCommandTest extends RepositoryTestCase {
 		assertEquals(RepositoryState.SAFE, db.getRepositoryState());
 
 		if (reason == null) {
-			ReflogReader reader = db.getReflogReader(Constants.HEAD);
-			assertTrue(reader.getLastEntry().getComment()
-					.startsWith("revert: "));
-			reader = db.getReflogReader(db.getBranch());
-			assertTrue(reader.getLastEntry().getComment()
-					.startsWith("revert: "));
+			RefDatabase refDb = db.getRefDatabase();
+			ReflogReader reader = refDb.getReflogReader(Constants.HEAD);
+			assertTrue(
+					reader.getLastEntry().getComment().startsWith("revert: "));
+			reader = refDb.getReflogReader(db.getFullBranch());
+			assertTrue(
+					reader.getLastEntry().getComment().startsWith("revert: "));
 		}
 	}
 }

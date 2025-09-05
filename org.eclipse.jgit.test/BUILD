@@ -29,6 +29,7 @@ HELPERS = glob(
     "transport/ObjectIdMatcher.java",
     "transport/RequestValidatorTestCase.java",
     "transport/SpiTransport.java",
+    "transport/InMemoryPack.java",
     "treewalk/filter/AlwaysCloneTreeFilter.java",
     "test/resources/SampleDataRepositoryTestCase.java",
     "util/CPUTimeStopWatch.java",
@@ -51,6 +52,11 @@ tests(tests = glob(
     ["tst/**/*.java"],
     exclude = HELPERS + DATA + EXCLUDED,
 ))
+
+
+tests(tests = glob(["exttst/**/*.java"]),
+    srcprefix = "exttst/",
+    extra_tags = ["ext"])
 
 # Non abstract base classes used for tests by other test classes
 BASE = [
@@ -76,6 +82,8 @@ java_library(
     resources = DATA,
     deps = [
         "//lib:assertj-core",
+        "//lib:commons-codec",
+        "//lib:commons-io",
         "//lib:junit",
         "//lib:mockito",
         "//lib:slf4j-simple",

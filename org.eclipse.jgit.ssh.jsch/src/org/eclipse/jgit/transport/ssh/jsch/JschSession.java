@@ -34,7 +34,6 @@ import org.eclipse.jgit.transport.RemoteSession2;
 import org.eclipse.jgit.transport.URIish;
 import org.eclipse.jgit.util.io.IsolatedOutputStream;
 
-import com.jcraft.jsch.Channel;
 import com.jcraft.jsch.ChannelExec;
 import com.jcraft.jsch.ChannelSftp;
 import com.jcraft.jsch.JSchException;
@@ -68,40 +67,21 @@ public class JschSession implements RemoteSession2 {
 		this.uri = uri;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public Process exec(String command, int timeout) throws IOException {
 		return exec(command, Collections.emptyMap(), timeout);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public Process exec(String command, Map<String, String> environment,
 			int timeout) throws IOException {
 		return new JschProcess(command, environment, timeout);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public void disconnect() {
 		if (sock.isConnected())
 			sock.disconnect();
-	}
-
-	/**
-	 * A kludge to allow {@link org.eclipse.jgit.transport.TransportSftp} to get
-	 * an Sftp channel from Jsch. Ideally, this method would be generic, which
-	 * would require implementing generic Sftp channel operations in the
-	 * RemoteSession class.
-	 *
-	 * @return a channel suitable for Sftp operations.
-	 * @throws com.jcraft.jsch.JSchException
-	 *             on problems getting the channel.
-	 * @deprecated since 5.2; use {@link #getFtpChannel()} instead
-	 */
-	@Deprecated
-	public Channel getSftpChannel() throws JSchException {
-		return sock.openChannel("sftp"); //$NON-NLS-1$
 	}
 
 	/**

@@ -16,9 +16,9 @@ import static org.eclipse.jgit.http.server.ServletUtils.getRepository;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
 
-import javax.servlet.http.HttpServlet;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServlet;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.Repository;
@@ -29,7 +29,6 @@ import org.eclipse.jgit.util.HttpSupport;
 class InfoRefsServlet extends HttpServlet {
 	private static final long serialVersionUID = 1L;
 
-	/** {@inheritDoc} */
 	@Override
 	public void doGet(final HttpServletRequest req,
 			final HttpServletResponse rsp) throws IOException {

@@ -12,10 +12,10 @@
 
 package org.eclipse.jgit.transport;
 
-import static org.eclipse.jgit.transport.GitProtocolConstants.PACKET_DELIM;
 import static org.eclipse.jgit.transport.GitProtocolConstants.PACKET_DEEPEN;
 import static org.eclipse.jgit.transport.GitProtocolConstants.PACKET_DEEPEN_NOT;
 import static org.eclipse.jgit.transport.GitProtocolConstants.PACKET_DEEPEN_SINCE;
+import static org.eclipse.jgit.transport.GitProtocolConstants.PACKET_DELIM;
 import static org.eclipse.jgit.transport.GitProtocolConstants.PACKET_DONE;
 import static org.eclipse.jgit.transport.GitProtocolConstants.PACKET_END;
 import static org.eclipse.jgit.transport.GitProtocolConstants.PACKET_ERR;
@@ -32,10 +32,11 @@ import java.time.Instant;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Date;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -334,7 +335,6 @@ public abstract class BasePackFetchConnection extends BasePackConnection
 		}
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public final void fetch(final ProgressMonitor monitor,
 			final Collection<Ref> want, final Set<ObjectId> have)
@@ -342,7 +342,6 @@ public abstract class BasePackFetchConnection extends BasePackConnection
 		fetch(monitor, want, have, null);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public final void fetch(final ProgressMonitor monitor,
 			final Collection<Ref> want, final Set<ObjectId> have,
@@ -351,25 +350,21 @@ public abstract class BasePackFetchConnection extends BasePackConnection
 		doFetch(monitor, want, have, outputStream);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public boolean didFetchIncludeTags() {
 		return false;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public boolean didFetchTestConnectivity() {
 		return false;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public void setPackLockMessage(String message) {
 		lockMessage = message;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public Collection<PackLock> getPackLocks() {
 		if (packLock != null)
@@ -406,11 +401,14 @@ public abstract class BasePackFetchConnection extends BasePackConnection
 	protected void doFetch(final ProgressMonitor monitor,
 			final Collection<Ref> want, final Set<ObjectId> have,
 			OutputStream outputStream) throws TransportException {
+		boolean hasObjects = !have.isEmpty();
 		try {
 			noProgress = monitor == NullProgressMonitor.INSTANCE;
 
-			markRefsAdvertised();
-			markReachable(want, have, maxTimeWanted(want));
+			if (hasObjects) {
+				markRefsAdvertised();
+			}
+			markReachable(want, have, maxTimeWanted(want, hasObjects));
 
 			if (TransferConfig.ProtocolVersion.V2
 					.equals(getProtocolVersion())) {
@@ -422,7 +420,7 @@ public abstract class BasePackFetchConnection extends BasePackConnection
 				state = new TemporaryBuffer.Heap(Integer.MAX_VALUE);
 				pckState = new PacketLineOut(state);
 				try {
-					doFetchV2(monitor, want, outputStream);
+					doFetchV2(monitor, want, outputStream, hasObjects);
 				} finally {
 					clearState();
 				}
@@ -434,7 +432,7 @@ public abstract class BasePackFetchConnection extends BasePackConnection
 				pckState = new PacketLineOut(state);
 			}
 			PacketLineOut output = statelessRPC ? pckState : pckOut;
-			if (sendWants(want, output)) {
+			if (sendWants(want, output, hasObjects)) {
 				boolean mayHaveShallow = depth != null || deepenSince != null || !deepenNots.isEmpty();
 				Set<ObjectId> shallowCommits = local.getObjectDatabase().getShallowCommits();
 				if (isCapableOf(GitProtocolConstants.CAPABILITY_SHALLOW)) {
@@ -461,7 +459,8 @@ public abstract class BasePackFetchConnection extends BasePackConnection
 	}
 
 	private void doFetchV2(ProgressMonitor monitor, Collection<Ref> want,
-			OutputStream outputStream) throws IOException, CancelledException {
+			OutputStream outputStream, boolean hasObjects)
+			throws IOException, CancelledException {
 		sideband = true;
 		negotiateBegin();
 
@@ -483,7 +482,7 @@ public abstract class BasePackFetchConnection extends BasePackConnection
 			pckState.writeString(capability);
 		}
 
-		if (!sendWants(want, pckState)) {
+		if (!sendWants(want, pckState, hasObjects)) {
 			// We already have everything we wanted.
 			return;
 		}
@@ -659,7 +658,6 @@ public abstract class BasePackFetchConnection extends BasePackConnection
 		return gotReady;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public void close() {
 		if (walk != null)
@@ -671,8 +669,12 @@ public abstract class BasePackFetchConnection extends BasePackConnection
 		return local.getConfig().get(FetchConfig::new);
 	}
 
-	private int maxTimeWanted(Collection<Ref> wants) {
+	private int maxTimeWanted(Collection<Ref> wants, boolean hasObjects) {
 		int maxTime = 0;
+		if (!hasObjects) {
+			// we don't have any objects locally, we can immediately bail out
+			return maxTime;
+		}
 		for (Ref r : wants) {
 			try {
 				final RevObject obj = walk.parseAny(r.getObjectId());
@@ -689,36 +691,30 @@ public abstract class BasePackFetchConnection extends BasePackConnection
 	}
 
 	private void markReachable(Collection<Ref> want, Set<ObjectId> have,
-			int maxTime)
-			throws IOException {
-		Set<String> wantRefs = want.stream().map(Ref::getName)
-				.collect(Collectors.toSet());
-
-		for (Ref r : local.getRefDatabase().getRefs()) {
-			if (useNegotiationTip && !wantRefs.contains(r.getName())) {
-				continue;
+			int maxTime) throws IOException {
+		Collection<Ref> refsToMark;
+		if (useNegotiationTip) {
+			refsToMark = translateToLocalTips(want);
+			if (refsToMark.size() < want.size()) {
+				refsToMark.addAll(local.getRefDatabase().getRefs());
 			}
-
-			ObjectId id = r.getPeeledObjectId();
-			if (id == null)
-				id = r.getObjectId();
-			if (id == null)
-				continue;
-			parseReachable(id);
+		} else {
+			refsToMark = local.getRefDatabase().getRefs();
 		}
+		markReachableRefTips(refsToMark);
 
 		for (ObjectId id : local.getAdditionalHaves())
-			parseReachable(id);
+			markReachable(id);
 
 		for (ObjectId id : have)
-			parseReachable(id);
+			markReachable(id);
 
 		if (maxTime > 0) {
 			// Mark reachable commits until we reach maxTime. These may
 			// wind up later matching up against things we want and we
 			// can avoid asking for something we already happen to have.
 			//
-			final Date maxWhen = new Date(maxTime * 1000L);
+			Instant maxWhen = Instant.ofEpochSecond(maxTime);
 			walk.sort(RevSort.COMMIT_TIME_DESC);
 			walk.markStart(reachableCommits);
 			walk.setRevFilter(CommitTimeRevFilter.after(maxWhen));
@@ -738,7 +734,37 @@ public abstract class BasePackFetchConnection extends BasePackConnection
 		}
 	}
 
-	private void parseReachable(ObjectId id) {
+	private Collection<Ref> translateToLocalTips(Collection<Ref> want)
+			throws IOException {
+		String[] refs = want.stream().map(Ref::getName)
+				.collect(Collectors.toSet()).toArray(String[]::new);
+		Map<String, Ref> wantRefMap = local.getRefDatabase().exactRef(refs);
+		return wantRefMap.values().stream()
+				.filter(r -> getRefObjectId(r) != null)
+				.collect(Collectors.toList());
+	}
+
+	/**
+	 * Marks commits reachable.
+	 *
+	 * @param refsToMark
+	 *            references that client is requesting to be marked.
+	 */
+	private void markReachableRefTips(Collection<Ref> refsToMark) {
+		refsToMark.stream().map(BasePackFetchConnection::getRefObjectId)
+				.filter(Objects::nonNull)
+				.forEach(oid -> markReachable(oid));
+	}
+
+	private static ObjectId getRefObjectId(Ref ref) {
+		ObjectId id = ref.getPeeledObjectId();
+		if (id == null) {
+			id = ref.getObjectId();
+		}
+		return id;
+	}
+
+	private void markReachable(ObjectId id) {
 		try {
 			RevCommit o = walk.parseCommit(id);
 			if (!o.has(REACHABLE)) {
@@ -750,7 +776,8 @@ public abstract class BasePackFetchConnection extends BasePackConnection
 		}
 	}
 
-	private boolean sendWants(Collection<Ref> want, PacketLineOut p)
+	private boolean sendWants(Collection<Ref> want, PacketLineOut p,
+			boolean hasObjects)
 			throws IOException {
 		boolean first = true;
 		for (Ref r : want) {
@@ -759,7 +786,9 @@ public abstract class BasePackFetchConnection extends BasePackConnection
 				continue;
 			}
 			// if depth is set we need to fetch the objects even if they are already available
-			if (transport.getDepth() == null) {
+			if (transport.getDepth() == null
+					// only check reachable objects when we have objects
+					&& hasObjects) {
 				try {
 					if (walk.parseAny(objectId).has(REACHABLE)) {
 						// We already have this object. Asking for it is
@@ -845,7 +874,7 @@ public abstract class BasePackFetchConnection extends BasePackConnection
 		if (statelessRPC && multiAck != MultiAck.DETAILED) {
 			// Our stateless RPC implementation relies upon the detailed
 			// ACK status to tell us common objects for reuse in future
-			// requests.  If its not enabled, we can't talk to the peer.
+			// requests. If its not enabled, we can't talk to the peer.
 			//
 			throw new PackProtocolException(uri, MessageFormat.format(
 					JGitText.get().statelessRPCRequiresOptionToBeEnabled,

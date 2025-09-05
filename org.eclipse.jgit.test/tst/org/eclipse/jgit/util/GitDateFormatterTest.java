@@ -90,7 +90,8 @@ public class GitDateFormatterTest {
 	public void LOCALE() {
 		String date = new GitDateFormatter(Format.LOCALE).formatDate(ident);
 		assertTrue("Sep 20, 2011 7:09:25 PM -0400".equals(date)
-				|| "Sep 20, 2011, 7:09:25 PM -0400".equals(date)); // JDK-8206961
+				|| "Sep 20, 2011, 7:09:25 PM -0400".equals(date) // JDK-8206961
+				|| "Sep 20, 2011, 7:09:25\u202FPM -0400".equals(date)); // JDK-8304925
 	}
 
 	@Test
@@ -98,6 +99,7 @@ public class GitDateFormatterTest {
 		String date = new GitDateFormatter(Format.LOCALELOCAL)
 				.formatDate(ident);
 		assertTrue("Sep 20, 2011 7:39:25 PM".equals(date)
-				|| "Sep 20, 2011, 7:39:25 PM".equals(date)); // JDK-8206961
+				|| "Sep 20, 2011, 7:39:25 PM".equals(date) // JDK-8206961
+				|| "Sep 20, 2011, 7:39:25\u202FPM".equals(date)); // JDK-8304925
 	}
 }

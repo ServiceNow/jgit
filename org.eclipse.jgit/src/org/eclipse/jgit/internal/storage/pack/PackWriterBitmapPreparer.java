@@ -14,6 +14,7 @@ import static org.eclipse.jgit.internal.storage.file.PackBitmapIndex.FLAG_REUSE;
 import static org.eclipse.jgit.revwalk.RevFlag.SEEN;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -77,6 +78,7 @@ class PackWriterBitmapPreparer {
 	private final int recentCommitSpan;
 	private final int distantCommitSpan;
 	private final int excessiveBranchCount;
+	private final int excessiveBranchTipCount;
 	private final long inactiveBranchTimestamp;
 
 	PackWriterBitmapPreparer(ObjectReader reader,
@@ -96,10 +98,12 @@ class PackWriterBitmapPreparer {
 		this.recentCommitSpan = config.getBitmapRecentCommitSpan();
 		this.distantCommitSpan = config.getBitmapDistantCommitSpan();
 		this.excessiveBranchCount = config.getBitmapExcessiveBranchCount();
-		long now = SystemReader.getInstance().getCurrentTime();
-		long ageInSeconds = config.getBitmapInactiveBranchAgeInDays()
+		this.excessiveBranchTipCount = Math.max(excessiveBranchCount,
+				config.getBitmapExcessiveBranchTipCount());
+		Instant now = SystemReader.getInstance().now();
+		long ageInSeconds = (long) config.getBitmapInactiveBranchAgeInDays()
 				* DAY_IN_SECONDS;
-		this.inactiveBranchTimestamp = (now / 1000) - ageInSeconds;
+		this.inactiveBranchTimestamp = now.getEpochSecond() - ageInSeconds;
 	}
 
 	/**
@@ -163,11 +167,17 @@ class PackWriterBitmapPreparer {
 			rw2.setRetainBody(false);
 			rw2.setRevFilter(new NotInBitmapFilter(seen));
 
+			int newWantsCount = selectionHelper.newWantsByNewest.size();
+			int maxBranches = Math.min(excessiveBranchTipCount, newWantsCount);
+			Set<RevCommit> excessiveBranches = new HashSet<>(
+					selectionHelper.newWantsByNewest.subList(maxBranches,
+							newWantsCount));
 			// For each branch, do a revwalk to enumerate its commits. Exclude
 			// both reused commits and any commits seen in a previous branch.
 			// Then iterate through all new commits from oldest to newest,
 			// selecting well-spaced commits in this branch.
-			for (RevCommit rc : selectionHelper.newWantsByNewest) {
+			for (RevCommit rc : selectionHelper.newWantsByNewest.subList(0,
+					maxBranches)) {
 				BitmapBuilder tipBitmap = commitBitmapIndex.newBitmapBuilder();
 				rw2.markStart((RevCommit) rw2.peel(rw2.parseAny(rc)));
 				RevCommit rc2;
@@ -223,7 +233,7 @@ class PackWriterBitmapPreparer {
 					pm.update(1);
 
 					// Always pick the items in wants, prefer merge commits.
-					if (selectionHelper.newWants.remove(c)) {
+					if (!excessiveBranches.contains(c) && selectionHelper.newWants.remove(c)) {
 						if (nextIn > 0) {
 							nextFlg = 0;
 						}

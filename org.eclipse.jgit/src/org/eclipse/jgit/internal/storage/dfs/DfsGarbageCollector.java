@@ -17,14 +17,14 @@ import static org.eclipse.jgit.internal.storage.dfs.DfsObjDatabase.PackSource.IN
 import static org.eclipse.jgit.internal.storage.dfs.DfsObjDatabase.PackSource.RECEIVE;
 import static org.eclipse.jgit.internal.storage.dfs.DfsObjDatabase.PackSource.UNREACHABLE_GARBAGE;
 import static org.eclipse.jgit.internal.storage.dfs.DfsPackCompactor.configureReftable;
-import static org.eclipse.jgit.internal.storage.pack.PackExt.BITMAP_INDEX;
 import static org.eclipse.jgit.internal.storage.pack.PackExt.COMMIT_GRAPH;
-import static org.eclipse.jgit.internal.storage.pack.PackExt.INDEX;
+import static org.eclipse.jgit.internal.storage.pack.PackExt.OBJECT_SIZE_INDEX;
 import static org.eclipse.jgit.internal.storage.pack.PackExt.PACK;
 import static org.eclipse.jgit.internal.storage.pack.PackExt.REFTABLE;
 import static org.eclipse.jgit.internal.storage.pack.PackWriter.NONE;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
@@ -35,7 +35,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
 import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.internal.storage.commitgraph.CommitGraphWriter;
@@ -80,6 +79,8 @@ public class DfsGarbageCollector {
 	private ReftableConfig reftableConfig;
 	private boolean convertToReftable = true;
 	private boolean writeCommitGraph;
+
+	private boolean writeBloomFilter;
 	private boolean includeDeletes;
 	private long reftableInitialMinUpdateIndex = 1;
 	private long reftableInitialMaxUpdateIndex = 1;
@@ -89,7 +90,7 @@ public class DfsGarbageCollector {
 	private long coalesceGarbageLimit = 50 << 20;
 	private long garbageTtlMillis = TimeUnit.DAYS.toMillis(1);
 
-	private long startTimeMillis;
+	private Instant startTime;
 	private List<DfsPackFile> packsBefore;
 	private List<DfsReftable> reftablesBefore;
 	private List<DfsPackFile> expiredGarbagePacks;
@@ -99,6 +100,7 @@ public class DfsGarbageCollector {
 	private Set<ObjectId> allTags;
 	private Set<ObjectId> nonHeads;
 	private Set<ObjectId> tagTargets;
+	private Instant refLogExpire;
 
 	/**
 	 * Initialize a garbage collector.
@@ -196,6 +198,22 @@ public class DfsGarbageCollector {
 	 */
 	public DfsGarbageCollector setReftableInitialMinUpdateIndex(long u) {
 		reftableInitialMinUpdateIndex = Math.max(u, 0);
+		return this;
+	}
+
+
+	/**
+	 *  Set time limit to the reflog history.
+         *  <p>
+         *  Garbage Collector prunes entries from reflog history older than {@code refLogExpire}
+         *  <p>
+	 *
+	 * @param refLogExpire
+	 *            instant in time which defines refLog expiration
+	 * @return {@code this}
+	 */
+	public DfsGarbageCollector setRefLogExpire(Instant refLogExpire) {
+		this.refLogExpire = refLogExpire;
 		return this;
 	}
 
@@ -298,6 +316,20 @@ public class DfsGarbageCollector {
 	}
 
 	/**
+	 * Toggle bloom filter generation.
+	 * <p>
+	 * False by default.
+	 *
+	 * @param enable
+	 *            Whether bloom filter generation is enabled
+	 * @return {@code this}
+	 */
+	public DfsGarbageCollector setWriteBloomFilter(boolean enable) {
+		writeBloomFilter = enable;
+		return this;
+	}
+
+	/**
 	 * Create a single new pack file containing all of the live objects.
 	 * <p>
 	 * This method safely decides which packs can be expired after the new pack
@@ -320,7 +352,7 @@ public class DfsGarbageCollector {
 			throw new IllegalStateException(
 					JGitText.get().supportOnlyPackIndexVersion2);
 
-		startTimeMillis = SystemReader.getInstance().getCurrentTime();
+		startTime = SystemReader.getInstance().now();
 		ctx = objdb.newReader();
 		try {
 			refdb.refresh();
@@ -403,7 +435,7 @@ public class DfsGarbageCollector {
 		packsBefore = new ArrayList<>(packs.length);
 		expiredGarbagePacks = new ArrayList<>(packs.length);
 
-		long now = SystemReader.getInstance().getCurrentTime();
+		long now = SystemReader.getInstance().now().toEpochMilli();
 		for (DfsPackFile p : packs) {
 			DfsPackDescription d = p.getPackDescription();
 			if (d.getPackSource() != UNREACHABLE_GARBAGE) {
@@ -672,28 +704,26 @@ public class DfsGarbageCollector {
 			pack.setBlockSize(PACK, out.blockSize());
 		}
 
-		try (DfsOutputStream out = objdb.writeFile(pack, INDEX)) {
-			CountingOutputStream cnt = new CountingOutputStream(out);
-			pw.writeIndex(cnt);
-			pack.addFileExt(INDEX);
-			pack.setFileSize(INDEX, cnt.getCount());
-			pack.setBlockSize(INDEX, out.blockSize());
-			pack.setIndexVersion(pw.getIndexVersion());
+		pw.writeIndex(objdb.getPackIndexWriter(pack, pw.getIndexVersion()));
+
+		if (source != UNREACHABLE_GARBAGE && packConfig.getMinBytesForObjSizeIndex() >= 0) {
+			try (DfsOutputStream out = objdb.writeFile(pack,
+					OBJECT_SIZE_INDEX)) {
+				CountingOutputStream cnt = new CountingOutputStream(out);
+				pw.writeObjectSizeIndex(cnt);
+				pack.addFileExt(OBJECT_SIZE_INDEX);
+				pack.setFileSize(OBJECT_SIZE_INDEX, cnt.getCount());
+				pack.setBlockSize(OBJECT_SIZE_INDEX, out.blockSize());
+			}
 		}
 
 		if (pw.prepareBitmapIndex(pm)) {
-			try (DfsOutputStream out = objdb.writeFile(pack, BITMAP_INDEX)) {
-				CountingOutputStream cnt = new CountingOutputStream(out);
-				pw.writeBitmapIndex(cnt);
-				pack.addFileExt(BITMAP_INDEX);
-				pack.setFileSize(BITMAP_INDEX, cnt.getCount());
-				pack.setBlockSize(BITMAP_INDEX, out.blockSize());
-			}
+			pw.writeBitmapIndex(objdb.getPackBitmapIndexWriter(pack));
 		}
 
 		PackStatistics stats = pw.getStatistics();
 		pack.setPackStats(stats);
-		pack.setLastModified(startTimeMillis);
+		pack.setLastModified(startTime.toEpochMilli());
 		newPackDesc.add(pack);
 		newPackStats.add(stats);
 		newPackObj.add(pw.getObjectSet());
@@ -721,6 +751,10 @@ public class DfsGarbageCollector {
 			compact.addAll(stack.readers());
 			compact.setIncludeDeletes(includeDeletes);
 			compact.setConfig(configureReftable(reftableConfig, out));
+			if(refLogExpire != null ){
+				compact.setReflogExpireOldestReflogTimeMillis(
+						refLogExpire.toEpochMilli());
+			}
 			compact.compact();
 			pack.addFileExt(REFTABLE);
 			pack.setReftableStats(compact.getStats());
@@ -755,18 +789,17 @@ public class DfsGarbageCollector {
 			return;
 		}
 
-		Set<ObjectId> allTips = refsBefore.stream().map(Ref::getObjectId)
-				.collect(Collectors.toUnmodifiableSet());
-
 		try (DfsOutputStream out = objdb.writeFile(pack, COMMIT_GRAPH);
 				RevWalk pool = new RevWalk(ctx)) {
-			GraphCommits gcs = GraphCommits.fromWalk(pm, allTips, pool);
+			GraphCommits gcs = GraphCommits.fromWalk(pm, allHeadsAndTags, pool);
 			CountingOutputStream cnt = new CountingOutputStream(out);
-			CommitGraphWriter writer = new CommitGraphWriter(gcs);
-			writer.write(pm, cnt);
+			CommitGraphWriter writer = new CommitGraphWriter(gcs,
+					writeBloomFilter);
+			CommitGraphWriter.Stats stats = writer.write(pm, cnt);
 			pack.addFileExt(COMMIT_GRAPH);
 			pack.setFileSize(COMMIT_GRAPH, cnt.getCount());
 			pack.setBlockSize(COMMIT_GRAPH, out.blockSize());
+			pack.setCommitGraphStats(stats);
 		}
 	}
 }

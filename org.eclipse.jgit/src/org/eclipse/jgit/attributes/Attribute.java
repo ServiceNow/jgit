@@ -9,6 +9,8 @@
  */
 package org.eclipse.jgit.attributes;
 
+import org.eclipse.jgit.annotations.Nullable;
+
 /**
  * Represents an attribute.
  * <p>
@@ -97,7 +99,6 @@ public final class Attribute {
 		this(key, State.CUSTOM, value);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public boolean equals(Object obj) {
 		if (this == obj)
@@ -140,11 +141,11 @@ public final class Attribute {
 	 *
 	 * @return the attribute value (may be <code>null</code>)
 	 */
+	@Nullable
 	public String getValue() {
 		return value;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public int hashCode() {
 		final int prime = 31;
@@ -155,7 +156,6 @@ public final class Attribute {
 		return result;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public String toString() {
 		switch (state) {

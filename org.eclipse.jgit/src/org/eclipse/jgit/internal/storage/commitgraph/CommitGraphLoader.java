@@ -10,6 +10,8 @@
 
 package org.eclipse.jgit.internal.storage.commitgraph;
 
+import static org.eclipse.jgit.internal.storage.commitgraph.CommitGraphConstants.CHUNK_ID_BLOOM_FILTER_DATA;
+import static org.eclipse.jgit.internal.storage.commitgraph.CommitGraphConstants.CHUNK_ID_BLOOM_FILTER_INDEX;
 import static org.eclipse.jgit.internal.storage.commitgraph.CommitGraphConstants.CHUNK_ID_COMMIT_DATA;
 import static org.eclipse.jgit.internal.storage.commitgraph.CommitGraphConstants.CHUNK_ID_EXTRA_EDGE_LIST;
 import static org.eclipse.jgit.internal.storage.commitgraph.CommitGraphConstants.CHUNK_ID_OID_FANOUT;
@@ -25,9 +27,12 @@ import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.eclipse.jgit.errors.ConfigInvalidException;
 import org.eclipse.jgit.internal.JGitText;
+import org.eclipse.jgit.lib.ConfigConstants;
 import org.eclipse.jgit.util.IO;
 import org.eclipse.jgit.util.NB;
+import org.eclipse.jgit.util.SystemReader;
 import org.eclipse.jgit.util.io.SilentFileInputStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -92,6 +97,46 @@ public class CommitGraphLoader {
 	 *             the stream cannot be read.
 	 */
 	public static CommitGraph read(InputStream fd)
+			throws CommitGraphFormatException, IOException {
+
+		boolean readChangedPathFilters;
+		try {
+			readChangedPathFilters = SystemReader.getInstance().getJGitConfig()
+					.getBoolean(ConfigConstants.CONFIG_COMMIT_GRAPH_SECTION,
+							ConfigConstants.CONFIG_KEY_READ_CHANGED_PATHS,
+							false);
+		} catch (ConfigInvalidException e) {
+			// Use the default value if, for some reason, the config couldn't be
+			// read.
+			readChangedPathFilters = false;
+		}
+
+		return read(fd, readChangedPathFilters);
+	}
+
+	/**
+	 * Read an existing commit-graph file from a buffered stream.
+	 * <p>
+	 * The format of the file will be automatically detected and a proper access
+	 * implementation for that format will be constructed and returned to the
+	 * caller. The file may or may not be held open by the returned instance.
+	 *
+	 * @param fd
+	 *            stream to read the commit-graph file from. The stream must be
+	 *            buffered as some small IOs are performed against the stream.
+	 *            The caller is responsible for closing the stream.
+	 *
+	 * @param readChangedPathFilters
+	 *            enable reading bloom filter chunks.
+	 *
+	 * @return a copy of the commit-graph file in memory
+	 * @throws CommitGraphFormatException
+	 *             the commit-graph file's format is different from we expected.
+	 * @throws java.io.IOException
+	 *             the stream cannot be read.
+	 */
+	public static CommitGraph read(InputStream fd,
+			boolean readChangedPathFilters)
 			throws CommitGraphFormatException, IOException {
 		byte[] hdr = new byte[8];
 		IO.readFully(fd, hdr, 0, hdr.length);
@@ -163,6 +208,16 @@ public class CommitGraphLoader {
 				break;
 			case CHUNK_ID_EXTRA_EDGE_LIST:
 				builder.addExtraList(buffer);
+				break;
+			case CHUNK_ID_BLOOM_FILTER_INDEX:
+				if (readChangedPathFilters) {
+					builder.addBloomFilterIndex(buffer);
+				}
+				break;
+			case CHUNK_ID_BLOOM_FILTER_DATA:
+				if (readChangedPathFilters) {
+					builder.addBloomFilterData(buffer);
+				}
 				break;
 			default:
 				LOG.warn(MessageFormat.format(

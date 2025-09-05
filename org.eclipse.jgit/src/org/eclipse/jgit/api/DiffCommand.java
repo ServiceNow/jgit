@@ -134,7 +134,7 @@ public class DiffCommand extends GitCommand<List<DiffEntry>> {
 				diffFmt.setOldPrefix(sourcePrefix);
 			}
 
-			if (showNameAndStatusOnly) {
+			if (showNameAndStatusOnly || showNameOnly) {
 				if (this.getDeltaFilterPattern() != null) {
 					diffFmt.filterModifiedFiles(result, this.getDeltaFilterPattern());
 			diffFmt.flush();

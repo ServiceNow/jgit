@@ -268,6 +268,7 @@ public class RefMapTest {
 		assertFalse(itr.hasNext());
 	}
 
+	@SuppressWarnings("ModifiedButNotUsed")
 	@Test
 	public void testPut_KeyMustMatchName_NoPrefix() {
 		final Ref refA = newRef("refs/heads/A", ID_ONE);
@@ -280,6 +281,7 @@ public class RefMapTest {
 		}
 	}
 
+	@SuppressWarnings("ModifiedButNotUsed")
 	@Test
 	public void testPut_KeyMustMatchName_WithPrefix() {
 		final Ref refA = newRef("refs/heads/A", ID_ONE);
@@ -421,7 +423,7 @@ public class RefMapTest {
 		Map.Entry<String, Ref> ent_b = itr.next();
 
 		assertEquals(ent_a.hashCode(), "A".hashCode());
-		assertEquals(ent_a, ent_a);
+		assertTrue(ent_a.equals(ent_a));
 		assertFalse(ent_a.equals(ent_b));
 
 		assertEquals(a.toString(), ent_a.toString());

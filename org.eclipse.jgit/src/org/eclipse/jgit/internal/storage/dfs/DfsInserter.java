@@ -11,6 +11,7 @@
 package org.eclipse.jgit.internal.storage.dfs;
 
 import static org.eclipse.jgit.internal.storage.pack.PackExt.INDEX;
+import static org.eclipse.jgit.internal.storage.pack.PackExt.OBJECT_SIZE_INDEX;
 import static org.eclipse.jgit.internal.storage.pack.PackExt.PACK;
 import static org.eclipse.jgit.lib.Constants.OBJ_OFS_DELTA;
 import static org.eclipse.jgit.lib.Constants.OBJ_REF_DELTA;
@@ -40,11 +41,13 @@ import org.eclipse.jgit.errors.CorruptObjectException;
 import org.eclipse.jgit.errors.IncorrectObjectTypeException;
 import org.eclipse.jgit.errors.LargeObjectException;
 import org.eclipse.jgit.internal.JGitText;
+import org.eclipse.jgit.internal.storage.file.BasePackIndexWriter;
 import org.eclipse.jgit.internal.storage.file.PackIndex;
-import org.eclipse.jgit.internal.storage.file.PackIndexWriter;
+import org.eclipse.jgit.internal.storage.file.PackObjectSizeIndexWriter;
 import org.eclipse.jgit.internal.storage.pack.PackExt;
 import org.eclipse.jgit.lib.AbbreviatedObjectId;
 import org.eclipse.jgit.lib.AnyObjectId;
+import org.eclipse.jgit.lib.ConfigConstants;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectIdOwnerMap;
@@ -68,6 +71,8 @@ public class DfsInserter extends ObjectInserter {
 	private static final int INDEX_VERSION = 2;
 
 	final DfsObjDatabase db;
+
+	private final int minBytesForObjectSizeIndex;
 	int compression = Deflater.BEST_COMPRESSION;
 
 	List<PackedObjectInfo> objectList;
@@ -78,7 +83,6 @@ public class DfsInserter extends ObjectInserter {
 	DfsPackDescription packDsc;
 	PackStream packOut;
 	private boolean rollback;
-	private boolean checkExisting = true;
 
 	/**
 	 * Initialize a new inserter.
@@ -88,37 +92,24 @@ public class DfsInserter extends ObjectInserter {
 	 */
 	protected DfsInserter(DfsObjDatabase db) {
 		this.db = db;
-	}
-
-	/**
-	 * Check existence
-	 *
-	 * @param check
-	 *            if {@code false}, will write out possibly-duplicate objects
-	 *            without first checking whether they exist in the repo; default
-	 *            is true.
-	 */
-	public void checkExisting(boolean check) {
-		checkExisting = check;
+		this.minBytesForObjectSizeIndex = db.getRepository().getConfig().getInt(
+				ConfigConstants.CONFIG_PACK_SECTION,
+				ConfigConstants.CONFIG_KEY_MIN_BYTES_OBJ_SIZE_INDEX, -1);
 	}
 
 	void setCompressionLevel(int compression) {
 		this.compression = compression;
 	}
-
-	/** {@inheritDoc} */
 	@Override
 	public DfsPackParser newPackParser(InputStream in) throws IOException {
 		return new DfsPackParser(db, this, in);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public ObjectReader newReader() {
 		return new Reader();
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public ObjectId insert(int type, byte[] data, int off, int len)
 			throws IOException {
@@ -126,16 +117,16 @@ public class DfsInserter extends ObjectInserter {
 		if (objectMap != null && objectMap.contains(id))
 			return id;
 		// Ignore unreachable (garbage) objects here.
-		if (checkExisting && db.has(id, true))
+		if (db.has(id, true)) {
 			return id;
+		}
 
 		long offset = beginObject(type, len);
 		packOut.compress.write(data, off, len);
 		packOut.compress.finish();
-		return endObject(id, offset);
+		return endObject(id, offset, len, type);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public ObjectId insert(int type, long len, InputStream in)
 			throws IOException {
@@ -152,16 +143,17 @@ public class DfsInserter extends ObjectInserter {
 		md.update(Constants.encodeASCII(len));
 		md.update((byte) 0);
 
-		while (0 < len) {
-			int n = in.read(buf, 0, (int) Math.min(buf.length, len));
+		long inLength = len;
+		while (0 < inLength) {
+			int n = in.read(buf, 0, (int) Math.min(buf.length, inLength));
 			if (n <= 0)
 				throw new EOFException();
 			md.update(buf, 0, n);
 			packOut.compress.write(buf, 0, n);
-			len -= n;
+			inLength -= n;
 		}
 		packOut.compress.finish();
-		return endObject(md.toObjectId(), offset);
+		return endObject(md.toObjectId(), offset, len, type);
 	}
 
 	private byte[] insertBuffer(long len) {
@@ -178,7 +170,6 @@ public class DfsInserter extends ObjectInserter {
 		return buf;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public void flush() throws IOException {
 		if (packDsc == null)
@@ -196,17 +187,17 @@ public class DfsInserter extends ObjectInserter {
 		sortObjectsById();
 
 		PackIndex index = writePackIndex(packDsc, packHash, objectList);
+		writeObjectSizeIndex(packDsc, objectList);
 		db.commitPack(Collections.singletonList(packDsc), null);
 		rollback = false;
 
-		DfsPackFile p = new DfsPackFile(cache, packDsc);
+		DfsPackFile p = db.createDfsPackFile(cache, packDsc);
 		if (index != null)
 			p.setPackIndex(index);
 		db.addPack(p);
 		clear();
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public void close() {
 		if (packOut != null) {
@@ -244,10 +235,12 @@ public class DfsInserter extends ObjectInserter {
 		return offset;
 	}
 
-	private ObjectId endObject(ObjectId id, long offset) {
+	private ObjectId endObject(ObjectId id, long offset, long inflatedSize, int type) {
 		PackedObjectInfo obj = new PackedObjectInfo(id);
+		obj.setType(type);
 		obj.setOffset(offset);
 		obj.setCRC((int) packOut.crc32.getValue());
+		obj.setFullSize(inflatedSize);
 		objectList.add(obj);
 		objectMap.addIfAbsent(obj);
 		return id;
@@ -314,7 +307,23 @@ public class DfsInserter extends ObjectInserter {
 
 	private static void index(OutputStream out, byte[] packHash,
 			List<PackedObjectInfo> list) throws IOException {
-		PackIndexWriter.createVersion(out, INDEX_VERSION).write(list, packHash);
+		BasePackIndexWriter.createVersion(out, INDEX_VERSION).write(list, packHash);
+	}
+
+	void writeObjectSizeIndex(DfsPackDescription pack,
+			List<PackedObjectInfo> packedObjs) throws IOException {
+		if (minBytesForObjectSizeIndex < 0) {
+			return;
+		}
+		try (DfsOutputStream os = db.writeFile(pack, PackExt.OBJECT_SIZE_INDEX);
+				CountingOutputStream cnt = new CountingOutputStream(os)) {
+			PackObjectSizeIndexWriter
+					.createWriter(os, minBytesForObjectSizeIndex)
+					.write(packedObjs);
+			pack.addFileExt(OBJECT_SIZE_INDEX);
+			pack.setBlockSize(OBJECT_SIZE_INDEX, os.blockSize());
+			pack.setFileSize(OBJECT_SIZE_INDEX, cnt.getCount());
+		}
 	}
 
 	private class PackStream extends OutputStream {

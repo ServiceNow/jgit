@@ -16,6 +16,7 @@ import static org.eclipse.jgit.lib.Ref.Storage.PACKED;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -28,17 +29,21 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 import org.eclipse.jgit.annotations.NonNull;
+import org.eclipse.jgit.api.PackRefsCommand;
 import org.eclipse.jgit.errors.MissingObjectException;
 import org.eclipse.jgit.events.RefsChangedEvent;
+import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.internal.storage.reftable.MergedReftable;
 import org.eclipse.jgit.internal.storage.reftable.ReftableBatchRefUpdate;
 import org.eclipse.jgit.internal.storage.reftable.ReftableDatabase;
 import org.eclipse.jgit.internal.storage.reftable.ReftableWriter;
 import org.eclipse.jgit.lib.BatchRefUpdate;
+import org.eclipse.jgit.lib.ConfigConstants;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectIdRef;
 import org.eclipse.jgit.lib.PersonIdent;
+import org.eclipse.jgit.lib.ProgressMonitor;
 import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.lib.RefDatabase;
 import org.eclipse.jgit.lib.RefRename;
@@ -67,15 +72,15 @@ public class FileReftableDatabase extends RefDatabase {
 
 	private final FileReftableStack reftableStack;
 
-	FileReftableDatabase(FileRepository repo) throws IOException {
-		this(repo, new File(new File(repo.getDirectory(), Constants.REFTABLE),
-				Constants.TABLES_LIST));
-	}
+	private volatile boolean autoRefresh;
 
-	FileReftableDatabase(FileRepository repo, File refstackName) throws IOException {
+	FileReftableDatabase(FileRepository repo) throws IOException {
 		this.fileRepository = repo;
-		this.reftableStack = new FileReftableStack(refstackName,
-			new File(fileRepository.getDirectory(), Constants.REFTABLE),
+		this.autoRefresh = repo.getConfig().getBoolean(
+				ConfigConstants.CONFIG_REFTABLE_SECTION,
+				ConfigConstants.CONFIG_KEY_AUTOREFRESH, false);
+		this.reftableStack = new FileReftableStack(
+				new File(fileRepository.getCommonDirectory(), Constants.REFTABLE),
 			() -> fileRepository.fireEvent(new RefsChangedEvent()),
 			() -> fileRepository.getConfig());
 		this.reftableDatabase = new ReftableDatabase() {
@@ -87,22 +92,46 @@ public class FileReftableDatabase extends RefDatabase {
 		};
 	}
 
-	ReflogReader getReflogReader(String refname) throws IOException {
+	@Override
+	public ReflogReader getReflogReader(Ref ref) throws IOException {
+		return reftableDatabase.getReflogReader(ref.getName());
+	}
+
+	@Override
+	public ReflogReader getReflogReader(String refname) throws IOException {
 		return reftableDatabase.getReflogReader(refname);
 	}
 
 	/**
+	 * Whether the given repo uses reftable for refdb storage
+	 *
 	 * @param repoDir
+	 *            the repository's metadata directory
 	 * @return whether the given repo uses reftable for refdb storage.
 	 */
 	public static boolean isReftable(File repoDir) {
 		return new File(repoDir, Constants.REFTABLE).isDirectory();
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public boolean hasFastTipsWithSha1() throws IOException {
 		return reftableDatabase.hasFastTipsWithSha1();
+	}
+
+	/**
+	 * {@inheritDoc}
+	 *
+	 * For Reftable, all the data is compacted into a single table.
+	 */
+	@Override
+	public void packRefs(ProgressMonitor pm, PackRefsCommand packRefs)
+			throws IOException {
+		pm.beginTask(JGitText.get().packRefs, 1);
+		try {
+			compactFully();
+		} finally {
+			pm.endTask();
+		}
 	}
 
 	/**
@@ -124,20 +153,17 @@ public class FileReftableDatabase extends RefDatabase {
 		return reftableDatabase.getLock();
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public boolean performsAtomicTransactions() {
 		return true;
 	}
 
-	/** {@inheritDoc} */
 	@NonNull
 	@Override
 	public BatchRefUpdate newBatchUpdate() {
 		return new FileReftableBatchRefUpdate(this, fileRepository);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public RefUpdate newUpdate(String refName, boolean detach)
 			throws IOException {
@@ -157,21 +183,20 @@ public class FileReftableDatabase extends RefDatabase {
 		return update;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public Ref exactRef(String name) throws IOException {
+		autoRefresh();
 		return reftableDatabase.exactRef(name);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public List<Ref> getRefs() throws IOException {
 		return super.getRefs();
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public Map<String, Ref> getRefs(String prefix) throws IOException {
+		autoRefresh();
 		List<Ref> refs = reftableDatabase.getRefsByPrefix(prefix);
 		RefList.Builder<Ref> builder = new RefList.Builder<>(refs.size());
 		for (Ref r : refs) {
@@ -181,20 +206,18 @@ public class FileReftableDatabase extends RefDatabase {
 				RefList.emptyList());
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public List<Ref> getRefsByPrefixWithExclusions(String include, Set<String> excludes)
 			throws IOException {
+		autoRefresh();
 		return reftableDatabase.getRefsByPrefixWithExclusions(include, excludes);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public List<Ref> getAdditionalRefs() throws IOException {
 		return Collections.emptyList();
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public Ref peel(Ref ref) throws IOException {
 		Ref oldLeaf = ref.getLeaf();
@@ -203,6 +226,56 @@ public class FileReftableDatabase extends RefDatabase {
 		}
 		return recreate(ref, doPeel(oldLeaf), hasVersioning());
 
+	}
+
+	/**
+	 * Whether to auto-refresh the reftable stack if it is out of date.
+	 *
+	 * @param autoRefresh
+	 *            whether to auto-refresh the reftable stack if it is out of
+	 *            date.
+	 */
+	public void setAutoRefresh(boolean autoRefresh) {
+		this.autoRefresh = autoRefresh;
+	}
+
+	/**
+	 * Whether the reftable stack is auto-refreshed if it is out of date.
+	 *
+	 * @return whether the reftable stack is auto-refreshed if it is out of
+	 *         date.
+	 */
+	public boolean isAutoRefresh() {
+		return autoRefresh;
+	}
+
+	private void autoRefresh() {
+		if (autoRefresh) {
+			refresh();
+		}
+	}
+
+	/**
+	 * Check if the reftable stack is up to date, and if not, reload it.
+	 * <p>
+	 * {@inheritDoc}
+	 */
+	@Override
+	public void refresh() {
+		try {
+			if (!reftableStack.isUpToDate()) {
+				ReentrantLock lock = getLock();
+				lock.lock();
+				try {
+					reftableDatabase.clearCache();
+					reftableStack.reload();
+				} finally {
+					lock.unlock();
+				}
+			}
+		} catch (IOException e) {
+			throw new UncheckedIOException(e);
+		}
 	}
 
 	private Ref doPeel(Ref leaf) throws IOException {
@@ -303,7 +376,6 @@ public class FileReftableDatabase extends RefDatabase {
 		}
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public RefRename newRename(String fromName, String toName)
 			throws IOException {
@@ -312,24 +384,21 @@ public class FileReftableDatabase extends RefDatabase {
 		return new FileRefRename(src, dst);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public boolean isNameConflicting(String name) throws IOException {
 		return reftableDatabase.isNameConflicting(name, new TreeSet<>(),
 				new HashSet<>());
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public void close() {
 		reftableStack.close();
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public void create() throws IOException {
 		FileUtils.mkdir(
-				new File(fileRepository.getDirectory(), Constants.REFTABLE),
+				new File(fileRepository.getCommonDirectory(), Constants.REFTABLE),
 				true);
 	}
 
@@ -549,9 +618,10 @@ public class FileReftableDatabase extends RefDatabase {
 			boolean writeLogs) throws IOException {
 		int size = 0;
 		List<Ref> refs = repo.getRefDatabase().getRefs();
+		RefDatabase refDb = repo.getRefDatabase();
 		if (writeLogs) {
 			for (Ref r : refs) {
-				ReflogReader rlr = repo.getReflogReader(r.getName());
+				ReflogReader rlr = refDb.getReflogReader(r);
 				if (rlr != null) {
 					size = Math.max(rlr.getReverseEntries().size(), size);
 				}
@@ -574,10 +644,7 @@ public class FileReftableDatabase extends RefDatabase {
 		if (writeLogs) {
 			for (Ref r : refs) {
 				long idx = size;
-				ReflogReader reader = repo.getReflogReader(r.getName());
-				if (reader == null) {
-					continue;
-				}
+				ReflogReader reader = refDb.getReflogReader(r);
 				for (ReflogEntry e : reader.getReverseEntries()) {
 					w.writeLog(r.getName(), idx, e.getWho(), e.getOldId(),
 							e.getNewId(), e.getComment());
@@ -611,36 +678,26 @@ public class FileReftableDatabase extends RefDatabase {
 	}
 
 	/**
+	 * Convert FileRepository to a FileReftableDatabase
+	 *
 	 * @param repo
 	 *            the repository
 	 * @param writeLogs
 	 *            whether to write reflogs
-	 * @return a reftable based RefDB from an existing repository.
 	 * @throws IOException
 	 *             on IO error
 	 */
-	public static FileReftableDatabase convertFrom(FileRepository repo,
-			boolean writeLogs) throws IOException {
-		FileReftableDatabase newDb = null;
-		File reftableList = null;
-		try {
-			File reftableDir = new File(repo.getDirectory(),
-					Constants.REFTABLE);
-			reftableList = new File(reftableDir, Constants.TABLES_LIST);
-			if (!reftableDir.isDirectory()) {
-				reftableDir.mkdir();
-			}
-
-			try (FileReftableStack stack = new FileReftableStack(reftableList,
-					reftableDir, null, () -> repo.getConfig())) {
-				stack.addReftable(rw -> writeConvertTable(repo, rw, writeLogs));
-			}
-			reftableList = null;
-		} finally {
-			if (reftableList != null) {
-				reftableList.delete();
-			}
+	public static void convertFrom(FileRepository repo, boolean writeLogs)
+			throws IOException {
+		File reftableDir = new File(repo.getCommonDirectory(),
+				Constants.REFTABLE);
+		if (!reftableDir.isDirectory()) {
+			reftableDir.mkdir();
 		}
-		return newDb;
+
+		try (FileReftableStack stack = new FileReftableStack(reftableDir, null,
+				() -> repo.getConfig())) {
+			stack.addReftable(rw -> writeConvertTable(repo, rw, writeLogs));
+		}
 	}
 }

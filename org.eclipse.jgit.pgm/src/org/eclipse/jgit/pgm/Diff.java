@@ -12,7 +12,6 @@
 
 package org.eclipse.jgit.pgm;
 
-import static java.lang.Integer.valueOf;
 import static org.eclipse.jgit.lib.Constants.HEAD;
 import static org.eclipse.jgit.lib.Constants.OBJECT_ID_STRING_LENGTH;
 
@@ -155,14 +154,12 @@ class Diff extends TextBuiltin {
 
 	// END -- Options shared with Log
 
-	/** {@inheritDoc} */
 	@Override
 	protected void init(Repository repository, String gitDir) {
 		super.init(repository, gitDir);
 		diffFmt = new DiffFormatter(new BufferedOutputStream(outs));
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	protected void run() {
 		diffFmt.setRepository(db);
@@ -230,13 +227,15 @@ class Diff extends TextBuiltin {
 				out.println("M\t" + ent.getNewPath()); //$NON-NLS-1$
 				break;
 			case COPY:
-				out.format("C%1$03d\t%2$s\t%3$s", valueOf(ent.getScore()), // //$NON-NLS-1$
-						ent.getOldPath(), ent.getNewPath());
+				out.format("C%1$03d\t%2$s\t%3$s", //$NON-NLS-1$
+						Integer.valueOf(ent.getScore()), ent.getOldPath(),
+						ent.getNewPath());
 				out.println();
 				break;
 			case RENAME:
-				out.format("R%1$03d\t%2$s\t%3$s", valueOf(ent.getScore()), // //$NON-NLS-1$
-						ent.getOldPath(), ent.getNewPath());
+				out.format("R%1$03d\t%2$s\t%3$s", //$NON-NLS-1$
+						Integer.valueOf(ent.getScore()), ent.getOldPath(),
+						ent.getNewPath());
 				out.println();
 				break;
 			}

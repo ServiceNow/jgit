@@ -26,6 +26,8 @@ org.eclipse.jgit.pgm.LsTree
 org.eclipse.jgit.pgm.Merge
 org.eclipse.jgit.pgm.MergeBase
 org.eclipse.jgit.pgm.MergeTool
+org.eclipse.jgit.pgm.MultiPackIndex
+org.eclipse.jgit.pgm.PackRefs
 org.eclipse.jgit.pgm.Push
 org.eclipse.jgit.pgm.ReceivePack
 org.eclipse.jgit.pgm.Reflog
@@ -46,6 +48,7 @@ org.eclipse.jgit.pgm.debug.BenchmarkReftable
 org.eclipse.jgit.pgm.debug.DiffAlgorithms
 org.eclipse.jgit.pgm.debug.LfsStore
 org.eclipse.jgit.pgm.debug.MakeCacheTree
+org.eclipse.jgit.pgm.debug.ReadChangedPathFilter
 org.eclipse.jgit.pgm.debug.ReadDirCache
 org.eclipse.jgit.pgm.debug.ReadReftable
 org.eclipse.jgit.pgm.debug.RebuildCommitGraph

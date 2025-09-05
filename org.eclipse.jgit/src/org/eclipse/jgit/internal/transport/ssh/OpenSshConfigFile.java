@@ -22,7 +22,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -100,7 +99,7 @@ public class OpenSshConfigFile implements SshConfigStore {
 	 * fully resolved entries created from that.
 	 */
 	private static class State {
-		List<HostEntry> entries = new LinkedList<>();
+		List<HostEntry> entries = new ArrayList<>();
 
 		// Previous lookups, keyed by user@hostname:port
 		Map<String, HostEntry> hosts = new HashMap<>();
@@ -218,7 +217,7 @@ public class OpenSshConfigFile implements SshConfigStore {
 
 	private List<HostEntry> parse(BufferedReader reader)
 			throws IOException {
-		final List<HostEntry> entries = new LinkedList<>();
+		final List<HostEntry> entries = new ArrayList<>();
 
 		// The man page doesn't say so, but the openssh parser (readconf.c)
 		// starts out in active mode and thus always applies any lines that
@@ -428,7 +427,35 @@ public class OpenSshConfigFile implements SshConfigStore {
 		return value;
 	}
 
-	private static boolean patternMatchesHost(String pattern, String name) {
+	/**
+	 * Tells whether a given {@code name} matches the given list of patterns,
+	 * accounting for negative matches.
+	 *
+	 * @param patterns
+	 *            to test {@code name} against; any pattern starting with an
+	 *            exclamation mark is a negative pattern
+	 * @param name
+	 *            to test
+	 * @return {@code true} if the {@code name} matches at least one of the
+	 *         non-negative patterns and none of the negative patterns,
+	 *         {@code false} otherwise
+	 * @since 7.1
+	 */
+	public static boolean patternMatch(Iterable<String> patterns, String name) {
+		boolean doesMatch = false;
+		for (String pattern : patterns) {
+			if (pattern.startsWith("!")) { //$NON-NLS-1$
+				if (patternMatches(pattern.substring(1), name)) {
+					return false;
+				}
+			} else if (!doesMatch && patternMatches(pattern, name)) {
+				doesMatch = true;
+			}
+		}
+		return doesMatch;
+	}
+
+	private static boolean patternMatches(String pattern, String name) {
 		if (pattern.indexOf('*') >= 0 || pattern.indexOf('?') >= 0) {
 			final FileNameMatcher fn;
 			try {
@@ -681,18 +708,7 @@ public class OpenSshConfigFile implements SshConfigStore {
 		}
 
 		boolean matches(String hostName) {
-			boolean doesMatch = false;
-			for (String pattern : patterns) {
-				if (pattern.startsWith("!")) { //$NON-NLS-1$
-					if (patternMatchesHost(pattern.substring(1), hostName)) {
-						return false;
-					}
-				} else if (!doesMatch
-						&& patternMatchesHost(pattern, hostName)) {
-					doesMatch = true;
-				}
-			}
-			return doesMatch;
+			return patternMatch(patterns, hostName);
 		}
 
 		private static String toKey(String key) {
@@ -1154,7 +1170,6 @@ public class OpenSshConfigFile implements SshConfigStore {
 		}
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	@SuppressWarnings("nls")
 	public String toString() {

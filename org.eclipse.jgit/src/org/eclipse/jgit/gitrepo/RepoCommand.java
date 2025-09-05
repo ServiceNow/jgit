@@ -105,32 +105,10 @@ public class RepoCommand extends GitCommand<RevCommit> {
 		 * @return the sha1 of the remote repository, or null if the ref does
 		 *         not exist.
 		 * @throws GitAPIException
+		 *             a JGit API exception
 		 */
 		@Nullable
 		public ObjectId sha1(String uri, String ref) throws GitAPIException;
-
-		/**
-		 * Read a file from a remote repository.
-		 *
-		 * @param uri
-		 *            The URI of the remote repository
-		 * @param ref
-		 *            The ref (branch/tag/etc.) to read
-		 * @param path
-		 *            The relative path (inside the repo) to the file to read
-		 * @return the file content.
-		 * @throws GitAPIException
-		 * @throws IOException
-		 * @since 3.5
-		 *
-		 * @deprecated Use {@link #readFileWithMode(String, String, String)}
-		 *             instead
-		 */
-		@Deprecated
-		public default byte[] readFile(String uri, String ref, String path)
-				throws GitAPIException, IOException {
-			return readFileWithMode(uri, ref, path).getContents();
-		}
 
 		/**
 		 * Read contents and mode (i.e. permissions) of the file from a remote
@@ -197,6 +175,8 @@ public class RepoCommand extends GitCommand<RevCommit> {
 		}
 
 		/**
+		 * Get file mode
+		 *
 		 * @return Git file mode for this file (e.g. executable or regular)
 		 */
 		@NonNull
@@ -249,7 +229,8 @@ public class RepoCommand extends GitCommand<RevCommit> {
 	@SuppressWarnings("serial")
 	static class ManifestErrorException extends GitAPIException {
 		ManifestErrorException(Throwable cause) {
-			super(RepoText.get().invalidManifest, cause);
+			super(RepoText.get().invalidManifest + " " + cause.getMessage(), //$NON-NLS-1$
+					cause);
 		}
 	}
 
@@ -528,7 +509,6 @@ public class RepoCommand extends GitCommand<RevCommit> {
 		return this;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public RevCommit call() throws GitAPIException {
 		checkCallable();
@@ -610,6 +590,7 @@ public class RepoCommand extends GitCommand<RevCommit> {
 				p.setUrl(proj.getUrl());
 				p.addCopyFiles(proj.getCopyFiles());
 				p.addLinkFiles(proj.getLinkFiles());
+				p.setUpstream(proj.getUpstream());
 				ret.add(p);
 			}
 		}

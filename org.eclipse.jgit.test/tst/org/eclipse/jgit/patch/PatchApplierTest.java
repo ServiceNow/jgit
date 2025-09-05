@@ -48,8 +48,7 @@ import org.junit.runner.RunWith;
 import org.junit.runners.Suite;
 
 @RunWith(Suite.class)
-@Suite.SuiteClasses({
- 		PatchApplierTest.WithWorktree. class, //
+@Suite.SuiteClasses({ PatchApplierTest.WithWorktree.class, //
 		PatchApplierTest.InCore.class, //
 })
 public class PatchApplierTest {
@@ -128,6 +127,20 @@ public class PatchApplierTest {
 			}
 		}
 
+		protected Result applyPatchAllowConflicts() throws IOException {
+			InputStream patchStream = getTestResource(name + ".patch");
+			Patch patch = new Patch();
+			patch.parse(patchStream);
+			if (inCore) {
+				try (ObjectInserter oi = db.newObjectInserter()) {
+					return new PatchApplier(db, baseTip, oi).allowConflicts()
+							.applyPatch(patch);
+				}
+			}
+			return new PatchApplier(db).allowConflicts()
+					.applyPatch(patch);
+		}
+
 		protected static InputStream getTestResource(String patchFile) {
 			return PatchApplierTest.class.getClassLoader()
 					.getResourceAsStream("org/eclipse/jgit/diff/" + patchFile);
@@ -165,6 +178,13 @@ public class PatchApplierTest {
 		void verifyChange(Result result, String aName, boolean exists)
 				throws Exception {
 			assertEquals(0, result.getErrors().size());
+			assertEquals(1, result.getPaths().size());
+			verifyContent(result, aName, exists);
+		}
+
+		void verifyChange(Result result, String aName, boolean exists,
+				int numConflicts) throws Exception {
+			assertEquals(numConflicts, result.getErrors().size());
 			assertEquals(1, result.getPaths().size());
 			verifyContent(result, aName, exists);
 		}
@@ -346,6 +366,44 @@ public class PatchApplierTest {
 		}
 
 		@Test
+		public void testConflictMarkers() throws Exception {
+			init("allowconflict", true, true);
+
+			Result result = applyPatchAllowConflicts();
+
+			assertEquals(result.getErrors().size(), 1);
+			PatchApplier.Result.Error error = result.getErrors().get(0);
+			assertEquals("cannot apply hunk", error.msg);
+			assertEquals("allowconflict", error.oldFileName);
+			assertTrue(error.isGitConflict());
+			verifyChange(result, "allowconflict", true, 1);
+		}
+
+		@Test
+		public void testConflictMarkersOutOfBounds() throws Exception {
+			init("ConflictOutOfBounds", true, true);
+
+			Result result = applyPatchAllowConflicts();
+
+			assertEquals(result.getErrors().size(), 1);
+			PatchApplier.Result.Error error = result.getErrors().get(0);
+			assertEquals("cannot apply hunk", error.msg);
+			assertEquals("ConflictOutOfBounds", error.oldFileName);
+			assertTrue(error.isGitConflict());
+			verifyChange(result, "ConflictOutOfBounds", true, 1);
+		}
+
+		@Test
+		public void testConflictMarkersFileDeleted() throws Exception {
+			init("allowconflict_file_deleted", false, false);
+
+			Result result = applyPatchAllowConflicts();
+
+			assertEquals(1, result.getErrors().size());
+			assertEquals(0, result.getPaths().size());
+		}
+
+		@Test
 		public void testShiftUp() throws Exception {
 			init("ShiftUp");
 
@@ -495,6 +553,14 @@ public class PatchApplierTest {
 
 			Result result = applyPatch();
 			verifyChange(result, "x_last_rm_nl");
+		}
+
+		@Test
+		public void testVeryLongFile() throws Exception {
+			init("very_long_file");
+
+			Result result = applyPatch();
+			verifyChange(result, "very_long_file");
 		}
 	}
 

@@ -12,11 +12,11 @@ package org.eclipse.jgit.http.server.glue;
 
 import java.io.IOException;
 
-import javax.servlet.Filter;
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServlet;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.Filter;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServlet;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 /**
  * Selects requests by matching the suffix of the URI.
@@ -70,7 +70,6 @@ class SuffixPipeline extends UrlPipeline {
 		super.service(new WrappedRequest(req, newPath, newInfo), rsp);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public String toString() {
 		return "Pipeline[ *" + suffix + " ]";

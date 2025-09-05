@@ -26,14 +26,8 @@ class MergeBase extends TextBuiltin {
 	private boolean all;
 
 	@Argument(index = 0, metaVar = "metaVar_commitish", required = true)
-	void commit_0(final RevCommit c) {
-		commits.add(c);
-	}
-
-	@Argument(index = 1, metaVar = "metaVar_commitish", required = true)
 	private List<RevCommit> commits = new ArrayList<>();
 
-	/** {@inheritDoc} */
 	@Override
 	protected void run() {
 		try {

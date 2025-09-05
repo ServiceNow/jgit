@@ -20,6 +20,8 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.security.MessageDigest;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -29,6 +31,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.TimeZone;
 
+import org.eclipse.jgit.annotations.Nullable;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.dircache.DirCache;
 import org.eclipse.jgit.dircache.DirCacheBuilder;
@@ -115,6 +118,7 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 	 * @param db
 	 *            the test repository to write into.
 	 * @throws IOException
+	 *             if an IO error occurred
 	 */
 	public TestRepository(R db) throws IOException {
 		this(db, new RevWalk(db), new MockSystemReader());
@@ -128,6 +132,7 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 	 * @param rw
 	 *            the RevObject pool to use for object lookup.
 	 * @throws IOException
+	 *             if an IO error occurred
 	 */
 	public TestRepository(R db, RevWalk rw) throws IOException {
 		this(db, rw, new MockSystemReader());
@@ -144,6 +149,7 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 	 *            the MockSystemReader to use for clock and other system
 	 *            operations.
 	 * @throws IOException
+	 *             if an IO error occurred
 	 * @since 4.2
 	 */
 	public TestRepository(R db, RevWalk rw, MockSystemReader reader)
@@ -153,8 +159,8 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 		this.pool = rw;
 		this.inserter = db.newObjectInserter();
 		this.mockSystemReader = reader;
-		long now = mockSystemReader.getCurrentTime();
-		int tz = mockSystemReader.getTimezone(now);
+		Instant now = mockSystemReader.now();
+		ZoneId tz = mockSystemReader.getTimeZoneAt(now);
 		defaultAuthor = new PersonIdent(AUTHOR, AUTHOR_EMAIL, now, tz);
 		defaultCommitter = new PersonIdent(COMMITTER, COMMITTER_EMAIL, now, tz);
 	}
@@ -193,18 +199,43 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 	 *
 	 * @return current date.
 	 * @since 4.2
+	 * @deprecated Use {@link #getInstant()} instead.
 	 */
+	@Deprecated(since = "7.2")
 	public Date getDate() {
 		return new Date(mockSystemReader.getCurrentTime());
+	}
+
+	/**
+	 * Get instant
+	 *
+	 * @return current instant.
+	 * @since 6.8
+	 */
+	public Instant getInstant() {
+		return mockSystemReader.now();
 	}
 
 	/**
 	 * Get timezone
 	 *
 	 * @return timezone used for default identities.
+	 * @deprecated Use {@link #getTimeZoneId()} instead.
 	 */
+	@Deprecated(since = "7.2")
 	public TimeZone getTimeZone() {
 		return mockSystemReader.getTimeZone();
+	}
+
+
+	/**
+	 * Get timezone
+	 *
+	 * @return timezone used for default identities.
+	 * @since 7.2
+	 */
+	public ZoneId getTimeZoneId() {
+		return mockSystemReader.getTimeZoneId();
 	}
 
 	/**
@@ -218,14 +249,14 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 	}
 
 	/**
-	 * Set the author and committer using {@link #getDate()}.
+	 * Set the author and committer using {@link #getInstant()}.
 	 *
 	 * @param c
 	 *            the commit builder to store.
 	 */
 	public void setAuthorAndCommitter(org.eclipse.jgit.lib.CommitBuilder c) {
-		c.setAuthor(new PersonIdent(defaultAuthor, getDate()));
-		c.setCommitter(new PersonIdent(defaultCommitter, getDate()));
+		c.setAuthor(new PersonIdent(defaultAuthor, getInstant()));
+		c.setCommitter(new PersonIdent(defaultCommitter, getInstant()));
 	}
 
 	/**
@@ -235,6 +266,7 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 	 *            file content, will be UTF-8 encoded.
 	 * @return reference to the blob.
 	 * @throws Exception
+	 *             if an error occurred
 	 */
 	public RevBlob blob(String content) throws Exception {
 		return blob(content.getBytes(UTF_8));
@@ -247,6 +279,7 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 	 *            binary file content.
 	 * @return the new, fully parsed blob.
 	 * @throws Exception
+	 *             if an error occurred
 	 */
 	public RevBlob blob(byte[] content) throws Exception {
 		ObjectId id;
@@ -266,6 +299,7 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 	 *            a blob, previously constructed in the repository.
 	 * @return the entry.
 	 * @throws Exception
+	 *             if an error occurred
 	 */
 	public DirCacheEntry file(String path, RevBlob blob)
 			throws Exception {
@@ -284,6 +318,7 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 	 *            a blob, previously constructed in the repository.
 	 * @return the entry.
 	 * @throws Exception
+	 *             if an error occurred
 	 * @since 6.3
 	 */
 	public DirCacheEntry link(String path, RevBlob blob) throws Exception {
@@ -301,6 +336,7 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 	 *            to be sorted properly and may be empty.
 	 * @return the new, fully parsed tree specified by the entry list.
 	 * @throws Exception
+	 *             if an error occurred
 	 */
 	public RevTree tree(DirCacheEntry... entries) throws Exception {
 		final DirCache dc = DirCache.newInCore();
@@ -326,6 +362,7 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 	 *            the path to find the entry of.
 	 * @return the parsed object entry at this path, never null.
 	 * @throws Exception
+	 *             if an error occurred
 	 */
 	public RevObject get(RevTree tree, String path)
 			throws Exception {
@@ -357,6 +394,7 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 	 *            zero or more IDs of the commit's parents.
 	 * @return the ID of the new commit.
 	 * @throws Exception
+	 *             if an error occurred
 	 * @since 5.5
 	 */
 	public ObjectId unparsedCommit(ObjectId... parents) throws Exception {
@@ -373,6 +411,7 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 	 *            zero or more parents of the commit.
 	 * @return the new commit.
 	 * @throws Exception
+	 *             if an error occurred
 	 */
 	public RevCommit commit(RevCommit... parents) throws Exception {
 		return commit(1, tree(), parents);
@@ -389,6 +428,7 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 	 *            zero or more parents of the commit.
 	 * @return the new commit.
 	 * @throws Exception
+	 *             if an error occurred
 	 */
 	public RevCommit commit(RevTree tree, RevCommit... parents)
 			throws Exception {
@@ -407,6 +447,7 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 	 *            zero or more parents of the commit.
 	 * @return the new commit.
 	 * @throws Exception
+	 *             if an error occurred
 	 */
 	public RevCommit commit(int secDelta, RevCommit... parents)
 			throws Exception {
@@ -428,6 +469,7 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 	 *            zero or more parents of the commit.
 	 * @return the new, fully parsed commit.
 	 * @throws Exception
+	 *             if an error occurred
 	 */
 	public RevCommit commit(final int secDelta, final RevTree tree,
 			final RevCommit... parents) throws Exception {
@@ -450,6 +492,7 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 	 *            zero or more IDs of the commit's parents.
 	 * @return the ID of the new commit.
 	 * @throws Exception
+	 *             if an error occurred
 	 * @since 5.5
 	 */
 	public ObjectId unparsedCommit(final int secDelta, final RevTree tree,
@@ -461,8 +504,8 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 		c = new org.eclipse.jgit.lib.CommitBuilder();
 		c.setTreeId(tree);
 		c.setParentIds(parents);
-		c.setAuthor(new PersonIdent(defaultAuthor, getDate()));
-		c.setCommitter(new PersonIdent(defaultCommitter, getDate()));
+		c.setAuthor(new PersonIdent(defaultAuthor, getInstant()));
+		c.setCommitter(new PersonIdent(defaultCommitter, getInstant()));
 		c.setMessage("");
 		ObjectId id;
 		try (ObjectInserter ins = inserter) {
@@ -496,12 +539,13 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 	 *            object the tag should be pointed at.
 	 * @return the new, fully parsed annotated tag object.
 	 * @throws Exception
+	 *             if an error occurred
 	 */
 	public RevTag tag(String name, RevObject dst) throws Exception {
 		final TagBuilder t = new TagBuilder();
 		t.setObjectId(dst);
 		t.setTag(name);
-		t.setTagger(new PersonIdent(defaultCommitter, getDate()));
+		t.setTagger(new PersonIdent(defaultCommitter, getInstant()));
 		t.setMessage("");
 		ObjectId id;
 		try (ObjectInserter ins = inserter) {
@@ -524,6 +568,7 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 	 *            the target object.
 	 * @return the target object.
 	 * @throws Exception
+	 *             if an error occurred
 	 */
 	public RevCommit update(String ref, CommitBuilder to) throws Exception {
 		return update(ref, to.create());
@@ -534,12 +579,13 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 	 *
 	 * @param ref
 	 *            the name of the reference to amend, which must already exist.
-	 *            If {@code ref} does not start with {@code refs/} and is not the
-	 *            magic names {@code HEAD} {@code FETCH_HEAD} or {@code
-	 *            MERGE_HEAD}, then {@code refs/heads/} will be prefixed in front
-	 *            of the given name, thereby assuming it is a branch.
+	 *            If {@code ref} does not start with {@code refs/} and is not
+	 *            the magic names {@code HEAD} {@code FETCH_HEAD} or {@code
+	 *            MERGE_HEAD}, then {@code refs/heads/} will be prefixed in
+	 *            front of the given name, thereby assuming it is a branch.
 	 * @return commit builder that amends the branch on commit.
 	 * @throws Exception
+	 *             if an error occurred
 	 */
 	public CommitBuilder amendRef(String ref) throws Exception {
 		String name = normalizeRef(ref);
@@ -556,6 +602,7 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 	 *            the id of the commit to amend.
 	 * @return commit builder.
 	 * @throws Exception
+	 *             if an error occurred
 	 */
 	public CommitBuilder amend(AnyObjectId id) throws Exception {
 		return amend(pool.parseCommit(id), commit());
@@ -610,6 +657,7 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 	 *            the target object.
 	 * @return the target object.
 	 * @throws Exception
+	 *             if an error occurred
 	 */
 	public <T extends AnyObjectId> T update(String ref, T obj) throws Exception {
 		ref = normalizeRef(ref);
@@ -632,9 +680,10 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 	 * Delete a reference.
 	 *
 	 * @param ref
-	 *	      the name of the reference to delete. This is normalized
-	 *	      in the same way as {@link #update(String, AnyObjectId)}.
+	 *            the name of the reference to delete. This is normalized in the
+	 *            same way as {@link #update(String, AnyObjectId)}.
 	 * @throws Exception
+	 *             if an error occurred
 	 * @since 4.4
 	 */
 	public void delete(String ref) throws Exception {
@@ -674,6 +723,7 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 	 * @param id
 	 *            ID of detached head.
 	 * @throws Exception
+	 *             if an error occurred
 	 * @see #reset(String)
 	 */
 	public void reset(AnyObjectId id) throws Exception {
@@ -695,13 +745,14 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 	/**
 	 * Soft-reset HEAD to a different commit.
 	 * <p>
-	 * This is equivalent to {@code git reset --soft} in that it modifies HEAD but
-	 * not the index or the working tree of a non-bare repository.
+	 * This is equivalent to {@code git reset --soft} in that it modifies HEAD
+	 * but not the index or the working tree of a non-bare repository.
 	 *
 	 * @param name
-	 *            revision string; either an existing ref name, or something that
-	 *            can be parsed to an object ID.
+	 *            revision string; either an existing ref name, or something
+	 *            that can be parsed to an object ID.
 	 * @throws Exception
+	 *             if an error occurred
 	 */
 	public void reset(String name) throws Exception {
 		RefUpdate.Result result;
@@ -735,6 +786,7 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 	 * @return the new, fully parsed commit, or null if no work was done due to
 	 *         the resulting tree being identical.
 	 * @throws Exception
+	 *             if an error occurred
 	 */
 	public RevCommit cherryPick(AnyObjectId id) throws Exception {
 		RevCommit commit = pool.parseCommit(id);
@@ -762,7 +814,7 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 			b.setParentId(head);
 			b.setTreeId(merger.getResultTreeId());
 			b.setAuthor(commit.getAuthorIdent());
-			b.setCommitter(new PersonIdent(defaultCommitter, getDate()));
+			b.setCommitter(new PersonIdent(defaultCommitter, getInstant()));
 			b.setMessage(commit.getFullMessage());
 			ObjectId result;
 			try (ObjectInserter ins = inserter) {
@@ -779,6 +831,7 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 	 * Update the dumb client server info files.
 	 *
 	 * @throws Exception
+	 *             if an error occurred
 	 */
 	public void updateServerInfo() throws Exception {
 		if (db instanceof FileRepository) {
@@ -816,6 +869,7 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 	 *            parsing of.
 	 * @return {@code object}
 	 * @throws Exception
+	 *             if an error occurred
 	 */
 	public <T extends RevObject> T parseBody(T object) throws Exception {
 		pool.parseBody(object);
@@ -851,6 +905,7 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 	 *            the object to tag
 	 * @return the tagged object
 	 * @throws Exception
+	 *             if an error occurred
 	 */
 	public ObjectId lightweightTag(String name, ObjectId obj) throws Exception {
 		if (!name.startsWith(Constants.R_TAGS))
@@ -868,8 +923,11 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 	 *            the tips to start checking from; if not supplied the refs of
 	 *            the repository are used instead.
 	 * @throws MissingObjectException
+	 *             if object is missing
 	 * @throws IncorrectObjectTypeException
+	 *             if object has unexpected type
 	 * @throws IOException
+	 *             if an IO error occurred
 	 */
 	public void fsck(RevObject... tips) throws MissingObjectException,
 			IncorrectObjectTypeException, IOException {
@@ -922,6 +980,7 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 	 * not removed.
 	 *
 	 * @throws Exception
+	 *             if an error occurred
 	 */
 	public void packAndPrune() throws Exception {
 		if (db.getObjectDatabase() instanceof ObjectDirectory) {
@@ -977,7 +1036,8 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 	private static void prunePacked(ObjectDirectory odb) throws IOException {
 		for (Pack p : odb.getPacks()) {
 			for (MutableEntry e : p)
-				FileUtils.delete(odb.fileFor(e.toObjectId()));
+				FileUtils.delete(odb.fileFor(e.toObjectId()),
+						FileUtils.SKIP_MISSING);
 		}
 	}
 
@@ -1004,6 +1064,8 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 		}
 
 		/**
+		 * Create commit builder
+		 *
 		 * @return construct a new commit builder that updates this branch. If
 		 *         the branch already exists, the commit builder will have its
 		 *         first parent as the current commit and its tree will be
@@ -1022,6 +1084,7 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 		 *            the commit to update to.
 		 * @return {@code to}.
 		 * @throws Exception
+		 *             if an error occurred
 		 */
 		public RevCommit update(CommitBuilder to) throws Exception {
 			return update(to.create());
@@ -1034,6 +1097,7 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 		 *            the commit to update to.
 		 * @return {@code to}.
 		 * @throws Exception
+		 *             if an error occurred
 		 */
 		public RevCommit update(RevCommit to) throws Exception {
 			return TestRepository.this.update(ref, to);
@@ -1041,7 +1105,9 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 
 		/**
 		 * Delete this branch.
+		 *
 		 * @throws Exception
+		 *             if an error occurred
 		 * @since 4.4
 		 */
 		public void delete() throws Exception {
@@ -1096,14 +1162,18 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 		}
 
 		/**
-		 * set parent commit
+		 * Set parent commit
 		 *
 		 * @param p
-		 *            parent commit
+		 *            parent commit, can be {@code null}
 		 * @return this commit builder
 		 * @throws Exception
+		 *             if an error occurred
 		 */
-		public CommitBuilder parent(RevCommit p) throws Exception {
+		public CommitBuilder parent(@Nullable RevCommit p) throws Exception {
+			if (p == null) {
+				return this;
+			}
 			if (parents.isEmpty()) {
 				DirCacheBuilder b = tree.builder();
 				parseBody(p);
@@ -1165,6 +1235,7 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 		 *            the file content
 		 * @return this commit builder
 		 * @throws Exception
+		 *             if an error occurred
 		 */
 		public CommitBuilder add(String path, String content) throws Exception {
 			return add(path, blob(content));
@@ -1179,6 +1250,7 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 		 *            blob for this file
 		 * @return this commit builder
 		 * @throws Exception
+		 *             if an error occurred
 		 */
 		public CommitBuilder add(String path, RevBlob id)
 				throws Exception {
@@ -1352,7 +1424,7 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 					c.setAuthor(author);
 				if (committer != null) {
 					if (updateCommitterTime)
-						committer = new PersonIdent(committer, getDate());
+						committer = new PersonIdent(committer, getInstant());
 					c.setCommitter(committer);
 				}
 
@@ -1404,6 +1476,7 @@ public class TestRepository<R extends Repository> implements AutoCloseable {
 		 *
 		 * @return child commit builder
 		 * @throws Exception
+		 *             if an error occurred
 		 */
 		public CommitBuilder child() throws Exception {
 			return new CommitBuilder(this);

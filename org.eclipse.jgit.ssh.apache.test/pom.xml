@@ -17,7 +17,7 @@
   <parent>
     <groupId>org.eclipse.jgit</groupId>
     <artifactId>org.eclipse.jgit-parent</artifactId>
-    <version>6.6.1-snc-2</version>
+    <version>7.3.1-SNAPSHOT</version>
   </parent>
 
   <artifactId>org.eclipse.jgit.ssh.apache.test</artifactId>
@@ -97,6 +97,12 @@
   <build>
     <sourceDirectory>src/</sourceDirectory>
     <testSourceDirectory>tst/</testSourceDirectory>
+
+    <testResources>
+      <testResource>
+        <directory>tst-rsrc/</directory>
+      </testResource>
+    </testResources>
 
     <plugins>
       <plugin>

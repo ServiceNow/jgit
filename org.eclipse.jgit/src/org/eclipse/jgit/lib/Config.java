@@ -30,9 +30,11 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.jgit.annotations.NonNull;
+import org.eclipse.jgit.annotations.Nullable;
 import org.eclipse.jgit.errors.ConfigInvalidException;
 import org.eclipse.jgit.events.ConfigChangedEvent;
 import org.eclipse.jgit.events.ConfigChangedListener;
@@ -253,10 +255,26 @@ public class Config {
 	 *            default value to return if no value was present.
 	 * @return an integer value from the configuration, or defaultValue.
 	 */
-	public int getInt(final String section, final String name,
-			final int defaultValue) {
-		return typedGetter.getInt(this, section, null, name, defaultValue);
+	public int getInt(String section, String name, int defaultValue) {
+		return getInt(section, null, name, defaultValue);
 	}
+
+	/**
+	 * Obtain an integer value from the configuration.
+	 *
+	 * @param section
+	 *            section the key is grouped within.
+	 * @param name
+	 *            name of the key to get.
+	 * @return an integer value from the configuration, or {@code null} if not
+	 *         set.
+	 * @since 7.2
+	 */
+	@Nullable
+	public Integer getInt(String section, String name) {
+		return getInt(section, null, name);
+	}
+
 
 	/**
 	 * Obtain an integer value from the configuration.
@@ -271,10 +289,30 @@ public class Config {
 	 *            default value to return if no value was present.
 	 * @return an integer value from the configuration, or defaultValue.
 	 */
-	public int getInt(final String section, String subsection,
-			final String name, final int defaultValue) {
+	public int getInt(String section, String subsection, String name,
+			int defaultValue) {
+		Integer v = typedGetter.getInt(this, section, subsection, name,
+				Integer.valueOf(defaultValue));
+		return v == null ? defaultValue : v.intValue();
+	}
+
+	/**
+	 * Obtain an integer value from the configuration.
+	 *
+	 * @param section
+	 *            section the key is grouped within.
+	 * @param subsection
+	 *            subsection name, such a remote or branch name.
+	 * @param name
+	 *            name of the key to get.
+	 * @return an integer value from the configuration, or {@code null} if not
+	 *         set.
+	 * @since 7.2
+	 */
+	@Nullable
+	public Integer getInt(String section, String subsection, String name) {
 		return typedGetter.getInt(this, section, subsection, name,
-				defaultValue);
+				null);
 	}
 
 	/**
@@ -296,8 +334,30 @@ public class Config {
 	 */
 	public int getIntInRange(String section, String name, int minValue,
 			int maxValue, int defaultValue) {
-		return typedGetter.getIntInRange(this, section, null, name, minValue,
-				maxValue, defaultValue);
+		return getIntInRange(section, null, name,
+				minValue, maxValue, defaultValue);
+	}
+
+	/**
+	 * Obtain an integer value from the configuration which must be inside given
+	 * range.
+	 *
+	 * @param section
+	 *            section the key is grouped within.
+	 * @param name
+	 *            name of the key to get.
+	 * @param minValue
+	 *            minimum value
+	 * @param maxValue
+	 *            maximum value
+	 * @return an integer value from the configuration, or {@code null} if not
+	 *         set.
+	 * @since 7.2
+	 */
+	@Nullable
+	public Integer getIntInRange(String section, String name, int minValue,
+			int maxValue) {
+		return getIntInRange(section, null, name, minValue, maxValue);
 	}
 
 	/**
@@ -321,8 +381,34 @@ public class Config {
 	 */
 	public int getIntInRange(String section, String subsection, String name,
 			int minValue, int maxValue, int defaultValue) {
+		Integer v = typedGetter.getIntInRange(this, section, subsection, name,
+				minValue, maxValue, Integer.valueOf(defaultValue));
+		return v == null ? defaultValue : v.intValue();
+	}
+
+	/**
+	 * Obtain an integer value from the configuration which must be inside given
+	 * range.
+	 *
+	 * @param section
+	 *            section the key is grouped within.
+	 * @param subsection
+	 *            subsection name, such a remote or branch name.
+	 * @param name
+	 *            name of the key to get.
+	 * @param minValue
+	 *            minimum value
+	 * @param maxValue
+	 *            maximum value
+	 * @return an integer value from the configuration, or {@code null} if not
+	 *         set.
+	 * @since 7.2
+	 */
+	@Nullable
+	public Integer getIntInRange(String section, String subsection, String name,
+			int minValue, int maxValue) {
 		return typedGetter.getIntInRange(this, section, subsection, name,
-				minValue, maxValue, defaultValue);
+				minValue, maxValue, null);
 	}
 
 	/**
@@ -337,7 +423,23 @@ public class Config {
 	 * @return an integer value from the configuration, or defaultValue.
 	 */
 	public long getLong(String section, String name, long defaultValue) {
-		return typedGetter.getLong(this, section, null, name, defaultValue);
+		return getLong(section, null, name, defaultValue);
+	}
+
+	/**
+	 * Obtain an integer value from the configuration.
+	 *
+	 * @param section
+	 *            section the key is grouped within.
+	 * @param name
+	 *            name of the key to get.
+	 * @return an integer value from the configuration, or {@code null} if not
+	 *         set.
+	 * @since 7.2
+	 */
+	@Nullable
+	public Long getLong(String section, String name) {
+		return getLong(section, null, name);
 	}
 
 	/**
@@ -354,9 +456,28 @@ public class Config {
 	 * @return an integer value from the configuration, or defaultValue.
 	 */
 	public long getLong(final String section, String subsection,
-			final String name, final long defaultValue) {
-		return typedGetter.getLong(this, section, subsection, name,
-				defaultValue);
+			String name, long defaultValue) {
+		Long v = typedGetter.getLong(this, section, subsection, name,
+				Long.valueOf(defaultValue));
+		return v == null ? defaultValue : v.longValue();
+	}
+
+	/**
+	 * Obtain an integer value from the configuration.
+	 *
+	 * @param section
+	 *            section the key is grouped within.
+	 * @param subsection
+	 *            subsection name, such a remote or branch name.
+	 * @param name
+	 *            name of the key to get.
+	 * @return an integer value from the configuration, or {@code null} if not
+	 *         set.
+	 * @since 7.2
+	 */
+	@Nullable
+	public Long getLong(String section, String subsection, String name) {
+		return typedGetter.getLong(this, section, subsection, name, null);
 	}
 
 	/**
@@ -371,9 +492,26 @@ public class Config {
 	 * @return true if any value or defaultValue is true, false for missing or
 	 *         explicit false
 	 */
-	public boolean getBoolean(final String section, final String name,
-			final boolean defaultValue) {
-		return typedGetter.getBoolean(this, section, null, name, defaultValue);
+	public boolean getBoolean(String section, String name,
+			boolean defaultValue) {
+		Boolean v = typedGetter.getBoolean(this, section, null, name,
+				Boolean.valueOf(defaultValue));
+		return v == null ? defaultValue : v.booleanValue();
+	}
+
+	/**
+	 * Get a boolean value from the git config
+	 *
+	 * @param section
+	 *            section the key is grouped within.
+	 * @param name
+	 *            name of the key to get.
+	 * @return configured boolean value, or {@code null} if not set.
+	 * @since 7.2
+	 */
+	@Nullable
+	public Boolean getBoolean(String section, String name) {
+		return getBoolean(section, null, name);
 	}
 
 	/**
@@ -390,15 +528,35 @@ public class Config {
 	 * @return true if any value or defaultValue is true, false for missing or
 	 *         explicit false
 	 */
-	public boolean getBoolean(final String section, String subsection,
-			final String name, final boolean defaultValue) {
-		return typedGetter.getBoolean(this, section, subsection, name,
-				defaultValue);
+	public boolean getBoolean(String section, String subsection, String name,
+			boolean defaultValue) {
+		Boolean v = typedGetter.getBoolean(this, section, subsection, name,
+				Boolean.valueOf(defaultValue));
+		return v == null ? defaultValue : v.booleanValue();
+	}
+
+	/**
+	 * Get a boolean value from the git config
+	 *
+	 * @param section
+	 *            section the key is grouped within.
+	 * @param subsection
+	 *            subsection name, such a remote or branch name.
+	 * @param name
+	 *            name of the key to get.
+	 * @return configured boolean value, or {@code null} if not set.
+	 * @since 7.2
+	 */
+	@Nullable
+	public Boolean getBoolean(String section, String subsection, String name) {
+		return typedGetter.getBoolean(this, section, subsection, name, null);
 	}
 
 	/**
 	 * Parse an enumeration from the configuration.
 	 *
+	 * @param <T>
+	 *            type of the returned enum
 	 * @param section
 	 *            section the key is grouped within.
 	 * @param subsection
@@ -409,8 +567,8 @@ public class Config {
 	 *            default value to return if no value was present.
 	 * @return the selected enumeration value, or {@code defaultValue}.
 	 */
-	public <T extends Enum<?>> T getEnum(final String section,
-			final String subsection, final String name, final T defaultValue) {
+	public <T extends Enum<?>> T getEnum(String section, String subsection,
+			String name, @NonNull T defaultValue) {
 		final T[] all = allValuesOf(defaultValue);
 		return typedGetter.getEnum(this, all, section, subsection, name,
 				defaultValue);
@@ -431,6 +589,8 @@ public class Config {
 	/**
 	 * Parse an enumeration from the configuration.
 	 *
+	 * @param <T>
+	 *            type of the returned enum
 	 * @param all
 	 *            all possible values in the enumeration which should be
 	 *            recognized. Typically {@code EnumType.values()}.
@@ -443,11 +603,38 @@ public class Config {
 	 * @param defaultValue
 	 *            default value to return if no value was present.
 	 * @return the selected enumeration value, or {@code defaultValue}.
+	 * @deprecated use {@link #getEnum(String, String, String, Enum)} or
+	 *             {{@link #getEnum(Enum[], String, String, String)}} instead.
 	 */
-	public <T extends Enum<?>> T getEnum(final T[] all, final String section,
-			final String subsection, final String name, final T defaultValue) {
+	@Nullable
+	@Deprecated
+	public <T extends Enum<?>> T getEnum(T[] all, String section,
+			String subsection, String name, @Nullable T defaultValue) {
 		return typedGetter.getEnum(this, all, section, subsection, name,
 				defaultValue);
+	}
+
+	/**
+	 * Parse an enumeration from the configuration.
+	 *
+	 * @param <T>
+	 *            type of the returned enum
+	 * @param all
+	 *            all possible values in the enumeration which should be
+	 *            recognized. Typically {@code EnumType.values()}.
+	 * @param section
+	 *            section the key is grouped within.
+	 * @param subsection
+	 *            subsection name, such a remote or branch name.
+	 * @param name
+	 *            name of the key to get.
+	 * @return the selected enumeration value, or {@code null} if not set.
+	 * @since 7.2
+	 */
+	@Nullable
+	public <T extends Enum<?>> T getEnum(T[] all, String section,
+			String subsection, String name) {
+		return typedGetter.getEnum(this, all, section, subsection, name, null);
 	}
 
 	/**
@@ -461,8 +648,8 @@ public class Config {
 	 *            the key name
 	 * @return a String value from the config, <code>null</code> if not found
 	 */
-	public String getString(final String section, String subsection,
-			final String name) {
+	@Nullable
+	public String getString(String section, String subsection, String name) {
 		return getRawString(section, subsection, name);
 	}
 
@@ -521,8 +708,34 @@ public class Config {
 	 */
 	public long getTimeUnit(String section, String subsection, String name,
 			long defaultValue, TimeUnit wantUnit) {
+		Long v = typedGetter.getTimeUnit(this, section, subsection, name,
+				Long.valueOf(defaultValue), wantUnit);
+		return v == null ? defaultValue : v.longValue();
+
+	}
+
+	/**
+	 * Parse a numerical time unit, such as "1 minute", from the configuration.
+	 *
+	 * @param section
+	 *            section the key is in.
+	 * @param subsection
+	 *            subsection the key is in, or null if not in a subsection.
+	 * @param name
+	 *            the key name.
+	 * @param wantUnit
+	 *            the units of {@code defaultValue} and the return value, as
+	 *            well as the units to assume if the value does not contain an
+	 *            indication of the units.
+	 * @return the value, or {@code null} if not set, expressed in
+	 *         {@code units}.
+	 * @since 7.2
+	 */
+	@Nullable
+	public Long getTimeUnit(String section, String subsection, String name,
+			TimeUnit wantUnit) {
 		return typedGetter.getTimeUnit(this, section, subsection, name,
-				defaultValue, wantUnit);
+				null, wantUnit);
 	}
 
 	/**
@@ -550,8 +763,9 @@ public class Config {
 	 * @return the {@link Path}, or {@code defaultValue} if not set
 	 * @since 5.10
 	 */
+	@Nullable
 	public Path getPath(String section, String subsection, String name,
-			@NonNull FS fs, File resolveAgainst, Path defaultValue) {
+			@NonNull FS fs, File resolveAgainst, @Nullable Path defaultValue) {
 		return typedGetter.getPath(this, section, subsection, name, fs,
 				resolveAgainst, defaultValue);
 	}
@@ -722,7 +936,7 @@ public class Config {
 	 * responsible for issuing {@link #fireConfigChangedEvent()} calls
 	 * themselves.
 	 *
-	 * @return <code></code>
+	 * @return whether to issue change events for transient changes
 	 */
 	protected boolean notifyUponTransientChanges() {
 		return true;
@@ -735,7 +949,7 @@ public class Config {
 		listeners.dispatch(new ConfigChangedEvent());
 	}
 
-	String getRawString(final String section, final String subsection,
+	private String getRawString(final String section, final String subsection,
 			final String name) {
 		String[] lst = getRawStringList(section, subsection, name);
 		if (lst != null) {
@@ -847,6 +1061,8 @@ public class Config {
 	 *         name = value
 	 * </pre>
 	 *
+	 * @param <T>
+	 *            type of the enum to set
 	 * @param section
 	 *            section name, e.g "branch"
 	 * @param subsection
@@ -915,29 +1131,52 @@ public class Config {
 	 *            optional subsection value, e.g. a branch name
 	 */
 	public void unsetSection(String section, String subsection) {
-		ConfigSnapshot src, res;
-		do {
-			src = state.get();
-			res = unsetSection(src, section, subsection);
-		} while (!state.compareAndSet(src, res));
+		removeSection(section, subsection);
 	}
 
-	private ConfigSnapshot unsetSection(final ConfigSnapshot srcState,
-			final String section,
-			final String subsection) {
+	/**
+	 * Removes all configuration values under a single section.
+	 *
+	 * @param section
+	 *            section name, e.g "branch"
+	 * @param subsection
+	 *            optional subsection value, e.g. a branch name
+	 * @return {@code true} if a section was present and was removed;
+	 *         {@code false} if the config was not changed (i.e., no such
+	 *         section was present)
+	 * @since 6.8
+	 */
+	public boolean removeSection(String section, String subsection) {
+		ConfigSnapshot src, res;
+		AtomicBoolean changed = new AtomicBoolean();
+		do {
+			src = state.get();
+			changed.set(false);
+			res = unsetSection(src, section, subsection, changed);
+		} while (!state.compareAndSet(src, res));
+		return changed.get();
+	}
+
+	private ConfigSnapshot unsetSection(ConfigSnapshot srcState, String section,
+			String subsection, AtomicBoolean changed) {
 		final int max = srcState.entryList.size();
 		final ArrayList<ConfigLine> r = new ArrayList<>(max);
 
 		boolean lastWasMatch = false;
 		for (ConfigLine e : srcState.entryList) {
-			if (e.includedFrom == null && e.match(section, subsection)) {
-				// Skip this record, it's for the section we are removing.
-				lastWasMatch = true;
+			if (e.includedFrom != null) {
+				r.add(e);
 				continue;
 			}
-
-			if (lastWasMatch && e.section == null && e.subsection == null)
+			if (lastWasMatch && e.section == null && e.subsection == null) {
 				continue; // skip this padding line in the section.
+			}
+			lastWasMatch = e.match(section, subsection);
+			if (lastWasMatch) {
+				// Skip this record, it's for the section we are removing.
+				changed.set(true);
+				continue;
+			}
 			r.add(e);
 		}
 

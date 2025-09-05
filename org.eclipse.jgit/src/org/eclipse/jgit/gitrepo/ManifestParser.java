@@ -75,7 +75,9 @@ public class ManifestParser extends DefaultHandler {
 		 *            The relative path to the file to read
 		 * @return the {@code InputStream} of the file.
 		 * @throws GitAPIException
+		 *             a JGit API exception
 		 * @throws IOException
+		 *             if an IO error occurred
 		 */
 		public InputStream readIncludeFile(String path)
 				throws GitAPIException, IOException;
@@ -134,12 +136,23 @@ public class ManifestParser extends DefaultHandler {
 	 * @param inputStream
 	 *            a {@link java.io.InputStream} object.
 	 * @throws java.io.IOException
+	 *             if an IO error occurred
 	 */
 	public void read(InputStream inputStream) throws IOException {
 		xmlInRead++;
 		final XMLReader xr;
 		try {
-			xr = SAXParserFactory.newInstance().newSAXParser().getXMLReader();
+			SAXParserFactory spf = SAXParserFactory.newInstance();
+			spf.setFeature(
+					"http://xml.org/sax/features/external-general-entities", //$NON-NLS-1$
+					false);
+			spf.setFeature(
+					"http://xml.org/sax/features/external-parameter-entities", //$NON-NLS-1$
+					false);
+			spf.setFeature(
+					"http://apache.org/xml/features/disallow-doctype-decl", //$NON-NLS-1$
+					true);
+			xr = spf.newSAXParser().getXMLReader();
 		} catch (SAXException | ParserConfigurationException e) {
 			throw new IOException(JGitText.get().noXMLParserAvailable, e);
 		}
@@ -151,7 +164,6 @@ public class ManifestParser extends DefaultHandler {
 		}
 	}
 
-	/** {@inheritDoc} */
 	@SuppressWarnings("nls")
 	@Override
 	public void startElement(
@@ -174,6 +186,10 @@ public class ManifestParser extends DefaultHandler {
 					attributes.getValue("groups"));
 			currentProject
 					.setRecommendShallow(attributes.getValue("clone-depth"));
+			currentProject
+					.setUpstream(attributes.getValue("upstream"));
+			currentProject
+					.setDestBranch(attributes.getValue("dest-branch"));
 			break;
 		case "remote":
 			String alias = attributes.getValue("alias");
@@ -239,7 +255,6 @@ public class ManifestParser extends DefaultHandler {
 		}
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public void endElement(
 			String uri,
@@ -251,7 +266,6 @@ public class ManifestParser extends DefaultHandler {
 		}
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public void endDocument() throws SAXException {
 		xmlInRead--;

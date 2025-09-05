@@ -32,7 +32,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -42,6 +41,7 @@ import org.eclipse.jgit.annotations.NonNull;
 import org.eclipse.jgit.annotations.Nullable;
 import org.eclipse.jgit.attributes.Attribute;
 import org.eclipse.jgit.attributes.Attributes;
+import org.eclipse.jgit.attributes.AttributesNodeProvider;
 import org.eclipse.jgit.diff.DiffAlgorithm;
 import org.eclipse.jgit.diff.DiffAlgorithm.SupportedAlgorithm;
 import org.eclipse.jgit.diff.RawText;
@@ -106,13 +106,15 @@ public class ResolveMerger extends ThreeWayMerger {
 		 */
 		public static class Result {
 
-			private final List<String> modifiedFiles = new LinkedList<>();
+			private final List<String> modifiedFiles = new ArrayList<>();
 
-			private final List<String> failedToDelete = new LinkedList<>();
+			private final List<String> failedToDelete = new ArrayList<>();
 
 			private ObjectId treeId = null;
 
 			/**
+			 * Get modified tree id if any
+			 *
 			 * @return Modified tree ID if any, or null otherwise.
 			 */
 			public ObjectId getTreeId() {
@@ -120,6 +122,8 @@ public class ResolveMerger extends ThreeWayMerger {
 			}
 
 			/**
+			 * Get path of files that couldn't be deleted
+			 *
 			 * @return Files that couldn't be deleted.
 			 */
 			public List<String> getFailedToDelete() {
@@ -127,6 +131,8 @@ public class ResolveMerger extends ThreeWayMerger {
 			}
 
 			/**
+			 * Get path of modified files
+			 *
 			 * @return Files modified during this operation.
 			 */
 			public List<String> getModifiedFiles() {
@@ -472,7 +478,6 @@ public class ResolveMerger extends ThreeWayMerger {
 		/**
 		 * Detects if CRLF conversion has been configured.
 		 * <p>
-		 * </p>
 		 * See {@link EolStreamTypeUtil#detectStreamType} for more info.
 		 *
 		 * @param attributes
@@ -833,6 +838,13 @@ public class ResolveMerger extends ThreeWayMerger {
 	@NonNull
 	private ContentMergeStrategy contentStrategy = ContentMergeStrategy.CONFLICT;
 
+	/**
+	 * The {@link AttributesNodeProvider} to use while merging trees.
+	 *
+	 * @since 6.10.1
+	 */
+	protected AttributesNodeProvider attributesNodeProvider;
+
 	private static MergeAlgorithm getMergeAlgorithm(Config config) {
 		SupportedAlgorithm diffAlg = config.getEnum(
 				CONFIG_DIFF_SECTION, null, CONFIG_KEY_ALGORITHM,
@@ -911,7 +923,6 @@ public class ResolveMerger extends ThreeWayMerger {
 				: strategy;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	protected boolean mergeImpl() throws IOException {
 		return mergeTrees(mergeBase(), sourceTrees[0], sourceTrees[1],
@@ -922,18 +933,23 @@ public class ResolveMerger extends ThreeWayMerger {
 	 * adds a new path with the specified stage to the index builder
 	 *
 	 * @param path
+	 *            the new path
 	 * @param p
+	 *            canonical tree parser
 	 * @param stage
-	 * @param lastMod
+	 *            the stage
+	 * @param lastModified
+	 *            lastModified attribute of the file
 	 * @param len
+	 *            file length
 	 * @return the entry which was added to the index
 	 */
 	private DirCacheEntry add(byte[] path, CanonicalTreeParser p, int stage,
-			Instant lastMod, long len) {
+			Instant lastModified, long len) {
 		if (p != null && !p.getEntryFileMode().equals(FileMode.TREE)) {
 			return workTreeUpdater.addExistingToIndex(p.getEntryObjectId(), path,
 					p.getEntryFileMode(), stage,
-					lastMod, (int) len);
+					lastModified, (int) len);
 		}
 		return null;
 	}
@@ -1063,6 +1079,7 @@ public class ResolveMerger extends ThreeWayMerger {
 	 *         didn't match ours or the working-dir file was dirty and a
 	 *         conflict occurred
 	 * @throws java.io.IOException
+	 *             if an IO error occurred
 	 * @since 6.1
 	 */
 	protected boolean processEntry(CanonicalTreeParser base,
@@ -1264,10 +1281,22 @@ public class ResolveMerger extends ThreeWayMerger {
 					default:
 						break;
 				}
+				if (ignoreConflicts) {
+					// If the path is selected to be treated as binary via attributes, we do not perform
+					// content merge. When ignoreConflicts = true, we simply keep OURS to allow virtual commit
+					// to be built.
+					keep(ourDce);
+					return true;
+				}
+				// add the conflicting path to merge result
+				String currentPath = tw.getPathString();
+				MergeResult<RawText> result = new MergeResult<>(
+						Collections.emptyList());
+				result.setContainsConflicts(true);
+				mergeResults.put(currentPath, result);
 				addConflict(base, ours, theirs);
-
 				// attribute merge issues are conflicts but not failures
-				unmergedPaths.add(tw.getPathString());
+				unmergedPaths.add(currentPath);
 				return true;
 			}
 
@@ -1279,38 +1308,52 @@ public class ResolveMerger extends ThreeWayMerger {
 			MergeResult<RawText> result = null;
 			boolean hasSymlink = FileMode.SYMLINK.equals(modeO)
 					|| FileMode.SYMLINK.equals(modeT);
+
+			String currentPath = tw.getPathString();
+			// if the path is not a symlink in ours and theirs
 			if (!hasSymlink) {
 				try {
 					result = contentMerge(base, ours, theirs, attributes,
 							getContentMergeStrategy());
-				} catch (BinaryBlobException e) {
-					// result == null
-				}
-			}
-			if (result == null) {
-				switch (getContentMergeStrategy()) {
-				case OURS:
-					keep(ourDce);
-					return true;
-				case THEIRS:
-					DirCacheEntry e = add(tw.getRawPath(), theirs,
-							DirCacheEntry.STAGE_0, EPOCH, 0);
-					if (e != null) {
-						addToCheckout(tw.getPathString(), e, attributes);
+					if (result.containsConflicts() && !ignoreConflicts) {
+						result.setContainsConflicts(true);
+						unmergedPaths.add(currentPath);
+					} else if (ignoreConflicts) {
+						result.setContainsConflicts(false);
 					}
+					updateIndex(base, ours, theirs, result, attributes[T_OURS]);
+					workTreeUpdater.markAsModified(currentPath);
+					// Entry is null - only add the metadata
+					addToCheckout(currentPath, null, attributes);
 					return true;
-				default:
-					result = new MergeResult<>(Collections.emptyList());
-					result.setContainsConflicts(true);
-					break;
+				} catch (BinaryBlobException e) {
+					// The file is binary in either OURS, THEIRS or BASE
+					if (ignoreConflicts) {
+						// When ignoreConflicts = true, we simply keep OURS to allow virtual commit to be built.
+						keep(ourDce);
+						return true;
+					}
 				}
 			}
-			if (ignoreConflicts) {
-				result.setContainsConflicts(false);
+			switch (getContentMergeStrategy()) {
+			case OURS:
+				keep(ourDce);
+				return true;
+			case THEIRS:
+				DirCacheEntry e = add(tw.getRawPath(), theirs,
+						DirCacheEntry.STAGE_0, EPOCH, 0);
+				if (e != null) {
+					addToCheckout(currentPath, e, attributes);
+				}
+				return true;
+			default:
+				result = new MergeResult<>(Collections.emptyList());
+				result.setContainsConflicts(true);
+				break;
 			}
-			String currentPath = tw.getPathString();
 			if (hasSymlink) {
 				if (ignoreConflicts) {
+					result.setContainsConflicts(false);
 					if (((modeT & FileMode.TYPE_MASK) == FileMode.TYPE_FILE)) {
 						DirCacheEntry e = add(tw.getRawPath(), theirs,
 								DirCacheEntry.STAGE_0, EPOCH, 0);
@@ -1319,9 +1362,9 @@ public class ResolveMerger extends ThreeWayMerger {
 						keep(ourDce);
 					}
 				} else {
-					// Record the conflict
 					DirCacheEntry e = addConflict(base, ours, theirs);
 					mergeResults.put(currentPath, result);
+					unmergedPaths.add(currentPath);
 					// If theirs is a file, check it out. In link/file
 					// conflicts, C git prefers the file.
 					if (((modeT & FileMode.TYPE_MASK) == FileMode.TYPE_FILE)
@@ -1330,14 +1373,14 @@ public class ResolveMerger extends ThreeWayMerger {
 					}
 				}
 			} else {
-				updateIndex(base, ours, theirs, result, attributes[T_OURS]);
-			}
-			if (result.containsConflicts() && !ignoreConflicts) {
+				// This is reachable if contentMerge() call above threw BinaryBlobException, so we don't
+				// need to check ignoreConflicts here, since it's already handled above.
+				result.setContainsConflicts(true);
+				addConflict(base, ours, theirs);
 				unmergedPaths.add(currentPath);
+				mergeResults.put(currentPath, result);
 			}
-			workTreeUpdater.markAsModified(currentPath);
-			// Entry is null - only adds the metadata.
-			addToCheckout(currentPath, null, attributes);
+			return true;
 		} else if (modeO != modeT) {
 			// OURS or THEIRS has been deleted
 			if (((modeO != 0 && !tw.idEqual(T_BASE, T_OURS)) || (modeT != 0 && !tw
@@ -1439,15 +1482,21 @@ public class ResolveMerger extends ThreeWayMerger {
 	 * specified as <code>null</code> then an empty text will be used instead.
 	 *
 	 * @param base
+	 *            used to parse base tree
 	 * @param ours
+	 *            used to parse ours tree
 	 * @param theirs
+	 *            used to parse theirs tree
 	 * @param attributes
+	 *            attributes for the different stages
 	 * @param strategy
+	 *            merge strategy
 	 *
 	 * @return the result of the content merge
 	 * @throws BinaryBlobException
 	 *             if any of the blobs looks like a binary blob
 	 * @throws IOException
+	 *             if an IO error occurred
 	 */
 	private MergeResult<RawText> contentMerge(CanonicalTreeParser base,
 			CanonicalTreeParser ours, CanonicalTreeParser theirs,
@@ -1461,9 +1510,24 @@ public class ResolveMerger extends ThreeWayMerger {
 				: getRawText(ours.getEntryObjectId(), attributes[T_OURS]);
 		RawText theirsText = theirs == null ? RawText.EMPTY_TEXT
 				: getRawText(theirs.getEntryObjectId(), attributes[T_THEIRS]);
-		mergeAlgorithm.setContentMergeStrategy(strategy);
+		mergeAlgorithm.setContentMergeStrategy(
+				getAttributesContentMergeStrategy(attributes[T_OURS],
+						strategy));
 		return mergeAlgorithm.merge(RawTextComparator.DEFAULT, baseText,
 				ourText, theirsText);
+	}
+
+	private ContentMergeStrategy getAttributesContentMergeStrategy(
+			Attributes attributes, ContentMergeStrategy strategy) {
+		Attribute attr = attributes.get(Constants.ATTR_MERGE);
+		if (attr != null) {
+			String attrValue = attr.getValue();
+			if (attrValue != null && attrValue
+					.equals(Constants.ATTR_BUILTIN_UNION_MERGE_DRIVER)) {
+				return ContentMergeStrategy.UNION;
+			}
+		}
+		return strategy;
 	}
 
 	private boolean isIndexDirty() {
@@ -1523,11 +1587,17 @@ public class ResolveMerger extends ThreeWayMerger {
 	 * correct stages to the index.
 	 *
 	 * @param base
+	 *            used to parse base tree
 	 * @param ours
+	 *            used to parse ours tree
 	 * @param theirs
+	 *            used to parse theirs tree
 	 * @param result
+	 *            merge result
 	 * @param attributes
+	 *            the file's attributes
 	 * @throws IOException
+	 *             if an IO error occurred
 	 */
 	private void updateIndex(CanonicalTreeParser base,
 			CanonicalTreeParser ours, CanonicalTreeParser theirs,
@@ -1578,6 +1648,7 @@ public class ResolveMerger extends ThreeWayMerger {
 	 *            the files .gitattributes entries
 	 * @return the working tree file to which the merged content was written.
 	 * @throws IOException
+	 *             if an IO error occurred
 	 */
 	private File writeMergedFile(TemporaryBuffer rawMerged,
 			Attributes attributes)
@@ -1662,7 +1733,6 @@ public class ResolveMerger extends ThreeWayMerger {
 		return FileMode.GITLINK.equals(mode);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public ObjectId getResultTreeId() {
 		return (resultTree == null) ? null : resultTree.toObjectId();
@@ -1790,6 +1860,18 @@ public class ResolveMerger extends ThreeWayMerger {
 		this.workingTreeIterator = workingTreeIterator;
 	}
 
+	/**
+	 * Sets the {@link AttributesNodeProvider} to be used by this merger.
+	 *
+	 * @param attributesNodeProvider
+	 *            the attributeNodeProvider to set
+	 * @since 6.10.1
+	 */
+	public void setAttributesNodeProvider(
+			AttributesNodeProvider attributesNodeProvider) {
+		this.attributesNodeProvider = attributesNodeProvider;
+	}
+
 
 	/**
 	 * The resolve conflict way of three way merging
@@ -1822,6 +1904,7 @@ public class ResolveMerger extends ThreeWayMerger {
 	 *            content-merge conflicts.
 	 * @return whether the trees merged cleanly
 	 * @throws java.io.IOException
+	 *             if an IO error occurred
 	 * @since 3.5
 	 */
 	protected boolean mergeTrees(AbstractTreeIterator baseTree,
@@ -1833,6 +1916,9 @@ public class ResolveMerger extends ThreeWayMerger {
 					WorkTreeUpdater.createWorkTreeUpdater(db, dircache);
 			dircache = workTreeUpdater.getLockedDirCache();
 			tw = new NameConflictTreeWalk(db, reader);
+			if (attributesNodeProvider != null) {
+				tw.setAttributesNodeProvider(attributesNodeProvider);
+			}
 
 			tw.addTree(baseTree);
 			tw.setHead(tw.addTree(headTree));
@@ -1881,6 +1967,7 @@ public class ResolveMerger extends ThreeWayMerger {
 	 *            {@link org.eclipse.jgit.merge.ResolveMerger#mergeTrees(AbstractTreeIterator, RevTree, RevTree, boolean)}
 	 * @return Whether the trees merged cleanly.
 	 * @throws java.io.IOException
+	 *             if an IO error occurred
 	 * @since 3.5
 	 */
 	protected boolean mergeTreeWalk(TreeWalk treeWalk, boolean ignoreConflicts)

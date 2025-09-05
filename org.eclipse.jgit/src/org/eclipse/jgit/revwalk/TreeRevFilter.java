@@ -17,7 +17,6 @@ import org.eclipse.jgit.diff.DiffConfig;
 import org.eclipse.jgit.diff.DiffEntry;
 import org.eclipse.jgit.diff.DiffEntry.ChangeType;
 import org.eclipse.jgit.diff.RenameDetector;
-import org.eclipse.jgit.errors.CorruptObjectException;
 import org.eclipse.jgit.errors.IncorrectObjectTypeException;
 import org.eclipse.jgit.errors.MissingObjectException;
 import org.eclipse.jgit.errors.StopWalkException;
@@ -25,6 +24,7 @@ import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.revwalk.filter.RevFilter;
 import org.eclipse.jgit.treewalk.TreeWalk;
 import org.eclipse.jgit.treewalk.filter.TreeFilter;
+import org.eclipse.jgit.treewalk.filter.TreeFilter.MutableBoolean;
 
 /**
  * Filter applying a {@link org.eclipse.jgit.treewalk.filter.TreeFilter} against
@@ -46,6 +46,14 @@ public class TreeRevFilter extends RevFilter {
 	private final int rewriteFlag;
 
 	private final TreeWalk pathFilter;
+
+	private final MutableBoolean changedPathFilterUsed = new MutableBoolean();
+
+	private long changedPathFilterTruePositive = 0;
+
+	private long changedPathFilterFalsePositive = 0;
+
+	private long changedPathFilterNegative = 0;
 
 	/**
 	 * Create a {@link org.eclipse.jgit.revwalk.filter.RevFilter} from a
@@ -92,13 +100,11 @@ public class TreeRevFilter extends RevFilter {
 		this.rewriteFlag = rewriteFlag;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public RevFilter clone() {
 		throw new UnsupportedOperationException();
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public boolean include(RevWalk walker, RevCommit c)
 			throws StopWalkException, MissingObjectException,
@@ -119,17 +125,34 @@ public class TreeRevFilter extends RevFilter {
 		}
 		trees[nParents] = c.getTree();
 		tw.reset(trees);
+		changedPathFilterUsed.reset();
 
 		if (nParents == 1) {
 			// We have exactly one parent. This is a very common case.
 			//
 			int chgs = 0, adds = 0;
-			while (tw.next()) {
-				chgs++;
-				if (tw.getRawMode(0) == 0 && tw.getRawMode(1) != 0) {
-					adds++;
-				} else {
-					break; // no point in looking at this further.
+			TreeFilter tf = pathFilter.getFilter();
+			boolean mustCalculateChgs = tf.shouldTreeWalk(c, walker,
+					changedPathFilterUsed);
+			if (mustCalculateChgs) {
+				while (tw.next()) {
+					chgs++;
+					if (tw.getRawMode(0) == 0 && tw.getRawMode(1) != 0) {
+						adds++;
+					} else {
+						break; // no point in looking at this further.
+					}
+				}
+				if (changedPathFilterUsed.get()) {
+					if (chgs > 0) {
+						changedPathFilterTruePositive++;
+					} else {
+						changedPathFilterFalsePositive++;
+					}
+				}
+			} else {
+				if (changedPathFilterUsed.get()) {
+					changedPathFilterNegative++;
 				}
 			}
 
@@ -149,7 +172,8 @@ public class TreeRevFilter extends RevFilter {
 				// commit. We need to update our filter to its older
 				// name, if we can discover it. Find out what that is.
 				//
-				updateFollowFilter(trees, ((FollowFilter) tw.getFilter()).cfg);
+				updateFollowFilter(trees, ((FollowFilter) tw.getFilter()).cfg,
+						c);
 			}
 			return true;
 		} else if (nParents == 0) {
@@ -241,15 +265,47 @@ public class TreeRevFilter extends RevFilter {
 		return false;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public boolean requiresCommitBody() {
 		return false;
 	}
 
-	private void updateFollowFilter(ObjectId[] trees, DiffConfig cfg)
-			throws MissingObjectException, IncorrectObjectTypeException,
-			CorruptObjectException, IOException {
+	/**
+	 * Return how many times a changed path filter correctly predicted that a
+	 * path was changed in a commit, for statistics gathering purposes.
+	 *
+	 * @return count of true positives
+	 * @since 6.7
+	 */
+	public long getChangedPathFilterTruePositive() {
+		return changedPathFilterTruePositive;
+	}
+
+	/**
+	 * Return how many times a changed path filter wrongly predicted that a path
+	 * was changed in a commit, for statistics gathering purposes.
+	 *
+	 * @return count of false positives
+	 * @since 6.7
+	 */
+	public long getChangedPathFilterFalsePositive() {
+		return changedPathFilterFalsePositive;
+	}
+
+	/**
+	 * Return how many times a changed path filter predicted that a path was not
+	 * changed in a commit (allowing that commit to be skipped), for statistics
+	 * gathering purposes.
+	 *
+	 * @return count of negatives
+	 * @since 6.7
+	 */
+	public long getChangedPathFilterNegative() {
+		return changedPathFilterNegative;
+	}
+
+	private void updateFollowFilter(ObjectId[] trees, DiffConfig cfg,
+			RevCommit commit) throws IOException {
 		TreeWalk tw = pathFilter;
 		FollowFilter oldFilter = (FollowFilter) tw.getFilter();
 		tw.setFilter(TreeFilter.ANY_DIFF);
@@ -266,7 +322,7 @@ public class TreeRevFilter extends RevFilter {
 				newFilter = FollowFilter.create(ent.getOldPath(), cfg);
 				RenameCallback callback = oldFilter.getRenameCallback();
 				if (callback != null) {
-					callback.renamed(ent);
+					callback.renamed(ent, commit);
 					// forward the callback to the new follow filter
 					((FollowFilter) newFilter).setRenameCallback(callback);
 				}

@@ -29,12 +29,15 @@ import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.util.IO;
 import org.eclipse.jgit.util.NB;
 
-class PackIndexV1 extends PackIndex {
+class PackIndexV1 implements PackIndex {
 	private static final int IDX_HDR_LEN = 256 * 4;
 
 	private static final int RECORD_SIZE = 4 + Constants.OBJECT_ID_LENGTH;
 
 	private final long[] idxHeader;
+
+	/** Footer checksum applied on the bottom of the pack file. */
+	protected byte[] packChecksum;
 
 	byte[][] idxdata;
 
@@ -72,13 +75,11 @@ class PackIndexV1 extends PackIndex {
 		IO.readFully(fd, packChecksum, 0, packChecksum.length);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public long getObjectCount() {
 		return objectCnt;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public long getOffset64Count() {
 		long n64 = 0;
@@ -111,7 +112,6 @@ class PackIndexV1 extends PackIndex {
 		return (int) (nthPosition - base);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public ObjectId getObjectId(long nthPosition) {
 		final int levelOne = findLevelOne(nthPosition);
@@ -121,14 +121,13 @@ class PackIndexV1 extends PackIndex {
 	}
 
 	@Override
-	long getOffset(long nthPosition) {
+	public long getOffset(long nthPosition) {
 		final int levelOne = findLevelOne(nthPosition);
 		final int levelTwo = getLevelTwo(nthPosition, levelOne);
 		final int p = (4 + Constants.OBJECT_ID_LENGTH) * levelTwo;
 		return NB.decodeUInt32(idxdata[levelOne], p);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public long findOffset(AnyObjectId objId) {
 		final int levelOne = objId.getFirstByte();
@@ -142,10 +141,9 @@ class PackIndexV1 extends PackIndex {
 		int b1 = data[pos - 3] & 0xff;
 		int b2 = data[pos - 2] & 0xff;
 		int b3 = data[pos - 1] & 0xff;
-		return (((long) b0) << 24) | (b1 << 16) | (b2 << 8) | (b3);
+		return (((long) b0) << 24) | (b1 << 16) | (b2 << 8) | b3;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public int findPosition(AnyObjectId objId) {
 		int levelOne = objId.getFirstByte();
@@ -193,25 +191,21 @@ class PackIndexV1 extends PackIndex {
 		return -1;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public long findCRC32(AnyObjectId objId) {
 		throw new UnsupportedOperationException();
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public boolean hasCRC32Support() {
 		return false;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public Iterator<MutableEntry> iterator() {
-		return new IndexV1Iterator();
+		return new EntriesIteratorV1(this);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public void resolve(Set<ObjectId> matches, AbbreviatedObjectId id,
 			int matchLimit) throws IOException {
@@ -247,32 +241,35 @@ class PackIndexV1 extends PackIndex {
 		return (RECORD_SIZE * mid) + 4;
 	}
 
-	private class IndexV1Iterator extends EntriesIterator {
-		int levelOne;
+	@Override
+	public byte[] getChecksum() {
+		return packChecksum;
+	}
 
-		int levelTwo;
+	private static class EntriesIteratorV1 extends EntriesIterator {
+		private int levelOne;
 
-		@Override
-		protected MutableEntry initEntry() {
-			return new MutableEntry() {
-				@Override
-				protected void ensureId() {
-					idBuffer.fromRaw(idxdata[levelOne], levelTwo
-							- Constants.OBJECT_ID_LENGTH);
-				}
-			};
+		private int levelTwo;
+
+		private final PackIndexV1 packIndex;
+
+		private EntriesIteratorV1(PackIndexV1 packIndex) {
+			super(packIndex.objectCnt);
+			this.packIndex = packIndex;
 		}
 
 		@Override
-		public MutableEntry next() {
-			for (; levelOne < idxdata.length; levelOne++) {
-				if (idxdata[levelOne] == null)
+		protected void readNext() {
+			for (; levelOne < packIndex.idxdata.length; levelOne++) {
+				if (packIndex.idxdata[levelOne] == null)
 					continue;
-				if (levelTwo < idxdata[levelOne].length) {
-					entry.offset = NB.decodeUInt32(idxdata[levelOne], levelTwo);
-					levelTwo += Constants.OBJECT_ID_LENGTH + 4;
-					returnedNumber++;
-					return entry;
+				if (levelTwo < packIndex.idxdata[levelOne].length) {
+					super.setOffset(NB.decodeUInt32(packIndex.idxdata[levelOne],
+							levelTwo));
+					this.levelTwo += Constants.OBJECT_ID_LENGTH + 4;
+					super.setIdBuffer(packIndex.idxdata[levelOne],
+							levelTwo - Constants.OBJECT_ID_LENGTH);
+					return;
 				}
 				levelTwo = 0;
 			}

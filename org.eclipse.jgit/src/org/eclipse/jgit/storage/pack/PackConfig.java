@@ -16,6 +16,7 @@ import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_KEY_BIGFILE_THRESHOLD;
 import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_KEY_BITMAP_CONTIGUOUS_COMMIT_COUNT;
 import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_KEY_BITMAP_DISTANT_COMMIT_SPAN;
 import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_KEY_BITMAP_EXCESSIVE_BRANCH_COUNT;
+import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_KEY_BITMAP_EXCESSIVE_BRANCH_TIP_COUNT;
 import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_KEY_BITMAP_EXCLUDED_REFS_PREFIXES;
 import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_KEY_BITMAP_INACTIVE_BRANCH_AGE_INDAYS;
 import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_KEY_BITMAP_RECENT_COMMIT_COUNT;
@@ -29,6 +30,7 @@ import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_KEY_DEPTH;
 import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_KEY_INDEXVERSION;
 import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_KEY_MIN_BYTES_OBJ_SIZE_INDEX;
 import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_KEY_MIN_SIZE_PREVENT_RACYPACK;
+import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_KEY_PACK_KEPT_OBJECTS;
 import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_KEY_PRESERVE_OLD_PACKS;
 import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_KEY_PRUNE_PRESERVED;
 import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_KEY_REUSE_DELTAS;
@@ -41,13 +43,14 @@ import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_KEY_WINDOW;
 import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_KEY_WINDOW_MEMORY;
 import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_KEY_WRITE_REVERSE_INDEX;
 import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_PACK_SECTION;
+import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_REPACK_SECTION;
 
 import java.time.Duration;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.zip.Deflater;
 
-import org.eclipse.jgit.internal.storage.file.PackIndexWriter;
+import org.eclipse.jgit.internal.storage.file.BasePackIndexWriter;
 import org.eclipse.jgit.lib.Config;
 import org.eclipse.jgit.lib.Repository;
 
@@ -178,6 +181,16 @@ public class PackConfig {
 	 */
 	public static final boolean DEFAULT_BUILD_BITMAPS = true;
 
+
+	/**
+	 * Default value for including objects in packs locked by .keep file when
+	 * repacking: {@value}
+	 *
+	 * @see #setPackKeptObjects(boolean)
+	 * @since 5.13.3
+	 */
+	public static final boolean DEFAULT_PACK_KEPT_OBJECTS = false;
+
 	/**
 	 * Default count of most recent commits to select for bitmaps. Only applies
 	 * when bitmaps are enabled: {@value}
@@ -228,6 +241,17 @@ public class PackConfig {
 	public static final int DEFAULT_BITMAP_EXCESSIVE_BRANCH_COUNT = 100;
 
 	/**
+	 * Default maxium count of branches to create tip bitmaps for. If the number
+	 * of branches exceeds this, then tip bitmaps will only be created for the
+	 * most recently active branches. Branches exceeding this count will receive
+	 * 0 bitmaps: {@value #DEFAULT_BITMAP_EXCESSIVE_BRANCH_TIP_COUNT}
+	 *
+	 * @see #setBitmapExcessiveBranchTipCount(int)
+	 * @since 6.9
+	 */
+	public static final int DEFAULT_BITMAP_EXCESSIVE_BRANCH_TIP_COUNT = Integer.MAX_VALUE;
+
+	/**
 	 * Default age at which a branch is considered inactive. Age is taken as the
 	 * number of days ago that the most recent commit was made to a branch. Only
 	 * affects bitmap processing if bitmaps are enabled and the
@@ -256,8 +280,9 @@ public class PackConfig {
 	public static final int DEFAULT_MIN_BYTES_FOR_OBJ_SIZE_INDEX = -1;
 
 	/**
-	 * Default max time to spend during the search for reuse phase. This
-	 * optimization is disabled by default: {@value}
+	 * Default max time to spend during the search for reuse phase.
+	 *
+	 * This optimization is disabled by default: {@link Integer#MAX_VALUE} seconds.
 	 *
 	 * @see #setSearchForReuseTimeout(Duration)
 	 * @since 5.13
@@ -305,6 +330,8 @@ public class PackConfig {
 
 	private boolean buildBitmaps = DEFAULT_BUILD_BITMAPS;
 
+	private boolean packKeptObjects = DEFAULT_PACK_KEPT_OBJECTS;
+
 	private int bitmapContiguousCommitCount = DEFAULT_BITMAP_CONTIGUOUS_COMMIT_COUNT;
 
 	private int bitmapRecentCommitCount = DEFAULT_BITMAP_RECENT_COMMIT_COUNT;
@@ -314,6 +341,8 @@ public class PackConfig {
 	private int bitmapDistantCommitSpan = DEFAULT_BITMAP_DISTANT_COMMIT_SPAN;
 
 	private int bitmapExcessiveBranchCount = DEFAULT_BITMAP_EXCESSIVE_BRANCH_COUNT;
+
+	private int bitmapExcessiveBranchTipCount = DEFAULT_BITMAP_EXCESSIVE_BRANCH_TIP_COUNT;
 
 	private int bitmapInactiveBranchAgeInDays = DEFAULT_BITMAP_INACTIVE_BRANCH_AGE_IN_DAYS;
 
@@ -386,6 +415,7 @@ public class PackConfig {
 		this.indexVersion = cfg.indexVersion;
 		this.writeReverseIndex = cfg.writeReverseIndex;
 		this.buildBitmaps = cfg.buildBitmaps;
+		this.packKeptObjects = cfg.packKeptObjects;
 		this.bitmapContiguousCommitCount = cfg.bitmapContiguousCommitCount;
 		this.bitmapRecentCommitCount = cfg.bitmapRecentCommitCount;
 		this.bitmapRecentCommitSpan = cfg.bitmapRecentCommitSpan;
@@ -965,7 +995,7 @@ public class PackConfig {
 	 *
 	 * @return the index version, the special version 0 designates the oldest
 	 *         (most compatible) format available for the objects.
-	 * @see PackIndexWriter
+	 * @see BasePackIndexWriter
 	 */
 	public int getIndexVersion() {
 		return indexVersion;
@@ -979,7 +1009,7 @@ public class PackConfig {
 	 * @param version
 	 *            the version to write. The special version 0 designates the
 	 *            oldest (most compatible) format available for the objects.
-	 * @see PackIndexWriter
+	 * @see BasePackIndexWriter
 	 */
 	public void setIndexVersion(int version) {
 		indexVersion = version;
@@ -1037,6 +1067,34 @@ public class PackConfig {
 	 */
 	public void setBuildBitmaps(boolean buildBitmaps) {
 		this.buildBitmaps = buildBitmaps;
+	}
+
+	/**
+	 * Set whether to include objects in `.keep` files when repacking.
+	 *
+	 * <p>
+	 * Default setting: {@value #DEFAULT_PACK_KEPT_OBJECTS}
+	 *
+	 * @param packKeptObjects
+	 *            boolean indicating whether to include objects in `.keep` files
+	 *            when repacking.
+	 * @since 5.13.3
+	 */
+	public void setPackKeptObjects(boolean packKeptObjects) {
+		this.packKeptObjects = packKeptObjects;
+	}
+
+	/**
+	 * True if objects in `.keep` files should be included when repacking.
+	 *
+	 * Default setting: {@value #DEFAULT_PACK_KEPT_OBJECTS}
+	 *
+	 * @return True if objects in `.keep` files should be included when
+	 *         repacking.
+	 * @since 5.13.3
+	 */
+	public boolean isPackKeptObjects() {
+		return packKeptObjects;
 	}
 
 	/**
@@ -1146,7 +1204,8 @@ public class PackConfig {
 	 * a repository exceeds this number and bitmaps are enabled, "inactive"
 	 * branches will have fewer bitmaps than "active" branches.
 	 *
-	 * Default setting: {@value #DEFAULT_BITMAP_EXCESSIVE_BRANCH_COUNT}
+	 * Default setting: {@value #DEFAULT_BITMAP_EXCESSIVE_BRANCH_COUNT}. See
+	 * also {@link #getBitmapExcessiveBranchTipCount}.
 	 *
 	 * @return the count of branches deemed "excessive"
 	 * @since 4.2
@@ -1160,7 +1219,8 @@ public class PackConfig {
 	 * a repository exceeds this number and bitmaps are enabled, "inactive"
 	 * branches will have fewer bitmaps than "active" branches.
 	 *
-	 * Default setting: {@value #DEFAULT_BITMAP_EXCESSIVE_BRANCH_COUNT}
+	 * Default setting: {@value #DEFAULT_BITMAP_EXCESSIVE_BRANCH_COUNT}. See
+	 * also {@link #setBitmapExcessiveBranchTipCount(int)}.
 	 *
 	 * @param count
 	 *            the count of branches deemed "excessive"
@@ -1168,6 +1228,57 @@ public class PackConfig {
 	 */
 	public void setBitmapExcessiveBranchCount(int count) {
 		bitmapExcessiveBranchCount = count;
+	}
+
+	/**
+	 * Get the count of branches deemed "excessive". If the count of branches in
+	 * a repository exceeds this number and bitmaps are enabled, branches
+	 * exceeding this count will have no bitmaps selected. Branches are indexed
+	 * most recent first.
+	 *
+	 * <li>The first {@code DEFAULT_BITMAP_EXCESSIVE_BRANCH_COUNT} most active
+	 * branches have full bitmap coverage.
+	 * <li>The {@code DEFAULT_BITMAP_EXCESSIVE_BRANCH_COUNT} to {@code
+	 * 	  DEFAULT_BITMAP_EXCESSIVE_BRANCH_TIP_COUNT} most active branches have
+	 * only the tip commit covered.
+	 * <li>The remaining branches have no bitmap coverage.
+	 *
+	 * If {@link #getBitmapExcessiveBranchCount()} is greater, then that value
+	 * will override this value.
+	 *
+	 * Default setting: {@value #DEFAULT_BITMAP_EXCESSIVE_BRANCH_TIP_COUNT}
+	 *
+	 * @return the count of branch tips deemed "excessive"
+	 * @since 6.9
+	 */
+	public int getBitmapExcessiveBranchTipCount() {
+		return bitmapExcessiveBranchTipCount;
+	}
+
+	/**
+	 * Get the count of branches deemed "excessive". If the count of branches in
+	 * a repository exceeds this number and bitmaps are enabled, branches
+	 * exceeding this count will have no bitmaps selected. Branches are indexed
+	 * most recent first.
+	 *
+	 * <li>The first {@code DEFAULT_BITMAP_EXCESSIVE_BRANCH_COUNT} most active
+	 * branches have full bitmap coverage.
+	 * <li>The {@code DEFAULT_BITMAP_EXCESSIVE_BRANCH_COUNT} to {@code
+	 * 	  DEFAULT_BITMAP_EXCESSIVE_BRANCH_TIP_COUNT} most active branches have
+	 * only the tip commit covered.
+	 * <li>The remaining branches have no bitmap coverage.
+	 *
+	 * If {@link #getBitmapExcessiveBranchCount()} is greater, then that value
+	 * will override this value.
+	 *
+	 * Default setting: {@value #DEFAULT_BITMAP_EXCESSIVE_BRANCH_TIP_COUNT}
+	 *
+	 * @param count
+	 *            the count of branch tips deemed "excessive"
+	 * @since 6.9
+	 */
+	public void setBitmapExcessiveBranchTipCount(int count) {
+		bitmapExcessiveBranchTipCount = count;
 	}
 
 	/**
@@ -1185,7 +1296,7 @@ public class PackConfig {
 	/**
 	 * Get the max time to spend during the search for reuse phase.
 	 *
-	 * Default setting: {@value #DEFAULT_SEARCH_FOR_REUSE_TIMEOUT}
+	 * Default setting: {@link #DEFAULT_SEARCH_FOR_REUSE_TIMEOUT}
 	 *
 	 * @return the maximum time to spend during the search for reuse phase.
 	 * @since 5.13
@@ -1197,7 +1308,7 @@ public class PackConfig {
 	/**
 	 * Set the age in days that marks a branch as "inactive".
 	 *
-	 * Default setting: {@value #DEFAULT_BITMAP_INACTIVE_BRANCH_AGE_IN_DAYS}
+	 * Default setting: {@link #DEFAULT_BITMAP_INACTIVE_BRANCH_AGE_IN_DAYS}
 	 *
 	 * @param ageInDays
 	 *            the age in days that marks a branch as "inactive"
@@ -1234,7 +1345,7 @@ public class PackConfig {
 	 * @param timeout
 	 *            max time allowed during the search for reuse phase
 	 *
-	 *            Default setting: {@value #DEFAULT_SEARCH_FOR_REUSE_TIMEOUT}
+	 *            Default setting: {@link #DEFAULT_SEARCH_FOR_REUSE_TIMEOUT}
 	 * @since 5.13
 	 */
 	public void setSearchForReuseTimeout(Duration timeout) {
@@ -1325,8 +1436,12 @@ public class PackConfig {
 				getSinglePack()));
 		setWriteReverseIndex(rc.getBoolean(CONFIG_PACK_SECTION,
 				CONFIG_KEY_WRITE_REVERSE_INDEX, isWriteReverseIndex()));
-		setBuildBitmaps(rc.getBoolean(CONFIG_PACK_SECTION,
-				CONFIG_KEY_BUILD_BITMAPS, isBuildBitmaps()));
+		boolean buildBitmapsFromConfig = rc.getBoolean(CONFIG_PACK_SECTION,
+				CONFIG_KEY_BUILD_BITMAPS, isBuildBitmaps());
+		setBuildBitmaps(buildBitmapsFromConfig);
+		setPackKeptObjects(rc.getBoolean(CONFIG_REPACK_SECTION,
+				CONFIG_KEY_PACK_KEPT_OBJECTS,
+				buildBitmapsFromConfig || isPackKeptObjects()));
 		setBitmapContiguousCommitCount(rc.getInt(CONFIG_PACK_SECTION,
 				CONFIG_KEY_BITMAP_CONTIGUOUS_COMMIT_COUNT,
 				getBitmapContiguousCommitCount()));
@@ -1342,6 +1457,9 @@ public class PackConfig {
 		setBitmapExcessiveBranchCount(rc.getInt(CONFIG_PACK_SECTION,
 				CONFIG_KEY_BITMAP_EXCESSIVE_BRANCH_COUNT,
 				getBitmapExcessiveBranchCount()));
+		setBitmapExcessiveBranchTipCount(rc.getInt(CONFIG_PACK_SECTION,
+				CONFIG_KEY_BITMAP_EXCESSIVE_BRANCH_TIP_COUNT,
+				getBitmapExcessiveBranchTipCount()));
 		setBitmapInactiveBranchAgeInDays(rc.getInt(CONFIG_PACK_SECTION,
 				CONFIG_KEY_BITMAP_INACTIVE_BRANCH_AGE_INDAYS,
 				getBitmapInactiveBranchAgeInDays()));
@@ -1369,7 +1487,6 @@ public class PackConfig {
 				CONFIG_KEY_PRUNE_PRESERVED, DEFAULT_PRUNE_PRESERVED));
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public String toString() {
 		final StringBuilder b = new StringBuilder();

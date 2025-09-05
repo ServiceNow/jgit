@@ -33,10 +33,8 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Enumeration;
 import java.util.LinkedHashSet;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Vector;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import org.eclipse.jgit.annotations.NonNull;
@@ -76,6 +74,7 @@ public abstract class Transport implements AutoCloseable {
 		PUSH;
 	}
 
+	// Use weak references to enable unloading dynamically loaded protocols
 	private static final List<WeakReference<TransportProtocol>> protocols =
 		new CopyOnWriteArrayList<>();
 
@@ -108,7 +107,7 @@ public abstract class Transport implements AutoCloseable {
 			String name = prefix + Transport.class.getName();
 			return ldr.getResources(name);
 		} catch (IOException err) {
-			return new Vector<URL>().elements();
+			return Collections.emptyEnumeration();
 		}
 	}
 
@@ -191,11 +190,13 @@ public abstract class Transport implements AutoCloseable {
 	 * @param proto
 	 *            the exact object previously given to register.
 	 */
+	@SuppressWarnings("ModifyCollectionInEnhancedForLoop")
 	public static void unregister(TransportProtocol proto) {
 		for (WeakReference<TransportProtocol> ref : protocols) {
 			TransportProtocol refProto = ref.get();
-			if (refProto == null || refProto == proto)
+			if (refProto == null || refProto == proto) {
 				protocols.remove(ref);
+			}
 		}
 	}
 
@@ -204,15 +205,17 @@ public abstract class Transport implements AutoCloseable {
 	 *
 	 * @return an immutable copy of the currently registered protocols.
 	 */
+	@SuppressWarnings("ModifyCollectionInEnhancedForLoop")
 	public static List<TransportProtocol> getTransportProtocols() {
 		int cnt = protocols.size();
 		List<TransportProtocol> res = new ArrayList<>(cnt);
 		for (WeakReference<TransportProtocol> ref : protocols) {
 			TransportProtocol proto = ref.get();
-			if (proto != null)
+			if (proto != null) {
 				res.add(proto);
-			else
+			} else {
 				protocols.remove(ref);
+			}
 		}
 		return Collections.unmodifiableList(res);
 	}
@@ -508,6 +511,7 @@ public abstract class Transport implements AutoCloseable {
 	 * @throws org.eclipse.jgit.errors.TransportException
 	 *             the transport cannot open this URI.
 	 */
+	@SuppressWarnings("ModifyCollectionInEnhancedForLoop")
 	public static Transport open(Repository local, URIish uri, String remoteName)
 			throws NotSupportedException, TransportException {
 		for (WeakReference<TransportProtocol> ref : protocols) {
@@ -533,11 +537,15 @@ public abstract class Transport implements AutoCloseable {
 	 * Note that the resulting transport instance can not be used for fetching
 	 * or pushing, but only for reading remote refs.
 	 *
-	 * @param uri a {@link org.eclipse.jgit.transport.URIish} object.
+	 * @param uri
+	 *            a {@link org.eclipse.jgit.transport.URIish} object.
 	 * @return new Transport instance
 	 * @throws org.eclipse.jgit.errors.NotSupportedException
+	 *             case that is not supported by JGit
 	 * @throws org.eclipse.jgit.errors.TransportException
+	 *             if transport failed
 	 */
+	@SuppressWarnings("ModifyCollectionInEnhancedForLoop")
 	public static Transport open(URIish uri) throws NotSupportedException, TransportException {
 		for (WeakReference<TransportProtocol> ref : protocols) {
 			TransportProtocol proto = ref.get();
@@ -546,8 +554,9 @@ public abstract class Transport implements AutoCloseable {
 				continue;
 			}
 
-			if (proto.canHandle(uri, null, null))
+			if (proto.canHandle(uri, null, null)) {
 				return proto.open(uri);
+			}
 		}
 
 		throw new NotSupportedException(MessageFormat.format(JGitText.get().URINotSupported, uri));
@@ -584,7 +593,7 @@ public abstract class Transport implements AutoCloseable {
 			Collection<RefSpec> fetchSpecs) throws IOException {
 		if (fetchSpecs == null)
 			fetchSpecs = Collections.emptyList();
-		final List<RemoteRefUpdate> result = new LinkedList<>();
+		final List<RemoteRefUpdate> result = new ArrayList<>();
 		final Collection<RefSpec> procRefs = expandPushWildcardsFor(db, specs);
 
 		for (RefSpec spec : procRefs) {
@@ -1112,28 +1121,8 @@ public abstract class Transport implements AutoCloseable {
 	}
 
 	/**
-	 * @return the blob limit value set with {@link #setFilterBlobLimit} or
-	 *         {@link #setFilterSpec(FilterSpec)}, or -1 if no blob limit value
-	 *         was set
-	 * @since 5.0
-	 * @deprecated Use {@link #getFilterSpec()} instead
-	 */
-	@Deprecated
-	public final long getFilterBlobLimit() {
-		return filterSpec.getBlobLimit();
-	}
-
-	/**
-	 * @param bytes exclude blobs of size greater than this
-	 * @since 5.0
-	 * @deprecated Use {@link #setFilterSpec(FilterSpec)} instead
-	 */
-	@Deprecated
-	public final void setFilterBlobLimit(long bytes) {
-		setFilterSpec(FilterSpec.withBlobLimit(bytes));
-	}
-
-	/**
+	 * Get filter spec
+	 *
 	 * @return the last filter spec set with {@link #setFilterSpec(FilterSpec)},
 	 *         or {@link FilterSpec#NO_FILTER} if it was never invoked.
 	 * @since 5.4
@@ -1143,7 +1132,10 @@ public abstract class Transport implements AutoCloseable {
 	}
 
 	/**
-	 * @param filter a new filter to use for this transport
+	 * Set filter spec
+	 *
+	 * @param filter
+	 *            a new filter to use for this transport
 	 * @since 5.4
 	 */
 	public final void setFilterSpec(@NonNull FilterSpec filter) {
@@ -1192,6 +1184,8 @@ public abstract class Transport implements AutoCloseable {
 	}
 
 	/**
+	 * Get deepen-since
+	 *
 	 * @return the deepen-since for a shallow clone
 	 * @since 6.3
 	 */
@@ -1210,7 +1204,9 @@ public abstract class Transport implements AutoCloseable {
 	}
 
 	/**
-	 * @return the deepen-not for a shallow clone
+	 * Get list of deepen-not
+	 *
+	 * @return the list of deepen-not for a shallow clone
 	 * @since 6.3
 	 */
 	public final List<String> getDeepenNots() {

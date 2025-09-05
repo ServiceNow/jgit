@@ -10,9 +10,9 @@
 
 package org.eclipse.jgit.http.server;
 
-import static javax.servlet.http.HttpServletResponse.SC_FORBIDDEN;
-import static javax.servlet.http.HttpServletResponse.SC_INTERNAL_SERVER_ERROR;
-import static javax.servlet.http.HttpServletResponse.SC_NOT_FOUND;
+import static jakarta.servlet.http.HttpServletResponse.SC_FORBIDDEN;
+import static jakarta.servlet.http.HttpServletResponse.SC_INTERNAL_SERVER_ERROR;
+import static jakarta.servlet.http.HttpServletResponse.SC_NOT_FOUND;
 import static org.eclipse.jgit.http.server.ServletUtils.ATTRIBUTE_HANDLER;
 import static org.eclipse.jgit.transport.GitProtocolConstants.CAPABILITY_SIDE_BAND_64K;
 import static org.eclipse.jgit.transport.SideBandOutputStream.CH_ERROR;
@@ -25,8 +25,8 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 import org.eclipse.jgit.internal.transport.parser.FirstCommand;
 import org.eclipse.jgit.lib.Constants;
@@ -83,6 +83,7 @@ public class GitSmartHttpTools {
 	 * @param req
 	 *            the current HTTP request that may have been made by Git.
 	 * @return true if the request is likely made by a Git client program.
+	 * @since 7.0
 	 */
 	public static boolean isGitClient(HttpServletRequest req) {
 		return isInfoRefs(req) || isUploadPack(req) || isReceivePack(req);
@@ -104,6 +105,7 @@ public class GitSmartHttpTools {
 	 *            HTTP status code to set if the client is not a Git client.
 	 * @throws IOException
 	 *             the response cannot be sent.
+	 * @since 7.0
 	 */
 	public static void sendError(HttpServletRequest req,
 			HttpServletResponse res, int httpStatus) throws IOException {
@@ -136,6 +138,7 @@ public class GitSmartHttpTools {
 	 *            response code.
 	 * @throws IOException
 	 *             the response cannot be sent.
+	 * @since 7.0
 	 */
 	public static void sendError(HttpServletRequest req,
 			HttpServletResponse res, int httpStatus, String textForGit)
@@ -252,9 +255,11 @@ public class GitSmartHttpTools {
 	private static void send(HttpServletRequest req, HttpServletResponse res,
 			String type, byte[] buf, int httpStatus) throws IOException {
 		ServletUtils.consumeRequestBody(req);
-		res.setStatus(httpStatus);
-		res.setContentType(type);
-		res.setContentLength(buf.length);
+		if (!res.isCommitted()) {
+			res.setStatus(httpStatus);
+			res.setContentType(type);
+			res.setContentLength(buf.length);
+		}
 		try (OutputStream os = res.getOutputStream()) {
 			os.write(buf);
 		}
@@ -272,6 +277,7 @@ public class GitSmartHttpTools {
 	 * @throws IllegalArgumentException
 	 *             the request is not a Git client request. See
 	 *             {@link #isGitClient(HttpServletRequest)}.
+	 * @since 7.0
 	 */
 	public static String getResponseContentType(HttpServletRequest req) {
 		if (isInfoRefs(req))
@@ -313,6 +319,7 @@ public class GitSmartHttpTools {
 	 * @param req
 	 *            current request.
 	 * @return true if the request is for the /info/refs service.
+	 * @since 7.0
 	 */
 	public static boolean isInfoRefs(HttpServletRequest req) {
 		return req.getRequestURI().endsWith(INFO_REFS_PATH)
@@ -336,6 +343,7 @@ public class GitSmartHttpTools {
 	 * @param req
 	 *            current request.
 	 * @return true if the request is for the /git-upload-pack handler.
+	 * @since 7.0
 	 */
 	public static boolean isUploadPack(HttpServletRequest req) {
 		return isUploadPack(req.getRequestURI())
@@ -348,6 +356,7 @@ public class GitSmartHttpTools {
 	 * @param req
 	 *            current request.
 	 * @return true if the request is for the /git-receive-pack handler.
+	 * @since 7.0
 	 */
 	public static boolean isReceivePack(HttpServletRequest req) {
 		String uri = req.getRequestURI();

@@ -9,7 +9,7 @@
  */
 package org.eclipse.jgit.http.test;
 
-import javax.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
 
 import org.eclipse.jgit.errors.RepositoryNotFoundException;
 import org.eclipse.jgit.junit.TestRepository;
@@ -41,7 +41,6 @@ public final class TestRepositoryResolver
 		this.repoName = repoName;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public Repository open(HttpServletRequest req, String name)
 			throws RepositoryNotFoundException, ServiceNotEnabledException {

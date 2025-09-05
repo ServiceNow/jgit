@@ -13,19 +13,24 @@ package org.eclipse.jgit.internal.storage.file;
 
 import org.eclipse.jgit.lib.ProgressMonitor;
 import org.eclipse.jgit.lib.Ref;
-import org.eclipse.jgit.lib.RefDatabase;
 import org.eclipse.jgit.lib.RefUpdate;
 import org.eclipse.jgit.revwalk.RevWalk;
 
+import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Snapshotting write-through cache of a {@link RefDirectory}.
  * <p>
  * This is intended to be short-term write-through snapshot based cache used in
- * a request scope to avoid re-reading packed-refs on each read. A future
- * improvement could also snapshot loose refs.
+ * a request scope to avoid re-reading packed-refs on each read and to avoid
+ * refreshing paths to a loose ref that has already been refreshed.
  * <p>
  * Only use this class when concurrent writes from other requests (not using the
  * same instance of SnapshottingRefDirectory) generally need not be visible to
@@ -35,6 +40,7 @@ import java.util.List;
  */
 class SnapshottingRefDirectory extends RefDirectory {
 	final RefDirectory refDb;
+	private final Set<File> refreshedLooseRefDirs = ConcurrentHashMap.newKeySet();
 
 	private volatile boolean isValid;
 
@@ -67,14 +73,28 @@ class SnapshottingRefDirectory extends RefDirectory {
 		return packedRefs.get();
 	}
 
-	/** {@inheritDoc} */
+	@Override
+	void refreshPathToLooseRef(Path refPath) {
+		for (int i = 1; i < refPath.getNameCount(); i++) {
+			File dir = fileFor(refPath.subpath(0, i).toString());
+			if (!refreshedLooseRefDirs.contains(dir)) {
+				try (InputStream stream = Files.newInputStream(dir.toPath())) {
+					// open the dir to refresh attributes (on some NFS clients)
+				} catch (IOException e) {
+					break; // loose ref may not exist
+				} finally {
+					refreshedLooseRefDirs.add(dir);
+				}
+			}
+		}
+	}
+
 	@Override
 	void delete(RefDirectoryUpdate update) throws IOException {
 		refreshSnapshot();
 		super.delete(update);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public RefDirectoryUpdate newUpdate(String name, boolean detach)
 			throws IOException {
@@ -82,19 +102,16 @@ class SnapshottingRefDirectory extends RefDirectory {
 		return super.newUpdate(name, detach);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public PackedBatchRefUpdate newBatchUpdate() {
 		return new SnapshotPackedBatchRefUpdate(this);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public PackedBatchRefUpdate newBatchUpdate(boolean shouldLockLooseRefs) {
 		return new SnapshotPackedBatchRefUpdate(this, shouldLockLooseRefs);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	RefDirectoryUpdate newTemporaryUpdate() throws IOException {
 		refreshSnapshot();
@@ -113,6 +130,7 @@ class SnapshottingRefDirectory extends RefDirectory {
 	}
 
 	synchronized void invalidateSnapshot() {
+		refreshedLooseRefDirs.clear();
 		isValid = false;
 	}
 
@@ -126,6 +144,7 @@ class SnapshottingRefDirectory extends RefDirectory {
 	 * threads use this snapshot.
 	 *
 	 * @throws IOException
+	 *             if an IO error occurred
 	 */
 	private synchronized void refreshSnapshot() throws IOException {
 		compareAndSetPackedRefs(packedRefs.get(), refDb.getPackedRefs());
@@ -148,29 +167,29 @@ class SnapshottingRefDirectory extends RefDirectory {
 	}
 
 	private static <T> T invalidateSnapshotOnError(
-			SupplierThrowsException<T, IOException> f, RefDatabase refDb)
+			SupplierThrowsException<T, IOException> f, SnapshottingRefDirectory refDb)
 			throws IOException {
 		return invalidateSnapshotOnError(a -> f.call(), null, refDb);
 	}
 
 	private static <A, R> R invalidateSnapshotOnError(
 			FunctionThrowsException<A, R, IOException> f, A a,
-			RefDatabase refDb) throws IOException {
+			SnapshottingRefDirectory refDb) throws IOException {
 		try {
 			return f.apply(a);
 		} catch (IOException e) {
-			((SnapshottingRefDirectory) refDb).invalidateSnapshot();
+			refDb.invalidateSnapshot();
 			throw e;
 		}
 	}
 
 	private static <A1, A2, A3> void invalidateSnapshotOnError(
 			TriConsumerThrowsException<A1, A2, A3, IOException> f, A1 a1, A2 a2,
-			A3 a3, RefDatabase refDb) throws IOException {
+			A3 a3, SnapshottingRefDirectory refDb) throws IOException {
 		try {
 			f.accept(a1, a2, a3);
 		} catch (IOException e) {
-			((SnapshottingRefDirectory) refDb).invalidateSnapshot();
+			refDb.invalidateSnapshot();
 			throw e;
 		}
 	}
@@ -182,38 +201,56 @@ class SnapshottingRefDirectory extends RefDirectory {
 
 		@Override
 		public Result forceUpdate() throws IOException {
-			return invalidateSnapshotOnError(() -> super.forceUpdate(),
+			return invalidateSnapshotOnError(super::forceUpdate,
 					getRefDatabase());
 		}
 
 		@Override
 		public Result update() throws IOException {
-			return invalidateSnapshotOnError(() -> super.update(),
-					getRefDatabase());
+			return invalidateSnapshotOnError(super::update, getRefDatabase());
 		}
 
 		@Override
 		public Result update(RevWalk walk) throws IOException {
-			return invalidateSnapshotOnError(rw -> super.update(rw), walk,
+			return invalidateSnapshotOnError(super::update, walk,
 					getRefDatabase());
 		}
 
 		@Override
 		public Result delete() throws IOException {
-			return invalidateSnapshotOnError(() -> super.delete(),
-					getRefDatabase());
+			return invalidateSnapshotOnError(super::delete, getRefDatabase());
 		}
 
 		@Override
 		public Result delete(RevWalk walk) throws IOException {
-			return invalidateSnapshotOnError(rw -> super.delete(rw), walk,
+			return invalidateSnapshotOnError(super::delete, walk,
 					getRefDatabase());
 		}
 
 		@Override
 		public Result link(String target) throws IOException {
-			return invalidateSnapshotOnError(t -> super.link(t), target,
+			return invalidateSnapshotOnError(super::link, target,
 					getRefDatabase());
+		}
+
+		/**
+		 * Invalidate the SnapshottingRefDirectory snapshot after locking the
+		 * ref.
+		 * <p>
+		 * Doing this after locking the ref ensures that the upcoming write is
+		 * not based on a cached value.
+		 *
+		 * @param name
+		 *            the name of the reference.
+		 */
+		@Override
+		protected void doAfterLocking(String name) {
+			getRefDatabase().invalidateSnapshot();
+		}
+
+		@Override
+		public SnapshottingRefDirectory getRefDatabase() {
+			return (SnapshottingRefDirectory) super.getRefDatabase();
 		}
 	}
 
@@ -225,26 +262,30 @@ class SnapshottingRefDirectory extends RefDirectory {
 
 		@Override
 		public RefUpdate.Result rename() throws IOException {
-			return invalidateSnapshotOnError(() -> super.rename(),
-					getRefDirectory());
+			return invalidateSnapshotOnError(super::rename, getRefDirectory());
+		}
+
+		@Override
+		public SnapshottingRefDirectory getRefDirectory() {
+			return (SnapshottingRefDirectory) super.getRefDirectory();
 		}
 	}
 
 	private static class SnapshotPackedBatchRefUpdate
 			extends PackedBatchRefUpdate {
-		SnapshotPackedBatchRefUpdate(RefDirectory refdb) {
-			super(refdb);
+		SnapshotPackedBatchRefUpdate(RefDirectory refDb) {
+			super(refDb);
 		}
 
-		SnapshotPackedBatchRefUpdate(RefDirectory refdb,
+		SnapshotPackedBatchRefUpdate(RefDirectory refDb,
 				boolean shouldLockLooseRefs) {
-			super(refdb, shouldLockLooseRefs);
+			super(refDb, shouldLockLooseRefs);
 		}
 
 		@Override
 		public void execute(RevWalk walk, ProgressMonitor monitor,
 				List<String> options) throws IOException {
-			invalidateSnapshotOnError((rw, m, o) -> super.execute(rw, m, o),
+			invalidateSnapshotOnError(super::execute,
 					walk, monitor, options, getRefDatabase());
 		}
 
@@ -253,6 +294,11 @@ class SnapshottingRefDirectory extends RefDirectory {
 				throws IOException {
 			invalidateSnapshotOnError((rw, m, a3) -> super.execute(rw, m), walk,
 					monitor, null, getRefDatabase());
+		}
+
+		@Override
+		public SnapshottingRefDirectory getRefDatabase() {
+			return (SnapshottingRefDirectory) super.getRefDatabase();
 		}
 	}
 }

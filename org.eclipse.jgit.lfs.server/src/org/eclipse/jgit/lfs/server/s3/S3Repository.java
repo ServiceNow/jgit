@@ -10,7 +10,7 @@
  */
 package org.eclipse.jgit.lfs.server.s3;
 
-import static javax.servlet.http.HttpServletResponse.SC_OK;
+import static jakarta.servlet.http.HttpServletResponse.SC_OK;
 import static org.eclipse.jgit.lfs.server.s3.SignerV4.UNSIGNED_PAYLOAD;
 import static org.eclipse.jgit.lfs.server.s3.SignerV4.X_AMZ_CONTENT_SHA256;
 import static org.eclipse.jgit.lfs.server.s3.SignerV4.X_AMZ_EXPIRES;
@@ -58,7 +58,6 @@ public class S3Repository implements LargeFileRepository {
 		this.s3Config = config;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public Response.Action getDownloadAction(AnyLongObjectId oid) {
 		URL endpointUrl = getObjectUrl(oid);
@@ -75,7 +74,6 @@ public class S3Repository implements LargeFileRepository {
 		return a;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public Response.Action getUploadAction(AnyLongObjectId oid, long size) {
 		cacheObjectMetaData(oid, size);
@@ -95,13 +93,11 @@ public class S3Repository implements LargeFileRepository {
 		return a;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public Action getVerifyAction(AnyLongObjectId id) {
 		return null; // TODO(ms) implement this
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public long getSize(AnyLongObjectId oid) throws IOException {
 		URL endpointUrl = getObjectUrl(oid);
@@ -130,7 +126,7 @@ public class S3Repository implements LargeFileRepository {
 			String contentLengthHeader = conn
 					.getHeaderField(HDR_CONTENT_LENGTH);
 			if (contentLengthHeader != null) {
-				return Integer.parseInt(contentLengthHeader);
+				return Long.parseLong(contentLengthHeader);
 			}
 		}
 		return -1;

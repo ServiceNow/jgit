@@ -73,7 +73,7 @@ public class PushCertificateIdentTest {
 	@Test
 	public void fuzzyCasesMatchPersonIdent() throws Exception {
 		// See RawParseUtils_ParsePersonIdentTest#testParsePersonIdent_fuzzyCases()
-		Date when = new Date(1234567890000l);
+		Date when = new Date(1234567890000L);
 		TimeZone tz = TimeZone.getTimeZone("GMT-7");
 
 		assertMatchesPersonIdent(
@@ -89,7 +89,7 @@ public class PushCertificateIdentTest {
 	@Test
 	public void incompleteCasesMatchPersonIdent() throws Exception {
 		// See RawParseUtils_ParsePersonIdentTest#testParsePersonIdent_incompleteCases()
-		Date when = new Date(1234567890000l);
+		Date when = new Date(1234567890000L);
 		TimeZone tz = TimeZone.getTimeZone("GMT-7");
 
 		assertMatchesPersonIdent(
@@ -136,6 +136,51 @@ public class PushCertificateIdentTest {
 				"Me <me@example.com> 1234567890 ",
 				new PersonIdent("Me", "me@example.com", 0, 0),
 				"Me <me@example.com>");
+	}
+
+	@Test
+	public void timezoneRange_hours() {
+		int HOUR_TO_MS = 60 * 60 * 1000;
+
+		// java.util.TimeZone: Hours must be between 0 to 23
+		PushCertificateIdent hourLimit = PushCertificateIdent
+				.parse("A U. Thor <a_u_thor@example.com> 1218123387 +2300");
+		assertEquals(1380, hourLimit.getTimeZoneOffset());
+		assertEquals(23 * HOUR_TO_MS,
+				hourLimit.getTimeZone().getOffset(1218123387));
+
+		PushCertificateIdent hourDubious = PushCertificateIdent
+				.parse("A U. Thor <a_u_thor@example.com> 1218123387 +2400");
+		assertEquals(1440, hourDubious.getTimeZoneOffset());
+		assertEquals(0, hourDubious.getTimeZone().getOffset(1218123387));
+	}
+
+	@Test
+	public void timezoneRange_minutes() {
+		PushCertificateIdent hourLimit = PushCertificateIdent
+				.parse("A U. Thor <a_u_thor@example.com> 1218123387 +0059");
+		assertEquals(59, hourLimit.getTimeZoneOffset());
+		assertEquals(59 * 60 * 1000,
+				hourLimit.getTimeZone().getOffset(1218123387));
+
+		// This becomes one hour and one minute (!)
+		PushCertificateIdent hourDubious = PushCertificateIdent
+				.parse("A U. Thor <a_u_thor@example.com> 1218123387 +0061");
+		assertEquals(61, hourDubious.getTimeZoneOffset());
+		assertEquals(61 * 60 * 1000,
+				hourDubious.getTimeZone().getOffset(1218123387));
+
+		PushCertificateIdent weirdCase = PushCertificateIdent
+				.parse("A U. Thor <a_u_thor@example.com> 1218123387 +0099");
+		assertEquals(99, weirdCase.getTimeZoneOffset());
+		assertEquals(99 * 60 * 1000,
+				weirdCase.getTimeZone().getOffset(1218123387));
+
+		PushCertificateIdent weirdCase2 = PushCertificateIdent
+				.parse("A U. Thor <a_u_thor@example.com> 1218123387 +0199");
+		assertEquals(60 + 99, weirdCase2.getTimeZoneOffset());
+		assertEquals((60 + 99) * 60 * 1000,
+				weirdCase2.getTimeZone().getOffset(1218123387));
 	}
 
 	private static void assertMatchesPersonIdent(String raw,

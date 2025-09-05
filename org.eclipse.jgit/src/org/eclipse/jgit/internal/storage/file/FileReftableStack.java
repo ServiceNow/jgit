@@ -18,8 +18,10 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.StandardCopyOption;
 import java.security.SecureRandom;
 import java.util.ArrayList;
@@ -27,6 +29,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -39,6 +42,9 @@ import org.eclipse.jgit.internal.storage.reftable.ReftableConfig;
 import org.eclipse.jgit.internal.storage.reftable.ReftableReader;
 import org.eclipse.jgit.internal.storage.reftable.ReftableWriter;
 import org.eclipse.jgit.lib.Config;
+import org.eclipse.jgit.lib.Constants;
+import org.eclipse.jgit.lib.CoreConfig;
+import org.eclipse.jgit.lib.CoreConfig.TrustStat;
 import org.eclipse.jgit.util.FileUtils;
 import org.eclipse.jgit.util.SystemReader;
 
@@ -59,9 +65,12 @@ public class FileReftableStack implements AutoCloseable {
 
 	private List<StackEntry> stack;
 
+	private AtomicReference<FileSnapshot> snapshot = new AtomicReference<>(
+			FileSnapshot.DIRTY);
+
 	private long lastNextUpdateIndex;
 
-	private final File stackPath;
+	private final File tablesListFile;
 
 	private final File reftableDir;
 
@@ -98,11 +107,11 @@ public class FileReftableStack implements AutoCloseable {
 
 	private final CompactionStats stats;
 
+	private final TrustStat trustTablesListStat;
+
 	/**
 	 * Creates a stack corresponding to the list of reftables in the argument
 	 *
-	 * @param stackPath
-	 *            the filename for the stack.
 	 * @param reftableDir
 	 *            the dir holding the tables.
 	 * @param onChange
@@ -112,10 +121,10 @@ public class FileReftableStack implements AutoCloseable {
 	 * @throws IOException
 	 *             on I/O problems
 	 */
-	public FileReftableStack(File stackPath, File reftableDir,
+	public FileReftableStack(File reftableDir,
 			@Nullable Runnable onChange, Supplier<Config> configSupplier)
 			throws IOException {
-		this.stackPath = stackPath;
+		this.tablesListFile = new File(reftableDir, Constants.TABLES_LIST);
 		this.reftableDir = reftableDir;
 		this.stack = new ArrayList<>();
 		this.configSupplier = configSupplier;
@@ -126,6 +135,8 @@ public class FileReftableStack implements AutoCloseable {
 		reload();
 
 		stats = new CompactionStats();
+		trustTablesListStat = configSupplier.get().get(CoreConfig.KEY)
+				.getTrustTablesListStat();
 	}
 
 	CompactionStats getStats() {
@@ -232,7 +243,7 @@ public class FileReftableStack implements AutoCloseable {
 		}
 
 		if (!success) {
-			throw new LockFailedException(stackPath);
+			throw new LockFailedException(tablesListFile);
 		}
 
 		mergedReftable = new MergedReftable(stack.stream()
@@ -246,6 +257,8 @@ public class FileReftableStack implements AutoCloseable {
 	}
 
 	/**
+	 * Get merged reftable
+	 *
 	 * @return the merged reftable
 	 */
 	public MergedReftable getMergedReftable() {
@@ -264,23 +277,27 @@ public class FileReftableStack implements AutoCloseable {
 		 * @param w
 		 *            writer to use
 		 * @throws IOException
+		 *             if an IO error occurred
 		 */
 		void call(ReftableWriter w) throws IOException;
 	}
 
 	private List<String> readTableNames() throws IOException {
+		FileSnapshot old;
 		List<String> names = new ArrayList<>(stack.size() + 1);
-
+		old = snapshot.get();
 		try (BufferedReader br = new BufferedReader(
-				new InputStreamReader(new FileInputStream(stackPath), UTF_8))) {
+				new InputStreamReader(new FileInputStream(tablesListFile), UTF_8))) {
 			String line;
 			while ((line = br.readLine()) != null) {
 				if (!line.isEmpty()) {
 					names.add(line);
 				}
 			}
+			snapshot.compareAndSet(old, FileSnapshot.save(tablesListFile));
 		} catch (FileNotFoundException e) {
 			// file isn't there: empty repository.
+			snapshot.compareAndSet(old, FileSnapshot.MISSING_FILE);
 		}
 		return names;
 	}
@@ -291,9 +308,29 @@ public class FileReftableStack implements AutoCloseable {
 	 *             on IO problem
 	 */
 	boolean isUpToDate() throws IOException {
-		// We could use FileSnapshot to avoid reading the file, but the file is
-		// small so it's probably a minor optimization.
 		try {
+			switch (trustTablesListStat) {
+			case NEVER:
+				break;
+			case AFTER_OPEN:
+				try (InputStream stream = Files
+						.newInputStream(reftableDir.toPath())) {
+					// open the refs/reftable/ directory to refresh attributes
+					// of reftable files and the tables.list file listing their
+					// names (on some NFS clients)
+				} catch (FileNotFoundException | NoSuchFileException e) {
+					// ignore
+				}
+				//$FALL-THROUGH$
+			case ALWAYS:
+				if (!snapshot.get().isModified(tablesListFile)) {
+					return true;
+				}
+				break;
+			case INHERIT:
+				// only used in CoreConfig internally
+				throw new IllegalStateException();
+			}
 			List<String> names = readTableNames();
 			if (names.size() != stack.size()) {
 				return false;
@@ -350,7 +387,7 @@ public class FileReftableStack implements AutoCloseable {
 	 */
 	@SuppressWarnings("nls")
 	public boolean addReftable(Writer w) throws IOException {
-		LockFile lock = new LockFile(stackPath);
+		LockFile lock = new LockFile(tablesListFile);
 		try {
 			if (!lock.lockForAppend()) {
 				return false;
@@ -361,8 +398,7 @@ public class FileReftableStack implements AutoCloseable {
 
 			String fn = filename(nextUpdateIndex(), nextUpdateIndex());
 
-			File tmpTable = File.createTempFile(fn + "_", ".ref",
-					stackPath.getParentFile());
+			File tmpTable = File.createTempFile(fn + "_", ".ref", reftableDir);
 
 			ReftableWriter.Stats s;
 			try (FileOutputStream fos = new FileOutputStream(tmpTable)) {
@@ -416,7 +452,7 @@ public class FileReftableStack implements AutoCloseable {
 		String fn = filename(first, last);
 
 		File tmpTable = File.createTempFile(fn + "_", ".ref", //$NON-NLS-1$//$NON-NLS-2$
-				stackPath.getParentFile());
+				reftableDir);
 		try (FileOutputStream fos = new FileOutputStream(tmpTable)) {
 			ReftableCompactor c = new ReftableCompactor(fos)
 					.setConfig(reftableConfig())
@@ -460,7 +496,7 @@ public class FileReftableStack implements AutoCloseable {
 		if (first >= last) {
 			return true;
 		}
-		LockFile lock = new LockFile(stackPath);
+		LockFile lock = new LockFile(tablesListFile);
 
 		File tmpTable = null;
 		List<LockFile> subtableLocks = new ArrayList<>();
@@ -489,7 +525,7 @@ public class FileReftableStack implements AutoCloseable {
 
 			tmpTable = compactLocked(first, last);
 
-			lock = new LockFile(stackPath);
+			lock = new LockFile(tablesListFile);
 			if (!lock.lock()) {
 				return false;
 			}
@@ -559,6 +595,7 @@ public class FileReftableStack implements AutoCloseable {
 	 * Calculate an approximate log2.
 	 *
 	 * @param sz
+	 *            the number to compute an approximate log2 for
 	 * @return log2
 	 */
 	static int log(long sz) {
@@ -613,6 +650,9 @@ public class FileReftableStack implements AutoCloseable {
 		@Override
 		public boolean equals(Object other) {
 			if (other == null) {
+				return false;
+			}
+			if (!(other instanceof Segment)) {
 				return false;
 			}
 			Segment o = (Segment) other;
@@ -688,6 +728,7 @@ public class FileReftableStack implements AutoCloseable {
 	 * shape.
 	 *
 	 * @throws IOException
+	 *             if an IO error occurred
 	 */
 	private void autoCompact() throws IOException {
 		Optional<Segment> cand = autoCompactCandidate(tableSizes());

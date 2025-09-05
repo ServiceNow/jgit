@@ -25,6 +25,10 @@ class CommitGraphConstants {
 
 	static final int CHUNK_ID_EXTRA_EDGE_LIST = 0x45444745; /* "EDGE" */
 
+	static final int CHUNK_ID_BLOOM_FILTER_INDEX = 0x42494458; /* "BIDX" */
+
+	static final int CHUNK_ID_BLOOM_FILTER_DATA = 0x42444154; /* "BDAT" */
+
 	/**
 	 * First 4 bytes describe the chunk id. Value 0 is a terminating label.
 	 * Other 8 bytes provide the byte-offset in current file for chunk to start.
@@ -41,15 +45,15 @@ class CommitGraphConstants {
 	/** Mask to make the last edgeValue into position */
 	static final int GRAPH_EDGE_LAST_MASK = 0x7fffffff;
 
-	/** EdgeValue & GRAPH_LAST_EDGE != 0 means it is the last edgeValue */
+	/** EdgeValue &amp; GRAPH_LAST_EDGE != 0 means it is the last edgeValue */
 	static final int GRAPH_LAST_EDGE = 0x80000000;
 
 	/** EdgeValue == GRAPH_NO_PARENT means it has no parents */
 	static final int GRAPH_NO_PARENT = 0x70000000;
 
 	/**
-	 * EdgeValue & GRAPH_EXTRA_EDGES_NEEDED != 0 means its other parents are in
-	 * Chunk Extra Edge List
+	 * EdgeValue &amp; GRAPH_EXTRA_EDGES_NEEDED != 0 means its other parents are
+	 * in Chunk Extra Edge List
 	 */
 	static final int GRAPH_EXTRA_EDGES_NEEDED = 0x80000000;
 }

@@ -11,10 +11,15 @@
 package org.eclipse.jgit.treewalk.filter;
 
 import java.io.IOException;
+import java.util.Optional;
+import java.util.Set;
 
+import org.eclipse.jgit.annotations.Nullable;
 import org.eclipse.jgit.dircache.DirCacheIterator;
 import org.eclipse.jgit.errors.IncorrectObjectTypeException;
 import org.eclipse.jgit.errors.MissingObjectException;
+import org.eclipse.jgit.revwalk.RevCommit;
+import org.eclipse.jgit.revwalk.RevWalk;
 import org.eclipse.jgit.treewalk.TreeWalk;
 import org.eclipse.jgit.treewalk.WorkingTreeIterator;
 
@@ -188,10 +193,8 @@ public abstract class TreeFilter {
 	 *             as thrown by {@link #include(TreeWalk)}
 	 * @since 4.7
 	 */
-	public int matchFilter(TreeWalk walker)
-			throws MissingObjectException, IncorrectObjectTypeException,
-			IOException
-	{
+	public int matchFilter(TreeWalk walker) throws MissingObjectException,
+			IncorrectObjectTypeException, IOException {
 		return include(walker) ? 0 : 1;
 	}
 
@@ -210,6 +213,43 @@ public abstract class TreeFilter {
 	public abstract boolean shouldBeRecursive();
 
 	/**
+	 * Return true if the tree entries within this commit require
+	 * {@link #include(TreeWalk)} to correctly determine whether they are
+	 * interesting to report.
+	 * <p>
+	 * Otherwise, all tree entries within this commit are UNINTERESTING for this
+	 * tree filter.
+	 *
+	 * @param c
+	 *            the commit being considered by the TreeFilter.
+	 * @param rw
+	 *            the RevWalk used in retrieving relevant commit data.
+	 * @param cpfUsed
+	 *            if not null, it reports if the changedPathFilter was used in
+	 *            this method
+	 * @return True if the tree entries within c require
+	 *         {@link #include(TreeWalk)}.
+	 * @since 7.3
+	 */
+	public boolean shouldTreeWalk(RevCommit c, RevWalk rw,
+			@Nullable MutableBoolean cpfUsed) {
+		return true;
+	}
+
+	/**
+	 * If this filter checks that a specific set of paths have all been
+	 * modified, returns that set of paths to be checked against a changed path
+	 * filter. Otherwise, returns empty.
+	 *
+	 * @return a set of paths, or empty
+	 * @deprecated use {@code shouldTreeWalk} instead.
+	 */
+	@Deprecated(since = "7.3")
+	public Optional<Set<byte[]>> getPathsBestEffort() {
+		return Optional.empty();
+	}
+
+	/**
 	 * {@inheritDoc}
 	 *
 	 * Clone this tree filter, including its parameters.
@@ -220,7 +260,6 @@ public abstract class TreeFilter {
 	@Override
 	public abstract TreeFilter clone();
 
-	/** {@inheritDoc} */
 	@Override
 	public String toString() {
 		String n = getClass().getName();
@@ -229,5 +268,34 @@ public abstract class TreeFilter {
 			n = n.substring(lastDot + 1);
 		}
 		return n.replace('$', '.');
+	}
+
+	/**
+	 * Mutable wrapper to return a boolean in a function parameter.
+	 *
+	 * @since 7.3
+	 */
+	public static class MutableBoolean {
+		private boolean value;
+
+		/**
+		 * Return the boolean value.
+		 *
+		 * @return The state of the internal boolean value.
+		 */
+		public boolean get() {
+			return value;
+		}
+
+		void orValue(boolean v) {
+			value = value || v;
+		}
+
+		/**
+		 * Reset the boolean value.
+		 */
+		public void reset() {
+			value = false;
+		}
 	}
 }

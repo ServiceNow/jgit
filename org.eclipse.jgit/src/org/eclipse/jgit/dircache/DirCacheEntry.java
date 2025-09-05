@@ -396,33 +396,12 @@ public class DirCacheEntry {
 	 * timestamp. This method tests to see if file was written out at the same
 	 * time as the index.
 	 *
-	 * @param smudge_s
-	 *            seconds component of the index's last modified time.
-	 * @param smudge_ns
-	 *            nanoseconds component of the index's last modified time.
-	 * @return true if extra careful checks should be used.
-	 * @deprecated use {@link #mightBeRacilyClean(Instant)} instead
-	 */
-	@Deprecated
-	public final boolean mightBeRacilyClean(int smudge_s, int smudge_ns) {
-		return mightBeRacilyClean(Instant.ofEpochSecond(smudge_s, smudge_ns));
-	}
-
-	/**
-	 * Is it possible for this entry to be accidentally assumed clean?
-	 * <p>
-	 * The "racy git" problem happens when a work file can be updated faster
-	 * than the filesystem records file modification timestamps. It is possible
-	 * for an application to edit a work file, update the index, then edit it
-	 * again before the filesystem will give the work file a new modification
-	 * timestamp. This method tests to see if file was written out at the same
-	 * time as the index.
-	 *
 	 * @param smudge
 	 *            index's last modified time.
 	 * @return true if extra careful checks should be used.
 	 * @since 5.1.9
 	 */
+	@SuppressWarnings("JavaInstantGetSecondsGetNano")
 	public final boolean mightBeRacilyClean(Instant smudge) {
 		// If the index has a modification time then it came from disk
 		// and was not generated from scratch in memory. In such cases
@@ -652,22 +631,6 @@ public class DirCacheEntry {
 	}
 
 	/**
-	 * Get the cached last modification date of this file, in milliseconds.
-	 * <p>
-	 * One of the indicators that the file has been modified by an application
-	 * changing the working tree is if the last modification time for the file
-	 * differs from the time stored in this entry.
-	 *
-	 * @return last modification time of this file, in milliseconds since the
-	 *         Java epoch (midnight Jan 1, 1970 UTC).
-	 * @deprecated use {@link #getLastModifiedInstant()} instead
-	 */
-	@Deprecated
-	public long getLastModified() {
-		return decodeTS(P_MTIME);
-	}
-
-	/**
 	 * Get the cached last modification date of this file.
 	 * <p>
 	 * One of the indicators that the file has been modified by an application
@@ -679,18 +642,6 @@ public class DirCacheEntry {
 	 */
 	public Instant getLastModifiedInstant() {
 		return decodeTSInstant(P_MTIME);
-	}
-
-	/**
-	 * Set the cached last modification date of this file, using milliseconds.
-	 *
-	 * @param when
-	 *            new cached modification date of the file, in milliseconds.
-	 * @deprecated use {@link #setLastModified(Instant)} instead
-	 */
-	@Deprecated
-	public void setLastModified(long when) {
-		encodeTS(P_MTIME, when);
 	}
 
 	/**
@@ -864,6 +815,8 @@ public class DirCacheEntry {
 	}
 
 	/**
+	 * Whether the entry contains extended flags
+	 *
 	 * @return true if the entry contains extended flags.
 	 */
 	boolean isExtended() {

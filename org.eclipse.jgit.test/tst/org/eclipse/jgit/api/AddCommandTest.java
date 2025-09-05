@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2010, Stefan Lay <stefan.lay@sap.com>
- * Copyright (C) 2010, Christian Halstrick <christian.halstrick@sap.com> and others
+ * Copyright (C) 2010, 2025 Christian Halstrick <christian.halstrick@sap.com> and others
  *
  * This program and the accompanying materials are made available under the
  * terms of the Eclipse Distribution License v. 1.0 which is available at
@@ -13,6 +13,8 @@ package org.eclipse.jgit.api;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.eclipse.jgit.util.FileUtils.RECURSIVE;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.junit.Assume.assumeTrue;
@@ -607,14 +609,14 @@ public class AddCommandTest extends RepositoryTestCase {
 		try (Git git = new Git(db)) {
 			DirCache dc = git.add().addFilepattern("a.txt").call();
 
-			dc.getEntry(0).getObjectId();
+			ObjectId oid = dc.getEntry(0).getObjectId();
 
 			try (PrintWriter writer = new PrintWriter(file, UTF_8.name())) {
 				writer.print("other content");
 			}
 
 			dc = git.add().addFilepattern("a.txt").call();
-
+			assertNotEquals(oid, dc.getEntry(0).getObjectId());
 			assertEquals(
 					"[a.txt, mode:100644, content:other content]",
 					indexState(CONTENT));
@@ -632,7 +634,7 @@ public class AddCommandTest extends RepositoryTestCase {
 		try (Git git = new Git(db)) {
 			DirCache dc = git.add().addFilepattern("a.txt").call();
 
-			dc.getEntry(0).getObjectId();
+			ObjectId oid = dc.getEntry(0).getObjectId();
 
 			git.commit().setMessage("commit a.txt").call();
 
@@ -641,7 +643,7 @@ public class AddCommandTest extends RepositoryTestCase {
 			}
 
 			dc = git.add().addFilepattern("a.txt").call();
-
+			assertNotEquals(oid, dc.getEntry(0).getObjectId());
 			assertEquals(
 					"[a.txt, mode:100644, content:other content]",
 					indexState(CONTENT));
@@ -659,15 +661,17 @@ public class AddCommandTest extends RepositoryTestCase {
 		try (Git git = new Git(db)) {
 			DirCache dc = git.add().addFilepattern("a.txt").call();
 
-			dc.getEntry(0).getObjectId();
+			ObjectId oid = dc.getEntry(0).getObjectId();
 			FileUtils.delete(file);
 
 			// is supposed to do nothing
-			dc = git.add().addFilepattern("a.txt").call();
-
+			dc = git.add().addFilepattern("a.txt").setAll(false).call();
+			assertEquals(oid, dc.getEntry(0).getObjectId());
 			assertEquals(
 					"[a.txt, mode:100644, content:content]",
 					indexState(CONTENT));
+			git.add().addFilepattern("a.txt").call();
+			assertEquals("", indexState(CONTENT));
 		}
 	}
 
@@ -684,15 +688,17 @@ public class AddCommandTest extends RepositoryTestCase {
 
 			git.commit().setMessage("commit a.txt").call();
 
-			dc.getEntry(0).getObjectId();
+			ObjectId oid = dc.getEntry(0).getObjectId();
 			FileUtils.delete(file);
 
 			// is supposed to do nothing
-			dc = git.add().addFilepattern("a.txt").call();
-
+			dc = git.add().addFilepattern("a.txt").setAll(false).call();
+			assertEquals(oid, dc.getEntry(0).getObjectId());
 			assertEquals(
 					"[a.txt, mode:100644, content:content]",
 					indexState(CONTENT));
+			git.add().addFilepattern("a.txt").call();
+			assertEquals("", indexState(CONTENT));
 		}
 	}
 
@@ -878,7 +884,7 @@ public class AddCommandTest extends RepositoryTestCase {
 			}
 		}
 		// Help null pointer analysis.
-		assert lastFile != null;
+		assertNotNull(lastFile);
 		// Wait a bit. If entries are "racily clean", we'll recompute
 		// hashes from the disk files, and then the second add is also slow.
 		// We want to test the normal case.
@@ -962,7 +968,7 @@ public class AddCommandTest extends RepositoryTestCase {
 			// file sub/b.txt is deleted
 			FileUtils.delete(file2);
 
-			git.add().addFilepattern("sub").call();
+			git.add().addFilepattern("sub").setAll(false).call();
 			// change in sub/a.txt is staged
 			// deletion of sub/b.txt is not staged
 			// sub/c.txt is staged
@@ -970,6 +976,12 @@ public class AddCommandTest extends RepositoryTestCase {
 					"[sub/a.txt, mode:100644, content:modified content]" +
 					"[sub/b.txt, mode:100644, content:content b]" +
 					"[sub/c.txt, mode:100644, content:content c]",
+					indexState(CONTENT));
+			git.add().addFilepattern("sub").call();
+			// deletion of sub/b.txt is staged
+			assertEquals(
+					"[sub/a.txt, mode:100644, content:modified content]"
+							+ "[sub/c.txt, mode:100644, content:content c]",
 					indexState(CONTENT));
 		}
 	}
@@ -1259,7 +1271,7 @@ public class AddCommandTest extends RepositoryTestCase {
 					"[git-link-dir, mode:160000]",
 					indexState(0));
 			Set<String> untrackedFiles = git.status().call().getUntracked();
-			assert (untrackedFiles.isEmpty());
+			assertTrue(untrackedFiles.isEmpty());
 		}
 
 	}
@@ -1274,7 +1286,8 @@ public class AddCommandTest extends RepositoryTestCase {
 				ConfigConstants.CONFIG_KEY_DIRNOGITLINKS, true);
 		config.save();
 
-		assert (db.getConfig().get(WorkingTreeOptions.KEY).isDirNoGitLinks());
+		assertTrue(
+				db.getConfig().get(WorkingTreeOptions.KEY).isDirNoGitLinks());
 
 		try (Git git = new Git(db)) {
 			git.add().addFilepattern("nested-repo").call();

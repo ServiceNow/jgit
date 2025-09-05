@@ -24,18 +24,20 @@ class CommitGraphV1 implements CommitGraph {
 
 	private final GraphCommitData commitData;
 
-	CommitGraphV1(GraphObjectIndex index, GraphCommitData commitData) {
+	private final GraphChangedPathFilterData cpfData;
+
+	CommitGraphV1(GraphObjectIndex index, GraphCommitData commitData,
+			GraphChangedPathFilterData cpfData) {
 		this.idx = index;
 		this.commitData = commitData;
+		this.cpfData = cpfData;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public int findGraphPosition(AnyObjectId commit) {
 		return idx.findGraphPosition(commit);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public CommitData getCommitData(int graphPos) {
 		if (graphPos < 0 || graphPos >= getCommitCnt()) {
@@ -44,13 +46,16 @@ class CommitGraphV1 implements CommitGraph {
 		return commitData.getCommitData(graphPos);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public ObjectId getObjectId(int graphPos) {
 		return idx.getObjectId(graphPos);
 	}
 
-	/** {@inheritDoc} */
+	@Override
+	public ChangedPathFilter getChangedPathFilter(int graphPos) {
+		return cpfData.getChangedPathFilter(graphPos);
+	}
+
 	@Override
 	public long getCommitCnt() {
 		return idx.getCommitCnt();

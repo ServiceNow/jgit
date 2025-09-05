@@ -10,17 +10,15 @@
 
 package org.eclipse.jgit.http.server.glue;
 
-import static java.lang.Integer.valueOf;
-
 import java.io.IOException;
 import java.text.MessageFormat;
 
-import javax.servlet.Filter;
-import javax.servlet.FilterChain;
-import javax.servlet.FilterConfig;
-import javax.servlet.ServletException;
-import javax.servlet.ServletRequest;
-import javax.servlet.ServletResponse;
+import jakarta.servlet.Filter;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.FilterConfig;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.ServletRequest;
+import jakarta.servlet.ServletResponse;
 
 import org.eclipse.jgit.http.server.HttpServerText;
 
@@ -45,23 +43,21 @@ public class RegexGroupFilter implements Filter {
 	public RegexGroupFilter(int groupIdx) {
 		if (groupIdx < 1)
 			throw new IllegalArgumentException(MessageFormat.format(
-					HttpServerText.get().invalidIndex, valueOf(groupIdx)));
+					HttpServerText.get().invalidIndex,
+					Integer.valueOf(groupIdx)));
 		this.groupIdx = groupIdx - 1;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public void init(FilterConfig config) throws ServletException {
 		// Do nothing.
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public void destroy() {
 		// Do nothing.
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public void doFilter(final ServletRequest request,
 			final ServletResponse rsp, final FilterChain chain)
@@ -72,7 +68,7 @@ public class RegexGroupFilter implements Filter {
 		else
 			throw new ServletException(MessageFormat.format(
 					HttpServerText.get().invalidRegexGroup,
-					valueOf(groupIdx + 1)));
+					Integer.valueOf(groupIdx + 1)));
 	}
 
 	private static WrappedRequest[] groupsFor(ServletRequest r) {

@@ -23,11 +23,12 @@ import java.nio.charset.UnsupportedCharsetException;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.security.AccessControlException;
-import java.security.AccessController;
-import java.security.PrivilegedAction;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.Locale;
 import java.util.TimeZone;
 import java.util.concurrent.atomic.AtomicReference;
@@ -40,6 +41,7 @@ import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.ObjectChecker;
 import org.eclipse.jgit.lib.StoredConfig;
 import org.eclipse.jgit.storage.file.FileBasedConfig;
+import org.eclipse.jgit.storage.file.UserConfigFile;
 import org.eclipse.jgit.util.time.MonotonicClock;
 import org.eclipse.jgit.util.time.MonotonicSystemClock;
 import org.slf4j.Logger;
@@ -99,7 +101,7 @@ public abstract class SystemReader {
 			String envValue = null;
 			try {
 				envValue = System.getenv(variable);
-			} catch (AccessControlException ex) {
+			} catch (Exception ex) {
 				// do nothing
 			}
 
@@ -113,11 +115,13 @@ public abstract class SystemReader {
 
 		@Override
 		public FileBasedConfig openSystemConfig(Config parent, FS fs) {
-			File configFile = fs.getGitSystemConfig();
-			if (configFile != null && StringUtils
+			if (StringUtils
 					.isEmptyOrNull(getenv(Constants.GIT_CONFIG_NOSYSTEM_KEY))) {
+				File configFile = fs.getGitSystemConfig();
+				if (configFile != null) {
 					return new FileBasedConfig(parent, configFile, fs);
-			}
+				}
+				}
 			return new FileBasedConfig(parent, null, fs) {
 				@Override
 				public void load() {
@@ -134,28 +138,20 @@ public abstract class SystemReader {
 
 		@Override
 		public FileBasedConfig openUserConfig(Config parent, FS fs) {
-			return new FileBasedConfig(parent, new File(fs.userHome(), ".gitconfig"), //$NON-NLS-1$
-					fs);
-		}
-
-		private Path getXDGConfigHome(FS fs) {
-			String configHomePath = getenv(Constants.XDG_CONFIG_HOME);
-			if (StringUtils.isEmptyOrNull(configHomePath)) {
-				configHomePath = new File(fs.userHome(), ".config") //$NON-NLS-1$
-						.getAbsolutePath();
+			File homeFile = new File(fs.userHome(), ".gitconfig"); //$NON-NLS-1$
+			Path xdgPath = getXdgConfigDirectory(fs);
+			if (xdgPath != null) {
+				Path configPath = xdgPath.resolve("git") //$NON-NLS-1$
+						.resolve(Constants.CONFIG);
+				return new UserConfigFile(parent, homeFile, configPath.toFile(),
+						fs);
 			}
-			try {
-				return Paths.get(configHomePath);
-			} catch (InvalidPathException e) {
-				LOG.error(JGitText.get().logXDGConfigHomeInvalid,
-						configHomePath, e);
-			}
-			return null;
+			return new FileBasedConfig(parent, homeFile, fs);
 		}
 
 		@Override
 		public FileBasedConfig openJGitConfig(Config parent, FS fs) {
-			Path xdgPath = getXDGConfigHome(fs);
+			Path xdgPath = getXdgConfigDirectory(fs);
 			if (xdgPath != null) {
 				Path configPath = xdgPath.resolve("jgit") //$NON-NLS-1$
 						.resolve(Constants.CONFIG);
@@ -186,8 +182,84 @@ public abstract class SystemReader {
 		}
 
 		@Override
+		public Instant now() {
+			return Instant.now();
+		}
+
+		@Override
 		public int getTimezone(long when) {
 			return getTimeZone().getOffset(when) / (60 * 1000);
+		}
+	}
+
+	/**
+	 * Delegating SystemReader. Reduces boiler-plate code applications need to
+	 * implement when overriding only a few of the SystemReader's methods.
+	 *
+	 * @since 6.9
+	 */
+	public static class Delegate extends SystemReader {
+
+		private final SystemReader delegate;
+
+		/**
+		 * Create a delegating system reader
+		 *
+		 * @param delegate
+		 *            the system reader to delegate to
+		 */
+		public Delegate(SystemReader delegate) {
+			this.delegate = delegate;
+		}
+
+		@Override
+		public String getHostname() {
+			return delegate.getHostname();
+		}
+
+		@Override
+		public String getenv(String variable) {
+			return delegate.getenv(variable);
+		}
+
+		@Override
+		public String getProperty(String key) {
+			return delegate.getProperty(key);
+		}
+
+		@Override
+		public FileBasedConfig openUserConfig(Config parent, FS fs) {
+			return delegate.openUserConfig(parent, fs);
+		}
+
+		@Override
+		public FileBasedConfig openSystemConfig(Config parent, FS fs) {
+			return delegate.openSystemConfig(parent, fs);
+		}
+
+		@Override
+		public FileBasedConfig openJGitConfig(Config parent, FS fs) {
+			return delegate.openJGitConfig(parent, fs);
+		}
+
+		@Override
+		public long getCurrentTime() {
+			return delegate.getCurrentTime();
+		}
+
+		@Override
+		public Instant now() {
+			return delegate.now();
+		}
+
+		@Override
+		public int getTimezone(long when) {
+			return delegate.getTimezone(when);
+		}
+
+		@Override
+		public ZoneOffset getTimeZoneAt(Instant when) {
+			return delegate.getTimeZoneAt(when);
 		}
 	}
 
@@ -401,6 +473,66 @@ public abstract class SystemReader {
 	}
 
 	/**
+	 * Gets the directory denoted by environment variable XDG_CONFIG_HOME. If
+	 * the variable is not set or empty, return a path for
+	 * {@code $HOME/.config}.
+	 *
+	 * @param fileSystem
+	 *            {@link FS} to get the user's home directory
+	 * @return a {@link Path} denoting the directory, which may exist or not, or
+	 *         {@code null} if the environment variable is not set and there is
+	 *         no home directory, or the path is invalid.
+	 * @since 6.7
+	 */
+	public Path getXdgConfigDirectory(FS fileSystem) {
+		String configHomePath = getenv(Constants.XDG_CONFIG_HOME);
+		if (StringUtils.isEmptyOrNull(configHomePath)) {
+			File home = fileSystem.userHome();
+			if (home == null) {
+				return null;
+			}
+			configHomePath = new File(home, ".config").getAbsolutePath(); //$NON-NLS-1$
+		}
+		try {
+			return Paths.get(configHomePath);
+		} catch (InvalidPathException e) {
+			LOG.error(JGitText.get().logXDGConfigHomeInvalid, configHomePath,
+					e);
+		}
+		return null;
+	}
+
+	/**
+	 * Gets the directory denoted by environment variable XDG_CACHE_HOME. If
+	 * the variable is not set or empty, return a path for
+	 * {@code $HOME/.cache}.
+	 *
+	 * @param fileSystem
+	 *            {@link FS} to get the user's home directory
+	 * @return a {@link Path} denoting the directory, which may exist or not, or
+	 *         {@code null} if the environment variable is not set and there is
+	 *         no home directory, or the path is invalid.
+	 * @since 7.3
+	 */
+	public Path getXdgCacheDirectory(FS fileSystem) {
+		String cacheHomePath = getenv(Constants.XDG_CACHE_HOME);
+		if (StringUtils.isEmptyOrNull(cacheHomePath)) {
+			File home = fileSystem.userHome();
+			if (home == null) {
+				return null;
+			}
+			cacheHomePath = new File(home, ".cache").getAbsolutePath(); //$NON-NLS-1$
+		}
+		try {
+			return Paths.get(cacheHomePath);
+		} catch (InvalidPathException e) {
+			LOG.error(JGitText.get().logXDGCacheHomeInvalid, cacheHomePath,
+					e);
+		}
+		return null;
+	}
+
+	/**
 	 * Update config and its parents if they seem modified
 	 *
 	 * @param config
@@ -429,8 +561,35 @@ public abstract class SystemReader {
 	 * Get the current system time
 	 *
 	 * @return the current system time
+	 *
+	 * @deprecated Use {@link #now()}
 	 */
+	@Deprecated(since = "7.1")
 	public abstract long getCurrentTime();
+
+	/**
+	 * Get the current system time
+	 *
+	 * @return the current system time
+	 *
+	 * @since 7.1
+	 */
+	public Instant now() {
+		// Subclasses overriding getCurrentTime should keep working
+		// TODO(ifrade): Once we remove getCurrentTime, use Instant.now()
+		return Instant.ofEpochMilli(getCurrentTime());
+	}
+
+	/**
+	 * Get "now" as civil time, in the System timezone
+	 *
+	 * @return the current system time
+	 *
+	 * @since 7.1
+	 */
+	public LocalDateTime civilNow() {
+		return LocalDateTime.ofInstant(now(), getTimeZoneId());
+	}
 
 	/**
 	 * Get clock instance preferred by this system.
@@ -448,17 +607,45 @@ public abstract class SystemReader {
 	 * @param when
 	 *            a system timestamp
 	 * @return the local time zone
+	 *
+	 * @deprecated Use {@link #getTimeZoneAt(Instant)} instead.
 	 */
+	@Deprecated(since = "7.1")
 	public abstract int getTimezone(long when);
+
+	/**
+	 * Get the local time zone offset at "when" time
+	 *
+	 * @param when
+	 *            a system timestamp
+	 * @return the local time zone
+	 * @since 7.1
+	 */
+	public ZoneOffset getTimeZoneAt(Instant when) {
+		return getTimeZoneId().getRules().getOffset(when);
+	}
 
 	/**
 	 * Get system time zone, possibly mocked for testing
 	 *
 	 * @return system time zone, possibly mocked for testing
 	 * @since 1.2
+	 *
+	 * @deprecated Use {@link #getTimeZoneId()}
 	 */
+	@Deprecated(since = "7.1")
 	public TimeZone getTimeZone() {
 		return TimeZone.getDefault();
+	}
+
+	/**
+	 * Get system time zone, possibly mocked for testing
+	 *
+	 * @return system time zone, possibly mocked for testing
+	 * @since 7.1
+	 */
+	public ZoneId getTimeZoneId() {
+		return ZoneId.systemDefault();
 	}
 
 	/**
@@ -596,9 +783,7 @@ public abstract class SystemReader {
 	}
 
 	private String getOsName() {
-		return AccessController.doPrivileged(
-				(PrivilegedAction<String>) () -> getProperty("os.name") //$NON-NLS-1$
-		);
+		return getProperty("os.name"); //$NON-NLS-1$
 	}
 
 	/**

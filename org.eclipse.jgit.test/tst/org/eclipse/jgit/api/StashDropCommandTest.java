@@ -69,8 +69,7 @@ public class StashDropCommandTest extends RepositoryTestCase {
 		RevCommit stashed = git.stashCreate().call();
 		assertNotNull(stashed);
 		stashRef = git.getRepository().exactRef(Constants.R_STASH);
-		assertEquals(stashed,
-				git.getRepository().exactRef(Constants.R_STASH).getObjectId());
+		assertEquals(stashed, stashRef.getObjectId());
 		try {
 			assertNull(git.stashDrop().setStashRef(100).call());
 			fail("Exception not thrown");
@@ -88,14 +87,13 @@ public class StashDropCommandTest extends RepositoryTestCase {
 		RevCommit stashed = git.stashCreate().call();
 		assertNotNull(stashed);
 		stashRef = git.getRepository().exactRef(Constants.R_STASH);
-		assertEquals(stashed,
-				git.getRepository().exactRef(Constants.R_STASH).getObjectId());
+		assertEquals(stashed, stashRef.getObjectId());
 		assertNull(git.stashDrop().call());
 		stashRef = git.getRepository().exactRef(Constants.R_STASH);
 		assertNull(stashRef);
 
-		ReflogReader reader = git.getRepository().getReflogReader(
-				Constants.R_STASH);
+		ReflogReader reader = git.getRepository().getRefDatabase()
+				.getReflogReader(Constants.R_STASH);
 		assertNull(reader);
 	}
 
@@ -122,8 +120,8 @@ public class StashDropCommandTest extends RepositoryTestCase {
 		assertNull(git.stashDrop().setAll(true).call());
 		assertNull(git.getRepository().exactRef(Constants.R_STASH));
 
-		ReflogReader reader = git.getRepository().getReflogReader(
-				Constants.R_STASH);
+		ReflogReader reader = git.getRepository().getRefDatabase()
+				.getReflogReader(Constants.R_STASH);
 		assertNull(reader);
 	}
 
@@ -152,8 +150,8 @@ public class StashDropCommandTest extends RepositoryTestCase {
 		assertNotNull(stashRef);
 		assertEquals(firstStash, stashRef.getObjectId());
 
-		ReflogReader reader = git.getRepository().getReflogReader(
-				Constants.R_STASH);
+		ReflogReader reader = git.getRepository().getRefDatabase()
+				.getReflogReader(Constants.R_STASH);
 		List<ReflogEntry> entries = reader.getReverseEntries();
 		assertEquals(1, entries.size());
 		assertEquals(ObjectId.zeroId(), entries.get(0).getOldId());
@@ -194,8 +192,8 @@ public class StashDropCommandTest extends RepositoryTestCase {
 		assertNotNull(stashRef);
 		assertEquals(thirdStash, stashRef.getObjectId());
 
-		ReflogReader reader = git.getRepository().getReflogReader(
-				Constants.R_STASH);
+		ReflogReader reader = git.getRepository().getRefDatabase()
+				.getReflogReader(Constants.R_STASH);
 		List<ReflogEntry> entries = reader.getReverseEntries();
 		assertEquals(2, entries.size());
 		assertEquals(ObjectId.zeroId(), entries.get(1).getOldId());
@@ -252,8 +250,8 @@ public class StashDropCommandTest extends RepositoryTestCase {
 		assertNotNull(stashRef);
 		assertEquals(thirdStash, stashRef.getObjectId());
 
-		ReflogReader reader = git.getRepository().getReflogReader(
-				Constants.R_STASH);
+		ReflogReader reader = git.getRepository().getRefDatabase()
+				.getReflogReader(Constants.R_STASH);
 		List<ReflogEntry> entries = reader.getReverseEntries();
 		assertEquals(2, entries.size());
 		assertEquals(ObjectId.zeroId(), entries.get(1).getOldId());

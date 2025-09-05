@@ -70,7 +70,6 @@ class BenchmarkReftable extends TextBuiltin {
 	@Argument(index = 1)
 	private String reftablePath;
 
-	/** {@inheritDoc} */
 	@Override
 	protected void run() throws Exception {
 		switch (test) {
@@ -108,13 +107,12 @@ class BenchmarkReftable extends TextBuiltin {
 	@SuppressWarnings({ "nls", "boxing" })
 	private void writeStack() throws Exception {
 		File dir = new File(reftablePath);
-		File stackFile = new File(reftablePath + ".stack");
 
 		dir.mkdirs();
 
 		long start = System.currentTimeMillis();
-		try (FileReftableStack stack = new FileReftableStack(stackFile, dir,
-				null, () -> new Config())) {
+		try (FileReftableStack stack = new FileReftableStack(dir, null,
+				() -> new Config())) {
 
 			List<Ref> refs = readLsRemote().asList();
 			for (Ref r : refs) {

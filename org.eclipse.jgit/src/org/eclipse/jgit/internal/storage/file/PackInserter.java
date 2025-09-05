@@ -77,6 +77,7 @@ import org.eclipse.jgit.errors.LargeObjectException;
 import org.eclipse.jgit.errors.MissingObjectException;
 import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.internal.storage.pack.PackExt;
+import org.eclipse.jgit.internal.storage.pack.PackIndexWriter;
 import org.eclipse.jgit.lib.AbbreviatedObjectId;
 import org.eclipse.jgit.lib.AnyObjectId;
 import org.eclipse.jgit.lib.Constants;
@@ -150,7 +151,6 @@ public class PackInserter extends ObjectInserter {
 		return buffer().length;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public ObjectId insert(int type, byte[] data, int off, int len)
 			throws IOException {
@@ -169,7 +169,6 @@ public class PackInserter extends ObjectInserter {
 		return endObject(id, offset);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public ObjectId insert(int type, long len, InputStream in)
 			throws IOException {
@@ -243,19 +242,16 @@ public class PackInserter extends ObjectInserter {
 		return 12;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public PackParser newPackParser(InputStream in) {
 		throw new UnsupportedOperationException();
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public ObjectReader newReader() {
 		return new Reader();
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public void flush() throws IOException {
 		if (tmpPack == null) {
@@ -325,7 +321,8 @@ public class PackInserter extends ObjectInserter {
 	private static void writePackIndex(File idx, byte[] packHash,
 			List<PackedObjectInfo> list) throws IOException {
 		try (OutputStream os = new FileOutputStream(idx)) {
-			PackIndexWriter w = PackIndexWriter.createVersion(os, INDEX_VERSION);
+			PackIndexWriter w = BasePackIndexWriter.createVersion(os,
+					INDEX_VERSION);
 			w.write(list, packHash);
 		}
 	}
@@ -340,7 +337,6 @@ public class PackInserter extends ObjectInserter {
 		return ObjectId.fromRaw(md.digest());
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public void close() {
 		try {

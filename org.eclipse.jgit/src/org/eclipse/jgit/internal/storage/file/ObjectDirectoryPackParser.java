@@ -28,6 +28,7 @@ import java.util.zip.Deflater;
 import org.eclipse.jgit.errors.LockFailedException;
 import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.internal.storage.pack.PackExt;
+import org.eclipse.jgit.internal.storage.pack.PackIndexWriter;
 import org.eclipse.jgit.lib.AnyObjectId;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.CoreConfig;
@@ -110,7 +111,7 @@ public class ObjectDirectoryPackParser extends PackParser {
 	 * @param version
 	 *            the version to write. The special version 0 designates the
 	 *            oldest (most compatible) format available for the objects.
-	 * @see PackIndexWriter
+	 * @see BasePackIndexWriter
 	 */
 	public void setIndexVersion(int version) {
 		indexVersion = version;
@@ -142,7 +143,6 @@ public class ObjectDirectoryPackParser extends PackParser {
 		return newPack;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public long getPackSize() {
 		if (newPack == null)
@@ -158,7 +158,6 @@ public class ObjectDirectoryPackParser extends PackParser {
 		return size;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public PackLock parse(ProgressMonitor receiving, ProgressMonitor resolving)
 			throws IOException {
@@ -193,40 +192,34 @@ public class ObjectDirectoryPackParser extends PackParser {
 		}
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	protected void onPackHeader(long objectCount) throws IOException {
 		// Ignored, the count is not required.
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	protected void onBeginWholeObject(long streamPosition, int type,
 			long inflatedSize) throws IOException {
 		crc.reset();
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	protected void onEndWholeObject(PackedObjectInfo info) throws IOException {
 		info.setCRC((int) crc.getValue());
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	protected void onBeginOfsDelta(long streamPosition,
 			long baseStreamPosition, long inflatedSize) throws IOException {
 		crc.reset();
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	protected void onBeginRefDelta(long streamPosition, AnyObjectId baseId,
 			long inflatedSize) throws IOException {
 		crc.reset();
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	protected UnresolvedDelta onEndDelta() throws IOException {
 		UnresolvedDelta delta = new UnresolvedDelta();
@@ -234,35 +227,30 @@ public class ObjectDirectoryPackParser extends PackParser {
 		return delta;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	protected void onInflatedObjectData(PackedObjectInfo obj, int typeCode,
 			byte[] data) throws IOException {
 		// ObjectDirectory ignores this event.
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	protected void onObjectHeader(Source src, byte[] raw, int pos, int len)
 			throws IOException {
 		crc.update(raw, pos, len);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	protected void onObjectData(Source src, byte[] raw, int pos, int len)
 			throws IOException {
 		crc.update(raw, pos, len);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	protected void onStoreStream(byte[] raw, int pos, int len)
 			throws IOException {
 		out.write(raw, pos, len);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	protected void onPackFooter(byte[] hash) throws IOException {
 		packEnd = out.getFilePointer();
@@ -271,7 +259,6 @@ public class ObjectDirectoryPackParser extends PackParser {
 		packHash = hash;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	protected ObjectTypeAndSize seekDatabase(UnresolvedDelta delta,
 			ObjectTypeAndSize info) throws IOException {
@@ -280,7 +267,6 @@ public class ObjectDirectoryPackParser extends PackParser {
 		return readObjectHeader(info);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	protected ObjectTypeAndSize seekDatabase(PackedObjectInfo obj,
 			ObjectTypeAndSize info) throws IOException {
@@ -289,13 +275,11 @@ public class ObjectDirectoryPackParser extends PackParser {
 		return readObjectHeader(info);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	protected int readDatabase(byte[] dst, int pos, int cnt) throws IOException {
 		return out.read(dst, pos, cnt);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	protected boolean checkCRC(int oldCRC) {
 		return oldCRC == (int) crc.getValue();
@@ -313,7 +297,6 @@ public class ObjectDirectoryPackParser extends PackParser {
 			tmpPack.deleteOnExit();
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	protected boolean onAppendBase(final int typeCode, final byte[] data,
 			final PackedObjectInfo info) throws IOException {
@@ -356,7 +339,6 @@ public class ObjectDirectoryPackParser extends PackParser {
 		return true;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	protected void onEndThinPack() throws IOException {
 		final byte[] buf = buffer();
@@ -405,9 +387,9 @@ public class ObjectDirectoryPackParser extends PackParser {
 		try (FileOutputStream os = new FileOutputStream(tmpIdx)) {
 			final PackIndexWriter iw;
 			if (indexVersion <= 0)
-				iw = PackIndexWriter.createOldestPossible(os, list);
+				iw = BasePackIndexWriter.createOldestPossible(os, list);
 			else
-				iw = PackIndexWriter.createVersion(os, indexVersion);
+				iw = BasePackIndexWriter.createVersion(os, indexVersion);
 			iw.write(list, packHash);
 			os.getChannel().force(true);
 		}

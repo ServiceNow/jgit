@@ -38,6 +38,8 @@ public class RepoProject implements Comparable<RepoProject> {
 	private final Set<String> groups;
 	private final List<CopyFile> copyfiles;
 	private final List<LinkFile> linkfiles;
+	private String upstream;
+	private String destBranch;
 	private String recommendShallow;
 	private String url;
 	private String defaultRevision;
@@ -93,6 +95,7 @@ public class RepoProject implements Comparable<RepoProject> {
 		 * Do the copy file action.
 		 *
 		 * @throws IOException
+		 *             if an IO error occurred
 		 */
 		public void copy() throws IOException {
 			File srcFile = new File(repo.getWorkTree(),
@@ -180,7 +183,7 @@ public class RepoProject implements Comparable<RepoProject> {
 	 */
 	public RepoProject(String name, String path, String revision,
 			String remote, String groupsParam) {
-		this(name, path, revision, remote, new HashSet<String>(), null);
+		this(name, path, revision, remote, new HashSet<>(), null);
 		if (groupsParam != null && groupsParam.length() > 0)
 			this.setGroups(groupsParam);
 	}
@@ -388,6 +391,57 @@ public class RepoProject implements Comparable<RepoProject> {
 		this.linkfiles.clear();
 	}
 
+	/**
+	 * Return the upstream attribute of the project
+	 *
+	 * @return the upstream value if present, null otherwise.
+	 *
+	 * @since 6.10
+	 */
+	public String getUpstream() {
+		return this.upstream;
+	}
+
+	/**
+	 * Return the dest-branch attribute of the project
+	 *
+	 * @return the dest-branch value if present, null otherwise.
+	 *
+	 * @since 6.10
+	 */
+	public String getDestBranch() {
+		return this.destBranch;
+	}
+
+	/**
+	 * Set the upstream attribute of the project
+	 *
+	 * Name of the git ref in which a sha1 can be found, when the revision is a
+	 * sha1.
+	 *
+	 * @param upstream
+	 *            value of the attribute in the manifest
+	 *
+	 * @since 6.10
+	 */
+	public void setUpstream(String upstream) {
+		this.upstream = upstream;
+	}
+
+	/**
+	 * Set the dest-branch attribute of the project
+	 *
+	 * Name of a Git branch.
+	 *
+	 * @param destBranch
+	 *            value of the attribute in the manifest
+	 *
+	 * @since 6.10
+	 */
+	public void setDestBranch(String destBranch) {
+		this.destBranch = destBranch;
+	}
+
 	private String getPathWithSlash() {
 		if (path.endsWith("/")) { //$NON-NLS-1$
 			return path;
@@ -418,7 +472,6 @@ public class RepoProject implements Comparable<RepoProject> {
 		return thatPath.startsWith(getPathWithSlash());
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public boolean equals(Object o) {
 		if (o instanceof RepoProject) {
@@ -428,13 +481,11 @@ public class RepoProject implements Comparable<RepoProject> {
 		return false;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public int hashCode() {
 		return this.getPathWithSlash().hashCode();
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public int compareTo(RepoProject that) {
 		return this.getPathWithSlash().compareTo(that.getPathWithSlash());

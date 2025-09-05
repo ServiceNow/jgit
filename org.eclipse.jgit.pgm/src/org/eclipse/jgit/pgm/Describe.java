@@ -44,10 +44,12 @@ class Describe extends TextBuiltin {
 	@Option(name = "--match", usage = "usage_Match", metaVar = "metaVar_pattern")
 	private List<String> patterns = new ArrayList<>();
 
+	@Option(name = "--exclude", usage = "usage_Exclude", metaVar = "metaVar_pattern")
+	private List<String> excludes = new ArrayList<>();
+
 	@Option(name = "--abbrev", usage = "usage_Abbrev")
 	private Integer abbrev;
 
-	/** {@inheritDoc} */
 	@Override
 	protected void run() {
 		try (Git git = new Git(db)) {
@@ -60,6 +62,7 @@ class Describe extends TextBuiltin {
 			cmd.setTags(useTags);
 			cmd.setAlways(always);
 			cmd.setMatch(patterns.toArray(new String[0]));
+			cmd.setExclude(excludes.toArray(new String[0]));
 			if (abbrev != null) {
 				cmd.setAbbrev(abbrev.intValue());
 			}

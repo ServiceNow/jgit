@@ -22,6 +22,11 @@ class LocalObjectRepresentation extends StoredObjectRepresentation {
 			public int getFormat() {
 				return PACK_WHOLE;
 			}
+
+			@Override
+			public boolean wasDeltaAttempted() {
+				return true;
+			}
 		};
 		r.pack = pack;
 		r.offset = offset;
@@ -59,13 +64,11 @@ class LocalObjectRepresentation extends StoredObjectRepresentation {
 
 	private ObjectId baseId;
 
-	/** {@inheritDoc} */
 	@Override
 	public int getWeight() {
 		return (int) Math.min(length, Integer.MAX_VALUE);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public ObjectId getDeltaBase() {
 		if (baseId == null && getFormat() == PACK_DELTA) {
@@ -82,6 +85,11 @@ class LocalObjectRepresentation extends StoredObjectRepresentation {
 		@Override
 		public int getFormat() {
 			return PACK_DELTA;
+		}
+
+		@Override
+		public boolean wasDeltaAttempted() {
+			return true;
 		}
 	}
 }

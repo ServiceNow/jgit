@@ -254,7 +254,7 @@ public class ArchiveCommandTest extends RepositoryTestCase {
 		}
 	}
 
-	@SuppressWarnings({ "serial", "boxing" })
+	@SuppressWarnings({ "boxing" })
 	private void archiveHeadAllFilesWithCompression(String fmt) throws Exception {
 		try (Git git = new Git(db)) {
 			createLargeTestContent(git);
@@ -267,7 +267,10 @@ public class ArchiveCommandTest extends RepositoryTestCase {
 			archive(git, archive, fmt, Map.of("compression-level", 9));
 			int sizeCompression9 = getNumBytes(archive);
 
-			assertTrue(sizeCompression1 > sizeCompression9);
+			assertTrue(
+					"Expected sizeCompression1 = " + sizeCompression1
+							+ " > sizeCompression9 = " + sizeCompression9,
+					sizeCompression1 > sizeCompression9);
 		}
 	}
 

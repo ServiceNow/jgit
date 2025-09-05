@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2010, 2013 Sasa Zivkov <sasa.zivkov@sap.com>
- * Copyright (C) 2013, 2021 Obeo and others
+ * Copyright (C) 2013, 2025 Obeo and others
  *
  * This program and the accompanying materials are made available under the
  * terms of the Eclipse Distribution License v. 1.0 which is available at
@@ -21,6 +21,7 @@ import org.kohsuke.args4j.Localizable;
 /**
  * Translation bundle for JGit command line interface
  */
+@SuppressWarnings("MissingSummary")
 public class CLIText extends TranslationBundle {
 	/**
 	 * Formats text strings using {@code Localizable}.
@@ -90,6 +91,7 @@ public class CLIText extends TranslationBundle {
 	}
 
 	// @formatter:off
+	/***/ public String addIncompatibleOptions;
 	/***/ public String alreadyOnBranch;
 	/***/ public String alreadyUpToDate;
 	/***/ public String answerNo;

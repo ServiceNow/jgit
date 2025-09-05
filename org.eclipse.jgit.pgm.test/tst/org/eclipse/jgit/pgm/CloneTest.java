@@ -126,7 +126,7 @@ public class CloneTest extends CLIRepositoryTestCase {
 		JGitTestUtil.writeTrashFile(db, "Test.txt", "Some change");
 		git.add().addFilepattern("Test.txt").call();
 		return git.commit()
-				.setCommitter(new PersonIdent(this.committer, tr.getDate()))
+				.setCommitter(new PersonIdent(this.committer, tr.getInstant()))
 				.setMessage("Second commit").call();
 	}
 
@@ -134,7 +134,7 @@ public class CloneTest extends CLIRepositoryTestCase {
 		JGitTestUtil.writeTrashFile(db, "change.txt", "another change");
 		git.add().addFilepattern("change.txt").call();
 		return git.commit()
-				.setCommitter(new PersonIdent(this.committer, tr.getDate()))
+				.setCommitter(new PersonIdent(this.committer, tr.getInstant()))
 				.setMessage("Third commit").call();
 	}
 
@@ -183,7 +183,7 @@ public class CloneTest extends CLIRepositoryTestCase {
 
 		File gitDir = db.getDirectory();
 		String sourcePath = gitDir.getAbsolutePath();
-		String targetPath = (new File(sourcePath)).getParentFile()
+		String targetPath = new File(sourcePath).getParentFile()
 				.getParentFile().getAbsolutePath()
 				+ File.separator + "target.git";
 		String cmd = "git clone --bare " + shellQuote(sourcePath) + " "
@@ -207,7 +207,7 @@ public class CloneTest extends CLIRepositoryTestCase {
 
 		File gitDir = db.getDirectory();
 		String sourcePath = gitDir.getAbsolutePath();
-		String targetPath = (new File(sourcePath)).getParentFile()
+		String targetPath = new File(sourcePath).getParentFile()
 				.getParentFile().getAbsolutePath() + File.separator
 				+ "target.git";
 		String cmd = "git clone --mirror " + shellQuote(sourcePath) + " "

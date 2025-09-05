@@ -161,9 +161,11 @@ public abstract class RefAdvertiser {
 	}
 
 	/**
+	 * Set whether this advertiser should use protocol v2
+	 *
 	 * @param b
-	 *              true if this advertiser should advertise using the protocol
-	 *              v2 format, false otherwise
+	 *            true if this advertiser should advertise using the protocol v2
+	 *            format, false otherwise
 	 * @since 5.0
 	 */
 	public void setUseProtocolV2(boolean b) {
@@ -173,10 +175,9 @@ public abstract class RefAdvertiser {
 	/**
 	 * Toggle tag peeling.
 	 * <p>
-	 * <p>
+	 *
 	 * This method must be invoked prior to any of the following:
 	 * <ul>
-	 * <li>{@link #send(Map)}</li>
 	 * <li>{@link #send(Collection)}</li>
 	 * </ul>
 	 *
@@ -193,7 +194,6 @@ public abstract class RefAdvertiser {
 	 * <p>
 	 * This method must be invoked prior to any of the following:
 	 * <ul>
-	 * <li>{@link #send(Map)}</li>
 	 * <li>{@link #send(Collection)}</li>
 	 * <li>{@link #advertiseHave(AnyObjectId)}</li>
 	 * </ul>
@@ -228,7 +228,6 @@ public abstract class RefAdvertiser {
 	 * <p>
 	 * This method must be invoked prior to any of the following:
 	 * <ul>
-	 * <li>{@link #send(Map)}</li>
 	 * <li>{@link #send(Collection)}</li>
 	 * <li>{@link #advertiseHave(AnyObjectId)}</li>
 	 * </ul>
@@ -245,24 +244,6 @@ public abstract class RefAdvertiser {
 		} else {
 			advertiseCapability(OPTION_SYMREF, from + ':' + to);
 		}
-	}
-
-	/**
-	 * Format an advertisement for the supplied refs.
-	 *
-	 * @param refs
-	 *            zero or more refs to format for the client. The collection is
-	 *            sorted before display if necessary, and therefore may appear
-	 *            in any order.
-	 * @return set of ObjectIds that were advertised to the client.
-	 * @throws java.io.IOException
-	 *             the underlying output stream failed to write out an
-	 *             advertisement record.
-	 * @deprecated use {@link #send(Collection)} instead.
-	 */
-	@Deprecated
-	public Set<ObjectId> send(Map<String, Ref> refs) throws IOException {
-		return send(refs.values());
 	}
 
 	/**

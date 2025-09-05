@@ -117,6 +117,7 @@ public class PackedObjectInfo extends ObjectIdOwnerMap.Entry {
 	 * Size in storage
 	 *
 	 * @param sizeBeforeInflating
+	 *            size before inflating
 	 */
 	void setSize(long sizeBeforeInflating) {
 		this.sizeBeforeInflating = sizeBeforeInflating;
@@ -147,6 +148,8 @@ public class PackedObjectInfo extends ObjectIdOwnerMap.Entry {
 	}
 
 	/**
+	 * Get full size (inflated, undeltified)
+	 *
 	 * @return size of the object (inflated, undeltified)
 	 *
 	 * @since 6.4

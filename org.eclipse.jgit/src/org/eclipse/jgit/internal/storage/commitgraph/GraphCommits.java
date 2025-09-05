@@ -23,6 +23,7 @@ import org.eclipse.jgit.lib.AnyObjectId;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectIdOwnerMap;
+import org.eclipse.jgit.lib.ObjectReader;
 import org.eclipse.jgit.lib.ProgressMonitor;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.revwalk.RevObject;
@@ -56,6 +57,7 @@ public class GraphCommits implements Iterable<RevCommit> {
 	 * @return the commits' collection which are used by the commit-graph
 	 *         writer. Never null.
 	 * @throws IOException
+	 *             if an error occurred
 	 */
 	public static GraphCommits fromWalk(ProgressMonitor pm,
 			@NonNull Set<? extends ObjectId> wants, @NonNull RevWalk walk)
@@ -78,7 +80,7 @@ public class GraphCommits implements Iterable<RevCommit> {
 			commits.add(c);
 		}
 		pm.endTask();
-		return new GraphCommits(commits);
+		return new GraphCommits(commits, walk.getObjectReader());
 	}
 
 	private final List<RevCommit> sortedCommits;
@@ -87,13 +89,17 @@ public class GraphCommits implements Iterable<RevCommit> {
 
 	private final int extraEdgeCnt;
 
+	private final ObjectReader objectReader;
+
 	/**
 	 * Initialize the GraphCommits.
 	 *
 	 * @param commits
 	 *            list of commits with their headers already parsed.
+	 * @param objectReader
+	 *            object reader
 	 */
-	private GraphCommits(List<RevCommit> commits) {
+	private GraphCommits(List<RevCommit> commits, ObjectReader objectReader) {
 		Collections.sort(commits); // sorted by name
 		sortedCommits = commits;
 		commitPosMap = new ObjectIdOwnerMap<>();
@@ -106,6 +112,7 @@ public class GraphCommits implements Iterable<RevCommit> {
 			commitPosMap.add(new CommitWithPosition(c, i));
 		}
 		this.extraEdgeCnt = cnt;
+		this.objectReader = objectReader;
 	}
 
 	int getOidPosition(RevCommit c) throws MissingObjectException {
@@ -124,7 +131,10 @@ public class GraphCommits implements Iterable<RevCommit> {
 		return sortedCommits.size();
 	}
 
-	/** {@inheritDoc} */
+	ObjectReader getObjectReader() {
+		return objectReader;
+	}
+
 	@Override
 	public Iterator<RevCommit> iterator() {
 		return sortedCommits.iterator();

@@ -15,6 +15,7 @@ import static org.eclipse.jgit.util.FS.FileStoreAttributes.FALLBACK_TIMESTAMP_RE
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.FileSystemException;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Duration;
@@ -22,10 +23,12 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
+import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.jgit.annotations.NonNull;
+import org.eclipse.jgit.util.FileUtils;
 import org.eclipse.jgit.util.FS;
 import org.eclipse.jgit.util.FS.FileStoreAttributes;
 import org.slf4j.Logger;
@@ -139,29 +142,6 @@ public class FileSnapshot {
 	 * @param modified
 	 *            the last modification time of the file
 	 * @return the snapshot.
-	 * @deprecated use {@link #save(Instant)} instead.
-	 */
-	@Deprecated
-	public static FileSnapshot save(long modified) {
-		final Instant read = Instant.now();
-		return new FileSnapshot(read, Instant.ofEpochMilli(modified),
-				UNKNOWN_SIZE, FALLBACK_TIMESTAMP_RESOLUTION, MISSING_FILEKEY);
-	}
-
-	/**
-	 * Record a snapshot for a file for which the last modification time is
-	 * already known.
-	 * <p>
-	 * This method should be invoked before the file is accessed.
-	 * <p>
-	 * Note that this method cannot rely on measuring file timestamp resolution
-	 * to avoid racy git issues caused by finite file timestamp resolution since
-	 * it's unknown in which filesystem the file is located. Hence the worst
-	 * case fallback for timestamp resolution is used.
-	 *
-	 * @param modified
-	 *            the last modification time of the file
-	 * @return the snapshot.
 	 */
 	public static FileSnapshot save(Instant modified) {
 		final Instant read = Instant.now();
@@ -231,14 +211,8 @@ public class FileSnapshot {
 		this.useConfig = useConfig;
 		BasicFileAttributes fileAttributes = null;
 		try {
-			fileAttributes = FS.DETECTED.fileAttributes(file);
-		} catch (NoSuchFileException e) {
-			this.lastModified = Instant.EPOCH;
-			this.size = 0L;
-			this.fileKey = MISSING_FILEKEY;
-			return;
-		} catch (IOException e) {
-			LOG.error(e.getMessage(), e);
+			fileAttributes = getFileAttributes(file);
+		} catch (NoSuchElementException e) {
 			this.lastModified = Instant.EPOCH;
 			this.size = 0L;
 			this.fileKey = MISSING_FILEKEY;
@@ -282,23 +256,14 @@ public class FileSnapshot {
 	 * Get time of last snapshot update
 	 *
 	 * @return time of last snapshot update
-	 * @deprecated use {@link #lastModifiedInstant()} instead
-	 */
-	@Deprecated
-	public long lastModified() {
-		return lastModified.toEpochMilli();
-	}
-
-	/**
-	 * Get time of last snapshot update
-	 *
-	 * @return time of last snapshot update
 	 */
 	public Instant lastModifiedInstant() {
 		return lastModified;
 	}
 
 	/**
+	 * Get file size in bytes of last snapshot update
+	 *
 	 * @return file size in bytes of last snapshot update
 	 */
 	public long size() {
@@ -317,16 +282,11 @@ public class FileSnapshot {
 		long currSize;
 		Object currFileKey;
 		try {
-			BasicFileAttributes fileAttributes = FS.DETECTED.fileAttributes(path);
+			BasicFileAttributes fileAttributes = getFileAttributes(path);
 			currLastModified = fileAttributes.lastModifiedTime().toInstant();
 			currSize = fileAttributes.size();
 			currFileKey = getFileKey(fileAttributes);
-		} catch (NoSuchFileException e) {
-			currLastModified = Instant.EPOCH;
-			currSize = 0L;
-			currFileKey = MISSING_FILEKEY;
-		} catch (IOException e) {
-			LOG.error(e.getMessage(), e);
+		} catch (NoSuchElementException e) {
 			currLastModified = Instant.EPOCH;
 			currSize = 0L;
 			currFileKey = MISSING_FILEKEY;
@@ -404,7 +364,6 @@ public class FileSnapshot {
 				&& Objects.equals(fileKey, other.fileKey);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public boolean equals(Object obj) {
 		if (this == obj) {
@@ -420,45 +379,53 @@ public class FileSnapshot {
 		return equals(other);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public int hashCode() {
 		return Objects.hash(lastModified, Long.valueOf(size), fileKey);
 	}
 
 	/**
-	 * @return {@code true} if FileSnapshot.isModified(File) found the file size
-	 *         changed
+	 * Whether #isModified(File) found the file size changed
+	 *
+	 * @return {@code true} if #isModified(File) found the file size changed
 	 */
 	boolean wasSizeChanged() {
 		return sizeChanged;
 	}
 
 	/**
-	 * @return {@code true} if FileSnapshot.isModified(File) found the file key
-	 *         changed
+	 * Whether #isModified(File) found the file key changed
+	 *
+	 * @return {@code true} if #isModified(File) found the file key changed
 	 */
 	boolean wasFileKeyChanged() {
 		return fileKeyChanged;
 	}
 
 	/**
-	 * @return {@code true} if FileSnapshot.isModified(File) found the file's
-	 *         lastModified changed
+	 * Whether #isModified(File) found the file's lastModified changed
+	 *
+	 * @return {@code true} if #isModified(File) found the file's lastModified
+	 *         changed
 	 */
 	boolean wasLastModifiedChanged() {
 		return lastModifiedChanged;
 	}
 
 	/**
-	 * @return {@code true} if FileSnapshot.isModified(File) detected that
-	 *         lastModified is racily clean
+	 * Whether #isModified(File) detected that lastModified is racily clean
+	 *
+	 * @return {@code true} if #isModified(File) detected that lastModified is
+	 *         racily clean
 	 */
 	boolean wasLastModifiedRacilyClean() {
 		return wasRacyClean;
 	}
 
 	/**
+	 * Get the delta in nanoseconds between lastModified and lastRead during
+	 * last racy check
+	 *
 	 * @return the delta in nanoseconds between lastModified and lastRead during
 	 *         last racy check
 	 */
@@ -467,6 +434,8 @@ public class FileSnapshot {
 	}
 
 	/**
+	 * Get the racyLimitNanos threshold in nanoseconds during last racy check
+	 *
 	 * @return the racyLimitNanos threshold in nanoseconds during last racy
 	 *         check
 	 */
@@ -474,7 +443,6 @@ public class FileSnapshot {
 		return racyThreshold;
 	}
 
-	/** {@inheritDoc} */
 	@SuppressWarnings({ "nls", "ReferenceEquality" })
 	@Override
 	public String toString() {
@@ -575,5 +543,28 @@ public class FileSnapshot {
 					: FALLBACK_FILESTORE_ATTRIBUTES;
 		}
 		return fileStoreAttributeCache;
+	}
+
+	private static BasicFileAttributes getFileAttributes(File path)
+			throws NoSuchElementException {
+		try {
+			try {
+				return FS.DETECTED.fileAttributes(path);
+			} catch (IOException e) {
+				if (!FileUtils.isStaleFileHandle(e)) {
+					throw e;
+				}
+			}
+		} catch (NoSuchFileException e) {
+			// ignore
+		} catch (FileSystemException e) {
+			String msg = e.getMessage();
+			if (!msg.endsWith("Not a directory")) { //$NON-NLS-1$
+				LOG.error(msg, e);
+			}
+		} catch (IOException e) {
+			LOG.error(e.getMessage(), e);
+		}
+		throw new NoSuchElementException(path.toString());
 	}
 }

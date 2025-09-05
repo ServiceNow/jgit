@@ -68,6 +68,7 @@ public class Git implements AutoCloseable {
 	 * @return a {@link org.eclipse.jgit.api.Git} object for the existing git
 	 *         repository
 	 * @throws java.io.IOException
+	 *             if an IO error occurred
 	 */
 	public static Git open(File dir) throws IOException {
 		return open(dir, FS.DETECTED);
@@ -84,6 +85,7 @@ public class Git implements AutoCloseable {
 	 * @return a {@link org.eclipse.jgit.api.Git} object for the existing git
 	 *         repository. Closing this instance will close the repo.
 	 * @throws java.io.IOException
+	 *             if an IO error occurred
 	 */
 	public static Git open(File dir, FS fs) throws IOException {
 		RepositoryCache.FileKey key;
@@ -712,6 +714,16 @@ public class Git implements AutoCloseable {
 	}
 
 	/**
+	 * Return a command object to execute a {@code PackRefs} command
+	 *
+	 * @return a {@link org.eclipse.jgit.api.PackRefsCommand}
+	 * @since 7.1
+	 */
+	public PackRefsCommand packRefs() {
+		return new PackRefsCommand(repo);
+	}
+
+	/**
 	 * Return a command object to find human-readable names of revisions.
 	 *
 	 * @return a {@link org.eclipse.jgit.api.NameRevCommand}.
@@ -792,7 +804,6 @@ public class Git implements AutoCloseable {
 		return repo;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public String toString() {
 		return "Git[" + repo + "]"; //$NON-NLS-1$//$NON-NLS-2$

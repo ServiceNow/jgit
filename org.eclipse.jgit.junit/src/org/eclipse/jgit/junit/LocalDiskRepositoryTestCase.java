@@ -20,12 +20,13 @@ import java.io.File;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.time.Instant;
-import java.util.ArrayList;
+import java.time.ZoneId;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -46,6 +47,7 @@ import org.eclipse.jgit.util.SystemReader;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
+import org.junit.rules.TemporaryFolder;
 import org.junit.rules.TestName;
 
 /**
@@ -83,7 +85,19 @@ public abstract class LocalDiskRepositoryTestCase {
 	protected MockSystemReader mockSystemReader;
 
 	private final Set<Repository> toClose = new HashSet<>();
+
+	/**
+	 * Temporary test root directory for files created by tests.
+	 * @since 7.2
+	 */
+	@Rule
+	public TemporaryFolder testRoot = new TemporaryFolder();
+
+	Random rand = new Random();
+
 	private File tmp;
+
+	private File homeDir;
 
 	/**
 	 * The current test name.
@@ -107,16 +121,22 @@ public abstract class LocalDiskRepositoryTestCase {
 	 * Setup test
 	 *
 	 * @throws Exception
+	 *             if an error occurred
 	 */
 	@Before
 	public void setUp() throws Exception {
-		tmp = File.createTempFile("jgit_" + getTestName() + '_', "_tmp");
-		CleanupThread.deleteOnShutdown(tmp);
-		if (!tmp.delete() || !tmp.mkdir()) {
-			throw new IOException("Cannot create " + tmp);
-		}
+		tmp = testRoot.newFolder(getTestName() + rand.nextInt());
+
 		mockSystemReader = new MockSystemReader();
 		SystemReader.setInstance(mockSystemReader);
+
+		// Mock the home directory. We don't want to pick up the real user's git
+		// config, or global git ignore.
+		// XDG_CONFIG_HOME isn't set in the MockSystemReader.
+		mockSystemReader.setProperty("user.home", tmp.getAbsolutePath());
+		mockSystemReader.setProperty("HOME", tmp.getAbsolutePath());
+		homeDir = FS.DETECTED.userHome();
+		FS.DETECTED.setUserHome(tmp.getAbsoluteFile());
 
 		// Measure timer resolution before the test to avoid time critical tests
 		// are affected by time needed for measurement.
@@ -189,25 +209,24 @@ public abstract class LocalDiskRepositoryTestCase {
 	 * Tear down the test
 	 *
 	 * @throws Exception
+	 *             if an error occurred
 	 */
 	@After
 	public void tearDown() throws Exception {
 		RepositoryCache.clear();
-		for (Repository r : toClose)
+		for (Repository r : toClose) {
 			r.close();
+		}
 		toClose.clear();
 
 		// Since memory mapping is controlled by the GC we need to
 		// tell it this is a good time to clean up and unlock
 		// memory mapped files.
 		//
-		if (useMMAP)
+		if (useMMAP) {
 			System.gc();
-		if (tmp != null)
-			recursiveDelete(tmp, false, true);
-		if (tmp != null && !tmp.exists())
-			CleanupThread.removed(tmp);
-
+		}
+		FS.DETECTED.setUserHome(homeDir);
 		SystemReader.setInstance(null);
 	}
 
@@ -216,8 +235,8 @@ public abstract class LocalDiskRepositoryTestCase {
 	 */
 	protected void tick() {
 		mockSystemReader.tick(5 * 60);
-		final long now = mockSystemReader.getCurrentTime();
-		final int tz = mockSystemReader.getTimezone(now);
+		Instant now = mockSystemReader.now();
+		ZoneId tz = mockSystemReader.getTimeZoneId();
 
 		author = new PersonIdent(author, now, tz);
 		committer = new PersonIdent(committer, now, tz);
@@ -314,11 +333,11 @@ public abstract class LocalDiskRepositoryTestCase {
 	 *            {@link #CONTENT} controlling which info is present in the
 	 *            resulting string.
 	 * @return a string encoding the index state
-	 * @throws IllegalStateException
 	 * @throws IOException
+	 *             if an IO error occurred
 	 */
 	public static String indexState(Repository repo, int includedOptions)
-			throws IllegalStateException, IOException {
+			throws IOException {
 		DirCache dc = repo.readDirCache();
 		StringBuilder sb = new StringBuilder();
 		TreeSet<Instant> timeStamps = new TreeSet<>();
@@ -452,6 +471,7 @@ public abstract class LocalDiskRepositoryTestCase {
 	 *            a subdirectory
 	 * @return a unique directory for a test
 	 * @throws IOException
+	 *             if an IO error occurred
 	 */
 	protected File createTempDirectory(String name) throws IOException {
 		File directory = new File(createTempFile(), name);
@@ -467,6 +487,7 @@ public abstract class LocalDiskRepositoryTestCase {
 	 *            working directory
 	 * @return a unique directory for a test repository
 	 * @throws IOException
+	 *             if an IO error occurred
 	 */
 	protected File createUniqueTestGitDir(boolean bare) throws IOException {
 		String gitdirName = createTempFile().getPath();
@@ -487,6 +508,7 @@ public abstract class LocalDiskRepositoryTestCase {
 	 *
 	 * @return a unique path that does not exist.
 	 * @throws IOException
+	 *             if an IO error occurred
 	 */
 	protected File createTempFile() throws IOException {
 		File p = File.createTempFile("tmp_", "", tmp);
@@ -586,6 +608,7 @@ public abstract class LocalDiskRepositoryTestCase {
 	 *            the file
 	 * @return the content of the file
 	 * @throws IOException
+	 *             if an IO error occurred
 	 */
 	protected String read(File f) throws IOException {
 		return JGitTestUtil.read(f);
@@ -601,43 +624,5 @@ public abstract class LocalDiskRepositoryTestCase {
 
 	private static HashMap<String, String> cloneEnv() {
 		return new HashMap<>(System.getenv());
-	}
-
-	private static final class CleanupThread extends Thread {
-		private static final CleanupThread me;
-		static {
-			me = new CleanupThread();
-			Runtime.getRuntime().addShutdownHook(me);
-		}
-
-		static void deleteOnShutdown(File tmp) {
-			synchronized (me) {
-				me.toDelete.add(tmp);
-			}
-		}
-
-		static void removed(File tmp) {
-			synchronized (me) {
-				me.toDelete.remove(tmp);
-			}
-		}
-
-		private final List<File> toDelete = new ArrayList<>();
-
-		@Override
-		public void run() {
-			// On windows accidentally open files or memory
-			// mapped regions may prevent files from being deleted.
-			// Suggesting a GC increases the likelihood that our
-			// test repositories actually get removed after the
-			// tests, even in the case of failure.
-			System.gc();
-			synchronized (this) {
-				boolean silent = false;
-				boolean failOnError = false;
-				for (File tmp : toDelete)
-					recursiveDelete(tmp, silent, failOnError);
-			}
-		}
 	}
 }

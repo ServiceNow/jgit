@@ -68,7 +68,6 @@ class Config extends TextBuiltin {
 	@Option(name = "--file", aliases = { "-f" }, metaVar = "metaVar_file", usage = "usage_configFile")
 	private File configFile;
 
-	/** {@inheritDoc} */
 	@Override
 	protected void run() {
 		if (!list) {
@@ -95,7 +94,7 @@ class Config extends TextBuiltin {
 		if (global || isListAll())
 			list(SystemReader.getInstance().openUserConfig(null, fs));
 		if (local || isListAll())
-			list(new FileBasedConfig(fs.resolve(getRepository().getDirectory(),
+			list(new FileBasedConfig(fs.resolve(getRepository().getCommonDirectory(),
 					Constants.CONFIG), fs));
 	}
 

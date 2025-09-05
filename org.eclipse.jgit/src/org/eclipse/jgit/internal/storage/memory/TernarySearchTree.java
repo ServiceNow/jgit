@@ -9,9 +9,9 @@
  */
 package org.eclipse.jgit.internal.storage.memory;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -300,6 +300,7 @@ public final class TernarySearchTree<Value> {
 	 * Find the key which is the longest prefix of the given query string.
 	 *
 	 * @param query
+	 *            the query string
 	 * @return the key which is the longest prefix of the given query string or
 	 *         {@code null} if none exists.
 	 */
@@ -339,7 +340,7 @@ public final class TernarySearchTree<Value> {
 	 * @return all keys
 	 */
 	public Iterable<String> getKeys() {
-		Queue<String> queue = new LinkedList<>();
+		Queue<String> queue = new ArrayDeque<>();
 		lock.readLock().lock();
 		try {
 			findKeysWithPrefix(root, new StringBuilder(), queue);
@@ -357,7 +358,7 @@ public final class TernarySearchTree<Value> {
 	 * @return keys starting with given prefix
 	 */
 	public Iterable<String> getKeysWithPrefix(String prefix) {
-		Queue<String> keys = new LinkedList<>();
+		Queue<String> keys = new ArrayDeque<>();
 		if (prefix == null) {
 			return keys;
 		}
@@ -485,7 +486,7 @@ public final class TernarySearchTree<Value> {
 	 * @return keys matching given pattern.
 	 */
 	public Iterable<String> getKeysMatching(String pattern) {
-		Queue<String> keys = new LinkedList<>();
+		Queue<String> keys = new ArrayDeque<>();
 		lock.readLock().lock();
 		try {
 			findKeysWithPrefix(root, new StringBuilder(), 0, pattern, keys);

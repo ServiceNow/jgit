@@ -19,8 +19,14 @@ import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
+import java.util.
+Optional;
+import java.util.Set;
 
 import org.eclipse.jgit.annotations.NonNull;
 import org.eclipse.jgit.annotations.Nullable;
@@ -30,9 +36,9 @@ import org.eclipse.jgit.errors.LargeObjectException;
 import org.eclipse.jgit.errors.MissingObjectException;
 import org.eclipse.jgit.errors.RevWalkException;
 import org.eclipse.jgit.internal.JGitText;
+import org.eclipse.jgit.internal.storage.commitgraph.CommitGraph;
 import org.eclipse.jgit.lib.AnyObjectId;
 import org.eclipse.jgit.lib.AsyncObjectLoaderQueue;
-import org.eclipse.jgit.internal.storage.commitgraph.CommitGraph;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.MutableObjectId;
 import org.eclipse.jgit.lib.NullProgressMonitor;
@@ -220,7 +226,6 @@ public class RevWalk implements Iterable<RevCommit>, AutoCloseable {
 
 	/**
 	 * Create a new revision walker for a given repository.
-	 * <p>
 	 *
 	 * @param or
 	 *            the reader the walker will obtain data from. The reader is not
@@ -236,13 +241,37 @@ public class RevWalk implements Iterable<RevCommit>, AutoCloseable {
 		idBuffer = new MutableObjectId();
 		objects = new ObjectIdOwnerMap<>();
 		roots = new ArrayList<>();
-		queue = new DateRevQueue(false);
+		queue = newDateRevQueue(false);
 		pending = new StartGenerator(this);
 		sorting = EnumSet.of(RevSort.NONE);
 		filter = RevFilter.ALL;
 		treeFilter = TreeFilter.ALL;
 		this.closeReader = closeReader;
 		commitGraph = null;
+	}
+
+	static AbstractRevQueue newDateRevQueue(boolean firstParent) {
+		if(usePriorityQueue()) {
+			return new DateRevPriorityQueue(firstParent);
+		}
+
+		return new DateRevQueue(firstParent);
+	}
+
+	static DateRevQueue newDateRevQueue(Generator g) throws IOException {
+		if(usePriorityQueue()) {
+			return new DateRevPriorityQueue(g);
+		}
+
+		return new DateRevQueue(g);
+	}
+
+	@SuppressWarnings("boxing")
+	private static boolean usePriorityQueue() {
+		return Optional
+				.ofNullable(System.getProperty("REVWALK_USE_PRIORITY_QUEUE")) //$NON-NLS-1$
+							.map(Boolean::parseBoolean)
+							.orElse(false);
 	}
 
 	/**
@@ -252,23 +281,6 @@ public class RevWalk implements Iterable<RevCommit>, AutoCloseable {
 	 */
 	public ObjectReader getObjectReader() {
 		return reader;
-	}
-
-	/**
-	 * Get a reachability checker for commits over this revwalk.
-	 *
-	 * @return the most efficient reachability checker for this repository.
-	 * @throws IOException
-	 *             if it cannot open any of the underlying indices.
-	 *
-	 * @since 5.4
-	 * @deprecated use {@code ObjectReader#createReachabilityChecker(RevWalk)}
-	 *             instead.
-	 */
-	@Deprecated
-	public final ReachabilityChecker createReachabilityChecker()
-			throws IOException {
-		return reader.createReachabilityChecker(this);
 	}
 
 	/**
@@ -454,7 +466,6 @@ public class RevWalk implements Iterable<RevCommit>, AutoCloseable {
 	 * <p>
 	 * A commit is merged into a ref if we can find a path of commits that leads
 	 * from that specific ref and ends at <code>commit</code>.
-	 * <p>
 	 *
 	 * @param commit
 	 *            commit the caller thinks is reachable from <code>refs</code>.
@@ -476,7 +487,6 @@ public class RevWalk implements Iterable<RevCommit>, AutoCloseable {
 	 * <p>
 	 * A commit is merged into a ref if we can find a path of commits that leads
 	 * from that specific ref and ends at <code>commit</code>.
-	 * <p>
 	 *
 	 * @param commit
 	 *            commit the caller thinks is reachable from <code>refs</code>.
@@ -518,6 +528,27 @@ public class RevWalk implements Iterable<RevCommit>, AutoCloseable {
 	}
 
 	/**
+	 * Determine if a <code>commit</code> is merged into any of the given
+	 * <code>revs</code>.
+	 *
+	 * @param commit
+	 *            commit the caller thinks is reachable from <code>revs</code>.
+	 * @param revs
+	 *            commits to start iteration from, and which is most likely a
+	 *            descendant (child) of <code>commit</code>.
+	 * @return true if commit is merged into any of the revs; false otherwise.
+	 * @throws java.io.IOException
+	 *             a pack file or loose object could not be read.
+	 * @since 6.10.1
+	 */
+	public boolean isMergedIntoAnyCommit(RevCommit commit, Collection<RevCommit> revs)
+			throws IOException {
+		return getCommitsMergedInto(commit, revs,
+				GetMergedIntoStrategy.RETURN_ON_FIRST_FOUND,
+				NullProgressMonitor.INSTANCE).size() > 0;
+	}
+
+	/**
 	 * Determine if a <code>commit</code> is merged into all of the given
 	 * <code>refs</code>.
 	 *
@@ -540,7 +571,26 @@ public class RevWalk implements Iterable<RevCommit>, AutoCloseable {
 
 	private List<Ref> getMergedInto(RevCommit needle, Collection<Ref> haystacks,
 			Enum returnStrategy, ProgressMonitor monitor) throws IOException {
+		Map<RevCommit, List<Ref>> refsByCommit = new HashMap<>();
+		for (Ref r : haystacks) {
+			RevObject o = peel(parseAny(r.getObjectId()));
+			if (!(o instanceof RevCommit)) {
+				continue;
+			}
+			refsByCommit.computeIfAbsent((RevCommit) o, c -> new ArrayList<>()).add(r);
+		}
+		monitor.update(1);
 		List<Ref> result = new ArrayList<>();
+		for (RevCommit c : getCommitsMergedInto(needle, refsByCommit.keySet(),
+				returnStrategy, monitor)) {
+			result.addAll(refsByCommit.get(c));
+		}
+		return result;
+	}
+
+	private Set<RevCommit> getCommitsMergedInto(RevCommit needle, Collection<RevCommit> haystacks,
+			Enum returnStrategy, ProgressMonitor monitor) throws IOException {
+		Set<RevCommit> result = new HashSet<>();
 		List<RevCommit> uninteresting = new ArrayList<>();
 		List<RevCommit> marked = new ArrayList<>();
 		RevFilter oldRF = filter;
@@ -556,16 +606,11 @@ public class RevWalk implements Iterable<RevCommit>, AutoCloseable {
 				needle.parseHeaders(this);
 			}
 			int cutoff = needle.getGeneration();
-			for (Ref r : haystacks) {
+			for (RevCommit c : haystacks) {
 				if (monitor.isCancelled()) {
 					return result;
 				}
 				monitor.update(1);
-				RevObject o = peel(parseAny(r.getObjectId()));
-				if (!(o instanceof RevCommit)) {
-					continue;
-				}
-				RevCommit c = (RevCommit) o;
 				reset(UNINTERESTING | TEMP_MARK);
 				markStart(c);
 				boolean commitFound = false;
@@ -577,7 +622,7 @@ public class RevWalk implements Iterable<RevCommit>, AutoCloseable {
 					}
 					if (References.isSameObject(next, needle)
 							|| (next.flags & TEMP_MARK) != 0) {
-						result.add(r);
+						result.add(c);
 						if (returnStrategy == GetMergedIntoStrategy.RETURN_ON_FIRST_FOUND) {
 							return result;
 						}
@@ -824,6 +869,8 @@ public class RevWalk implements Iterable<RevCommit>, AutoCloseable {
 	}
 
 	/**
+	 * Whether only first-parent links should be followed when walking
+	 *
 	 * @return whether only first-parent links should be followed when walking.
 	 *
 	 * @since 5.5
@@ -848,7 +895,7 @@ public class RevWalk implements Iterable<RevCommit>, AutoCloseable {
 		assertNotStarted();
 		assertNoCommitsMarkedStart();
 		firstParent = enable;
-		queue = new DateRevQueue(firstParent);
+		queue = newDateRevQueue(firstParent);
 		pending = new StartGenerator(this);
 	}
 
@@ -1197,6 +1244,8 @@ public class RevWalk implements Iterable<RevCommit>, AutoCloseable {
 	/**
 	 * Asynchronous object parsing.
 	 *
+	 * @param <T>
+	 *            Type of returned {@code ObjectId}
 	 * @param objectIds
 	 *            objects to open from the object store. The supplied collection
 	 *            must not be modified until the queue has finished.
@@ -1566,7 +1615,7 @@ public class RevWalk implements Iterable<RevCommit>, AutoCloseable {
 		}
 
 		roots.clear();
-		queue = new DateRevQueue(firstParent);
+		queue = newDateRevQueue(firstParent);
 		pending = new StartGenerator(this);
 	}
 
@@ -1587,7 +1636,7 @@ public class RevWalk implements Iterable<RevCommit>, AutoCloseable {
 		firstParent = false;
 		objects.clear();
 		roots.clear();
-		queue = new DateRevQueue(firstParent);
+		queue = newDateRevQueue(firstParent);
 		pending = new StartGenerator(this);
 		shallowCommitsInitialized = false;
 	}

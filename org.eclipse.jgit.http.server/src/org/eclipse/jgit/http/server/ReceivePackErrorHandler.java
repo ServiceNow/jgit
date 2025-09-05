@@ -11,8 +11,8 @@ package org.eclipse.jgit.http.server;
 
 import java.io.IOException;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 import org.eclipse.jgit.transport.ReceivePack;
 import org.eclipse.jgit.transport.ServiceMayNotContinueException;
@@ -35,6 +35,8 @@ import org.eclipse.jgit.transport.ServiceMayNotContinueException;
  */
 public interface ReceivePackErrorHandler {
 	/**
+	 * Receive pack
+	 *
 	 * @param req
 	 *            The HTTP request
 	 * @param rsp
@@ -42,6 +44,8 @@ public interface ReceivePackErrorHandler {
 	 * @param r
 	 *            A continuation that handles a git-receive-pack request.
 	 * @throws IOException
+	 *             if an IO error occurred
+	 * @since 7.0
 	 */
 	void receive(HttpServletRequest req, HttpServletResponse rsp,
 			ReceivePackRunnable r) throws IOException;
@@ -52,7 +56,9 @@ public interface ReceivePackErrorHandler {
 		 * See {@link ReceivePack#receiveWithExceptionPropagation}.
 		 *
 		 * @throws ServiceMayNotContinueException
+		 *             if transport service cannot continue
 		 * @throws IOException
+		 *             if an IO error occurred
 		 */
 		void receive() throws ServiceMayNotContinueException, IOException;
 	}

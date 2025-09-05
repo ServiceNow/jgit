@@ -10,18 +10,18 @@
 
 package org.eclipse.jgit.http.server;
 
-import static javax.servlet.http.HttpServletResponse.SC_FORBIDDEN;
+import static jakarta.servlet.http.HttpServletResponse.SC_FORBIDDEN;
 import static org.eclipse.jgit.http.server.ServletUtils.getRepository;
 
 import java.io.IOException;
 
-import javax.servlet.Filter;
-import javax.servlet.FilterChain;
-import javax.servlet.FilterConfig;
-import javax.servlet.ServletException;
-import javax.servlet.ServletRequest;
-import javax.servlet.ServletResponse;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.Filter;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.FilterConfig;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.ServletRequest;
+import jakarta.servlet.ServletResponse;
+import jakarta.servlet.http.HttpServletResponse;
 
 import org.eclipse.jgit.internal.storage.file.ObjectDirectory;
 import org.eclipse.jgit.lib.Repository;
@@ -33,19 +33,16 @@ import org.eclipse.jgit.lib.Repository;
  * downstream servlet can directly access its contents on disk.
  */
 class IsLocalFilter implements Filter {
-	/** {@inheritDoc} */
 	@Override
 	public void init(FilterConfig config) throws ServletException {
 		// Do nothing.
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public void destroy() {
 		// Do nothing.
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public void doFilter(ServletRequest request, ServletResponse response,
 			FilterChain chain) throws IOException, ServletException {

@@ -80,7 +80,7 @@ class SimilarityRenameDetector {
 	private long[] matrix;
 
 	/** Score a pair must exceed to be considered a rename. */
-	private int renameScore = 60;
+	private int renameScore = 50;
 
 	/**
 	 * File size threshold (in bytes) for detecting renames. Files larger
@@ -407,6 +407,7 @@ class SimilarityRenameDetector {
 				| encodeFile(dstIdx);
 	}
 
+	@SuppressWarnings("IntLongMath")
 	private static long encodeFile(int idx) {
 		// We invert the index so that the first file in the list sorts
 		// later in the table. This permits us to break ties favoring
@@ -415,6 +416,7 @@ class SimilarityRenameDetector {
 		return INDEX_MASK - idx;
 	}
 
+	@SuppressWarnings("IntLongMath")
 	private static int decodeFile(int v) {
 		return INDEX_MASK - v;
 	}

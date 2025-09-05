@@ -13,8 +13,8 @@ package org.eclipse.jgit.http.server.glue;
 import java.util.Enumeration;
 import java.util.NoSuchElementException;
 
-import javax.servlet.FilterConfig;
-import javax.servlet.ServletContext;
+import jakarta.servlet.FilterConfig;
+import jakarta.servlet.ServletContext;
 
 final class NoParameterFilterConfig implements FilterConfig {
 	private final String filterName;
@@ -26,13 +26,11 @@ final class NoParameterFilterConfig implements FilterConfig {
 		this.context = context;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public String getInitParameter(String name) {
 		return null;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public Enumeration<String> getInitParameterNames() {
 		return new Enumeration<>() {
@@ -49,13 +47,11 @@ final class NoParameterFilterConfig implements FilterConfig {
 		};
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public ServletContext getServletContext() {
 		return context;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public String getFilterName() {
 		return filterName;

@@ -530,7 +530,7 @@ public abstract class PackParser {
 			receiving.beginTask(JGitText.get().receivingObjects,
 					(int) expectedObjectCount);
 			try {
-				for (int done = 0; done < expectedObjectCount; done++) {
+				for (long done = 0; done < expectedObjectCount; done++) {
 					indexOneObject();
 					receiving.update(1);
 					if (receiving.isCancelled())
@@ -1102,6 +1102,7 @@ public abstract class PackParser {
 	 * @param data
 	 *            raw content of the object.
 	 * @throws org.eclipse.jgit.errors.CorruptObjectException
+	 *             if a corrupt object was found
 	 * @since 4.9
 	 */
 	protected void verifySafeObject(final AnyObjectId id, final int type,
@@ -1565,7 +1566,7 @@ public abstract class PackParser {
 	 * @param baseStreamPosition
 	 *            position of the base object in the incoming stream. The base
 	 *            must be before the delta, therefore {@code baseStreamPosition
-	 *            &lt; deltaStreamPosition}. This is <b>not</b> the position
+	 *            < deltaStreamPosition}. This is <b>not</b> the position
 	 *            returned by a prior end object event.
 	 * @param inflatedSize
 	 *            size of the delta when fully inflated. The size stored within
@@ -1667,17 +1668,27 @@ public abstract class PackParser {
 
 		long sizeBeforeInflating;
 
-		/** @return offset within the input stream. */
+		/**
+		 * Get offset within the input stream
+		 *
+		 * @return offset within the input stream.
+		 */
 		public long getOffset() {
 			return position;
 		}
 
-		/** @return the CRC-32 checksum of the stored delta data. */
+		/**
+		 * Get the CRC-32 checksum of the stored delta data
+		 *
+		 * @return the CRC-32 checksum of the stored delta data.
+		 */
 		public int getCRC() {
 			return crc;
 		}
 
 		/**
+		 * Set the CRC-32 checksum of the stored delta data
+		 *
 		 * @param crc32
 		 *            the CRC-32 checksum of the stored delta data.
 		 */

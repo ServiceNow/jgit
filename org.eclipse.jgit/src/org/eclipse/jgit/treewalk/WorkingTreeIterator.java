@@ -15,7 +15,6 @@ package org.eclipse.jgit.treewalk;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
-import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
@@ -25,6 +24,7 @@ import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CharsetEncoder;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.text.MessageFormat;
 import java.time.Instant;
@@ -68,8 +68,10 @@ import org.eclipse.jgit.util.Holder;
 import org.eclipse.jgit.util.IO;
 import org.eclipse.jgit.util.Paths;
 import org.eclipse.jgit.util.RawParseUtils;
+import org.eclipse.jgit.util.SystemReader;
 import org.eclipse.jgit.util.TemporaryBuffer;
 import org.eclipse.jgit.util.TemporaryBuffer.LocalFile;
+import org.eclipse.jgit.util.io.ByteBufferInputStream;
 import org.eclipse.jgit.util.io.EolStreamTypeUtil;
 import org.eclipse.jgit.util.sha1.SHA1;
 
@@ -270,7 +272,6 @@ public abstract class WorkingTreeIterator extends AbstractTreeIterator {
 		return state.walkIgnored;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public boolean hasId() {
 		if (contentIdFromPtr == ptr)
@@ -278,7 +279,6 @@ public abstract class WorkingTreeIterator extends AbstractTreeIterator {
 		return (mode & FileMode.TYPE_MASK) == FileMode.TYPE_FILE;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public byte[] idBuffer() {
 		if (contentIdFromPtr == ptr)
@@ -316,7 +316,6 @@ public abstract class WorkingTreeIterator extends AbstractTreeIterator {
 		return zeroid;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public boolean isWorkTree() {
 		return true;
@@ -408,9 +407,9 @@ public abstract class WorkingTreeIterator extends AbstractTreeIterator {
 		if (len <= MAXIMUM_FILE_SIZE_TO_READ_FULLY) {
 			InputStream is = e.openInputStream();
 			try {
-				ByteBuffer rawbuf = IO.readWholeStream(is, (int) len);
-				rawbuf = filterClean(rawbuf.array(), rawbuf.limit());
-				return rawbuf.limit();
+				ByteBuffer filteredData = IO.readWholeStream(filterClean(is),
+						(int) len);
+				return filteredData.remaining();
 			} finally {
 				safeClose(is);
 			}
@@ -439,10 +438,9 @@ public abstract class WorkingTreeIterator extends AbstractTreeIterator {
 		}
 
 		if (len <= MAXIMUM_FILE_SIZE_TO_READ_FULLY) {
-			ByteBuffer rawbuf = IO.readWholeStream(is, (int) len);
-			rawbuf = filterClean(rawbuf.array(), rawbuf.limit());
-			canonLen = rawbuf.limit();
-			return new ByteArrayInputStream(rawbuf.array(), 0, (int) canonLen);
+			ByteBuffer filteredData = IO.readWholeStream(filterClean(is), (int) len);
+			canonLen = filteredData.remaining();
+			return new ByteBufferInputStream(filteredData);
 		}
 
 		if (getCleanFilterCommand() == null && isBinary(e)) {
@@ -478,16 +476,6 @@ public abstract class WorkingTreeIterator extends AbstractTreeIterator {
 		}
 	}
 
-	private ByteBuffer filterClean(byte[] src, int n)
-			throws IOException {
-		InputStream in = new ByteArrayInputStream(src);
-		try {
-			return IO.readWholeStream(filterClean(in), n);
-		} finally {
-			safeClose(in);
-		}
-	}
-
 	private InputStream filterClean(InputStream in)
 			throws IOException {
 		in = EolStreamTypeUtil.wrapInputStream(in,
@@ -510,6 +498,8 @@ public abstract class WorkingTreeIterator extends AbstractTreeIterator {
 			filterProcessBuilder.directory(repository.getWorkTree());
 			filterProcessBuilder.environment().put(Constants.GIT_DIR_KEY,
 					repository.getDirectory().getAbsolutePath());
+			filterProcessBuilder.environment().put(Constants.GIT_COMMON_DIR_KEY,
+					repository.getCommonDirectory().getAbsolutePath());
 			ExecutionResult result;
 			try {
 				result = fs.execute(filterProcessBuilder, in);
@@ -549,13 +539,11 @@ public abstract class WorkingTreeIterator extends AbstractTreeIterator {
 		return repository;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public int idOffset() {
 		return contentIdOffset;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public void reset() {
 		if (!first()) {
@@ -565,19 +553,16 @@ public abstract class WorkingTreeIterator extends AbstractTreeIterator {
 		}
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public boolean first() {
 		return ptr == 0;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public boolean eof() {
 		return ptr == entryCnt;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public void next(int delta) throws CorruptObjectException {
 		ptr += delta;
@@ -586,7 +571,6 @@ public abstract class WorkingTreeIterator extends AbstractTreeIterator {
 		}
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public void back(int delta) throws CorruptObjectException {
 		ptr -= delta;
@@ -620,6 +604,7 @@ public abstract class WorkingTreeIterator extends AbstractTreeIterator {
 	 *
 	 * @return size of the content, in bytes
 	 * @throws java.io.IOException
+	 *             if an IO error occurred
 	 */
 	public long getEntryContentLength() throws IOException {
 		if (canonLen == -1) {
@@ -632,18 +617,6 @@ public abstract class WorkingTreeIterator extends AbstractTreeIterator {
 			}
 		}
 		return canonLen;
-	}
-
-	/**
-	 * Get the last modified time of this entry.
-	 *
-	 * @return last modified time of this file, in milliseconds since the epoch
-	 *         (Jan 1, 1970 UTC).
-	 * @deprecated use {@link #getEntryLastModifiedInstant()} instead
-	 */
-	@Deprecated
-	public long getEntryLastModified() {
-		return current().getLastModified();
 	}
 
 	/**
@@ -772,6 +745,7 @@ public abstract class WorkingTreeIterator extends AbstractTreeIterator {
 	 * @return the {@link org.eclipse.jgit.attributes.AttributesNode} for the
 	 *         current entry.
 	 * @throws IOException
+	 *             if an IO error occurred
 	 */
 	public AttributesNode getEntryAttributesNode() throws IOException {
 		if (attributesNode instanceof PerDirectoryAttributesNode)
@@ -964,6 +938,7 @@ public abstract class WorkingTreeIterator extends AbstractTreeIterator {
 	 *            access to repository objects if necessary. Should not be null.
 	 * @return true if content is most likely different.
 	 * @throws java.io.IOException
+	 *             if an IO error occurred
 	 * @since 3.3
 	 */
 	public boolean isModified(DirCacheEntry entry, boolean forceContentCheck,
@@ -1070,6 +1045,7 @@ public abstract class WorkingTreeIterator extends AbstractTreeIterator {
 	 * @return <code>true</code> if the content doesn't match,
 	 *         <code>false</code> if it matches
 	 * @throws IOException
+	 *             if an IO error occurred
 	 */
 	private boolean contentCheck(DirCacheEntry entry, ObjectReader reader)
 			throws IOException {
@@ -1243,21 +1219,6 @@ public abstract class WorkingTreeIterator extends AbstractTreeIterator {
 		 * needs to compute the value they should cache the reference within an
 		 * instance member instead.
 		 *
-		 * @return time since the epoch (in ms) of the last change.
-		 * @deprecated use {@link #getLastModifiedInstant()} instead
-		 */
-		@Deprecated
-		public abstract long getLastModified();
-
-		/**
-		 * Get the last modified time of this entry.
-		 * <p>
-		 * <b>Note: Efficient implementation required.</b>
-		 * <p>
-		 * The implementation of this method must be efficient. If a subclass
-		 * needs to compute the value they should cache the reference within an
-		 * instance member instead.
-		 *
 		 * @return time of the last change.
 		 * @since 5.1.9
 		 */
@@ -1334,7 +1295,11 @@ public abstract class WorkingTreeIterator extends AbstractTreeIterator {
 					ConfigConstants.CONFIG_CORE_SECTION, null,
 					ConfigConstants.CONFIG_KEY_EXCLUDESFILE, fs, null, null);
 			if (path != null) {
-				loadRulesFromFile(coreExclude, path.toFile());
+				if (Files.exists(path)) {
+					loadRulesFromFile(coreExclude, path.toFile());
+				}
+			} else {
+				loadRulesFromDefaultFile(coreExclude, fs);
 			}
 			if (coreExclude.getRules().isEmpty()) {
 				coreExclude = parent;
@@ -1342,9 +1307,11 @@ public abstract class WorkingTreeIterator extends AbstractTreeIterator {
 
 			IgnoreNode infoExclude = new IgnoreNodeWithParent(
 					coreExclude);
-			File exclude = fs.resolve(repository.getDirectory(),
+			File exclude = fs.resolve(repository.getCommonDirectory(),
 					Constants.INFO_EXCLUDE);
-			loadRulesFromFile(infoExclude, exclude);
+			if (fs.exists(exclude)) {
+				loadRulesFromFile(infoExclude, exclude);
+			}
 			if (infoExclude.getRules().isEmpty()) {
 				infoExclude = null;
 			}
@@ -1366,9 +1333,19 @@ public abstract class WorkingTreeIterator extends AbstractTreeIterator {
 
 		private static void loadRulesFromFile(IgnoreNode r, File exclude)
 				throws FileNotFoundException, IOException {
-			if (FS.DETECTED.exists(exclude)) {
-				try (FileInputStream in = new FileInputStream(exclude)) {
-					r.parse(exclude.getAbsolutePath(), in);
+			try (FileInputStream in = new FileInputStream(exclude)) {
+				r.parse(exclude.getAbsolutePath(), in);
+			}
+		}
+
+		private static void loadRulesFromDefaultFile(IgnoreNode r,
+				FS fileSystem) throws FileNotFoundException, IOException {
+			Path cfg = SystemReader.getInstance()
+					.getXdgConfigDirectory(fileSystem);
+			if (cfg != null) {
+				Path cfgPath = cfg.resolve("git").resolve("ignore"); //$NON-NLS-1$ //$NON-NLS-2$
+				if (Files.exists(cfgPath)) {
+					loadRulesFromFile(r, cfgPath.toFile());
 				}
 			}
 		}
@@ -1450,6 +1427,7 @@ public abstract class WorkingTreeIterator extends AbstractTreeIterator {
 	 * @return the clean filter command for the current entry or
 	 *         <code>null</code> if no such command is defined
 	 * @throws java.io.IOException
+	 *             if an IO error occurred
 	 * @since 4.2
 	 */
 	public String getCleanFilterCommand() throws IOException {
@@ -1472,6 +1450,7 @@ public abstract class WorkingTreeIterator extends AbstractTreeIterator {
 	 *         {@link org.eclipse.jgit.treewalk.TreeWalk} is not based on a
 	 *         {@link org.eclipse.jgit.lib.Repository} then null is returned.
 	 * @throws java.io.IOException
+	 *             if an IO error occurred
 	 * @since 4.3
 	 */
 	public EolStreamType getEolStreamType() throws IOException {
@@ -1486,6 +1465,7 @@ public abstract class WorkingTreeIterator extends AbstractTreeIterator {
 	 *         {@link TreeWalk} is not based on a {@link Repository} then null
 	 *         is returned.
 	 * @throws IOException
+	 *             if an IO error occurred
 	 */
 	private EolStreamType getEolStreamType(OperationType opType)
 			throws IOException {

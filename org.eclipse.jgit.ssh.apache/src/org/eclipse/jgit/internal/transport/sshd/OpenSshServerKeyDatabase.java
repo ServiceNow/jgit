@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018, 2021 Thomas Wolf <thomas.wolf@paranor.ch> and others
+ * Copyright (C) 2018, 2025 Thomas Wolf <twolf@apache.org> and others
  *
  * This program and the accompanying materials are made available under the
  * terms of the Eclipse Distribution License v. 1.0 which is available at
@@ -31,10 +31,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.LinkedList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
@@ -46,10 +47,13 @@ import org.apache.sshd.client.config.hosts.KnownHostHashValue;
 import org.apache.sshd.client.keyverifier.KnownHostsServerKeyVerifier.HostEntryPair;
 import org.apache.sshd.client.session.ClientSession;
 import org.apache.sshd.common.NamedFactory;
+import org.apache.sshd.common.SshConstants;
 import org.apache.sshd.common.config.keys.AuthorizedKeyEntry;
 import org.apache.sshd.common.config.keys.KeyUtils;
+import org.apache.sshd.common.config.keys.OpenSshCertificate;
 import org.apache.sshd.common.config.keys.PublicKeyEntry;
 import org.apache.sshd.common.config.keys.PublicKeyEntryResolver;
+import org.apache.sshd.common.config.keys.UnsupportedSshPublicKey;
 import org.apache.sshd.common.digest.BuiltinDigests;
 import org.apache.sshd.common.mac.Mac;
 import org.apache.sshd.common.util.io.ModifiableFileWatcher;
@@ -74,7 +78,6 @@ import org.slf4j.LoggerFactory;
  * ignored.
  * <p>
  * {@code StrictHostKeyChecking} accepts the following values:
- * </p>
  * <dl>
  * <dt>ask</dt>
  * <dd>Ask the user whether new or changed keys shall be accepted and be added
@@ -91,7 +94,6 @@ import org.slf4j.LoggerFactory;
  * <p>
  * If {@code StrictHostKeyChecking} is not set, or set to any other value, the
  * default value <b>ask</b> is active.
- * </p>
  * <p>
  * This implementation relies on the {@link ClientSession} being a
  * {@link JGitClientSession}. By default Apache MINA sshd does not forward the
@@ -100,23 +102,19 @@ import org.slf4j.LoggerFactory;
  * used. If used with some other session type, the implementation assumes
  * "<b>ask</b>".
  * <p>
- * <p>
  * Asking the user is done via a {@link CredentialsProvider} obtained from the
  * session. If none is set, the implementation falls back to strict host key
  * checking ("<b>yes</b>").
- * </p>
  * <p>
  * Note that adding a key to the known hosts file may create the file. You can
  * specify in the constructor whether the user shall be asked about that, too.
  * If the user declines updating the file, but the key was otherwise
  * accepted (user confirmed for "<b>ask</b>", or "no" or "accept-new" are
  * active), the key is accepted for this session only.
- * </p>
  * <p>
  * If several known hosts files are specified, a new key is always added to the
  * first file (even if it doesn't exist yet; see the note about file creation
  * above).
- * </p>
  *
  * @see <a href="http://man.openbsd.org/OpenBSD-current/man5/ssh_config.5">man
  *      ssh-config</a>
@@ -132,6 +130,9 @@ public class OpenSshServerKeyDatabase
 
 	/** Can be used to mark revoked known host lines. */
 	private static final String MARKER_REVOKED = "revoked"; //$NON-NLS-1$
+
+	/** Marks CA keys used for SSH certificates. */
+	private static final String MARKER_CA = "cert-authority"; //$NON-NLS-1$
 
 	private final boolean askAboutNewFile;
 
@@ -185,7 +186,10 @@ public class OpenSshServerKeyDatabase
 		for (HostKeyFile file : filesToUse) {
 			for (HostEntryPair current : file.get()) {
 				KnownHostEntry entry = current.getHostEntry();
-				if (!isRevoked(entry)) {
+				if (current.getServerKey() instanceof UnsupportedSshPublicKey) {
+					continue;
+				}
+				if (!isRevoked(entry) && !isCertificateAuthority(entry)) {
 					for (SshdSocketAddress host : candidates) {
 						if (entry.isHostMatch(host.getHostName(),
 								host.getPort())) {
@@ -211,6 +215,7 @@ public class OpenSshServerKeyDatabase
 		Collection<SshdSocketAddress> candidates = getCandidates(connectAddress,
 				remoteAddress);
 		for (HostKeyFile file : filesToUse) {
+			HostEntryPair lastModified = modified[0];
 			try {
 				if (find(candidates, serverKey, file.get(), modified)) {
 					return true;
@@ -219,24 +224,35 @@ public class OpenSshServerKeyDatabase
 				ask.revokedKey(remoteAddress, serverKey, file.getPath());
 				return false;
 			}
-			if (path == null && modified[0] != null) {
+			if (modified[0] != lastModified) {
 				// Remember the file in which we might need to update the
 				// entry
 				path = file.getPath();
 			}
 		}
+		if (serverKey instanceof OpenSshCertificate) {
+			return false;
+		}
 		if (modified[0] != null) {
-			// We found an entry, but with a different key
+			// We found an entry, but with a different key.
 			AskUser.ModifiedKeyHandling toDo = ask.acceptModifiedServerKey(
 					remoteAddress, modified[0].getServerKey(),
 					serverKey, path);
 			if (toDo == AskUser.ModifiedKeyHandling.ALLOW_AND_STORE) {
-				try {
-					updateModifiedServerKey(serverKey, modified[0], path);
-					knownHostsFiles.get(path).resetReloadAttributes();
-				} catch (IOException e) {
-					LOG.warn(format(SshdText.get().knownHostsCouldNotUpdate,
-							path));
+				if (modified[0]
+						.getServerKey() instanceof UnsupportedSshPublicKey) {
+					// Never update a line containing an unknown key type,
+					// always add.
+					addKeyToFile(filesToUse.get(0), candidates, serverKey, ask,
+							config);
+				} else {
+					try {
+						updateModifiedServerKey(serverKey, modified[0], path);
+						knownHostsFiles.get(path).resetReloadAttributes();
+					} catch (IOException e) {
+						LOG.warn(format(SshdText.get().knownHostsCouldNotUpdate,
+								path));
+					}
 				}
 			}
 			if (toDo == AskUser.ModifiedKeyHandling.DENY) {
@@ -249,19 +265,8 @@ public class OpenSshServerKeyDatabase
 			return true;
 		} else if (ask.acceptUnknownKey(remoteAddress, serverKey)) {
 			if (!filesToUse.isEmpty()) {
-				HostKeyFile toUpdate = filesToUse.get(0);
-				path = toUpdate.getPath();
-				try {
-					if (Files.exists(path) || !askAboutNewFile
-							|| ask.createNewFile(path)) {
-						updateKnownHostsFile(candidates, serverKey, path,
-								config);
-						toUpdate.resetReloadAttributes();
-					}
-				} catch (Exception e) {
-					LOG.warn(format(SshdText.get().knownHostsCouldNotUpdate,
-							path), e);
-				}
+				addKeyToFile(filesToUse.get(0), candidates, serverKey, ask,
+						config);
 			}
 			return true;
 		}
@@ -272,36 +277,87 @@ public class OpenSshServerKeyDatabase
 		private static final long serialVersionUID = 1L;
 	}
 
-	private boolean isRevoked(KnownHostEntry entry) {
+	private static boolean isRevoked(KnownHostEntry entry) {
 		return MARKER_REVOKED.equals(entry.getMarker());
+	}
+
+	private static boolean isCertificateAuthority(KnownHostEntry entry) {
+		return MARKER_CA.equals(entry.getMarker());
 	}
 
 	private boolean find(Collection<SshdSocketAddress> candidates,
 			PublicKey serverKey, List<HostEntryPair> entries,
 			HostEntryPair[] modified) throws RevokedKeyException {
+		PublicKey keyToCheck = serverKey;
+		boolean isCert = false;
+		String keyType = KeyUtils.getKeyType(keyToCheck);
+		String modifiedKeyType = null;
+		if (modified[0] != null) {
+			modifiedKeyType = modified[0].getHostEntry().getKeyEntry()
+					.getKeyType();
+		}
+		if (serverKey instanceof OpenSshCertificate) {
+			keyToCheck = ((OpenSshCertificate) serverKey).getCaPubKey();
+			isCert = true;
+		}
 		for (HostEntryPair current : entries) {
 			KnownHostEntry entry = current.getHostEntry();
-			for (SshdSocketAddress host : candidates) {
-				if (entry.isHostMatch(host.getHostName(), host.getPort())) {
-					boolean revoked = isRevoked(entry);
-					if (KeyUtils.compareKeys(serverKey,
-							current.getServerKey())) {
-						// Exact match
-						if (revoked) {
-							throw new RevokedKeyException();
-						}
+			if (candidates.stream().anyMatch(host -> entry
+					.isHostMatch(host.getHostName(), host.getPort()))) {
+				boolean revoked = isRevoked(entry);
+				boolean haveCert = isCertificateAuthority(entry);
+				if (KeyUtils.compareKeys(keyToCheck, current.getServerKey())) {
+					// Exact match
+					if (revoked) {
+						throw new RevokedKeyException();
+					}
+					if (haveCert == isCert) {
 						modified[0] = null;
 						return true;
-					} else if (!revoked) {
-						// Server sent a different key
-						modified[0] = current;
-						// Keep going -- maybe there's another entry for this
-						// host
 					}
-					break;
+				}
+				if (haveCert == isCert && !haveCert && !revoked) {
+					// Server sent a different key.
+					if (modifiedKeyType == null) {
+						modified[0] = current;
+						modifiedKeyType = entry.getKeyEntry().getKeyType();
+					} else if (!keyType.equals(modifiedKeyType)) {
+						String thisKeyType = entry.getKeyEntry().getKeyType();
+						if (isBetterMatch(keyType, thisKeyType,
+								modifiedKeyType)) {
+							// Since we may replace the modified[0] key,
+							// prefer to report a key of the same key type
+							// as having been modified.
+							modified[0] = current;
+							modifiedKeyType = keyType;
+						}
+					}
+					// Keep going -- maybe there's another entry for this
+					// host
 				}
 			}
 		}
+		return false;
+	}
+
+	private static boolean isBetterMatch(String keyType, String thisType,
+			String modifiedType) {
+		if (keyType.equals(thisType)) {
+			return true;
+		}
+		// EC keys are a bit special because they encode the curve in the key
+		// type. If we have no exactly matching EC key type in known_hosts, we
+		// still prefer to update an existing EC key type over some other key
+		// type.
+		if (!keyType.startsWith("ecdsa") || !thisType.startsWith("ecdsa")) { //$NON-NLS-1$ //$NON-NLS-2$
+			return false;
+		}
+		if (!modifiedType.startsWith("ecdsa")) { //$NON-NLS-1$
+			return true;
+		}
+		// All three are EC keys. thisType doesn't match the size of keyType
+		// (otherwise the two would have compared equal above already), so it is
+		// not better than modifiedType.
 		return false;
 	}
 
@@ -322,6 +378,21 @@ public class OpenSshServerKeyDatabase
 			}
 		}
 		return userFiles;
+	}
+
+	private void addKeyToFile(HostKeyFile file,
+			Collection<SshdSocketAddress> candidates, PublicKey serverKey,
+			AskUser ask, Configuration config) {
+		Path path = file.getPath();
+		try {
+			if (Files.exists(path) || !askAboutNewFile
+					|| ask.createNewFile(path)) {
+				updateKnownHostsFile(candidates, serverKey, path, config);
+				file.resetReloadAttributes();
+			}
+		} catch (Exception e) {
+			LOG.warn(format(SshdText.get().knownHostsCouldNotUpdate, path), e);
+		}
 	}
 
 	private void updateKnownHostsFile(Collection<SshdSocketAddress> candidates,
@@ -460,15 +531,22 @@ public class OpenSshServerKeyDatabase
 				return;
 			}
 			InetSocketAddress remote = (InetSocketAddress) remoteAddress;
+			boolean isCert = serverKey instanceof OpenSshCertificate;
+			PublicKey keyToReport = isCert
+					? ((OpenSshCertificate) serverKey).getCaPubKey()
+					: serverKey;
 			URIish uri = JGitUserInteraction.toURI(config.getUsername(),
 					remote);
 			String sha256 = KeyUtils.getFingerPrint(BuiltinDigests.sha256,
-					serverKey);
-			String md5 = KeyUtils.getFingerPrint(BuiltinDigests.md5, serverKey);
-			String keyAlgorithm = serverKey.getAlgorithm();
+					keyToReport);
+			String md5 = KeyUtils.getFingerPrint(BuiltinDigests.md5,
+					keyToReport);
+			String keyAlgorithm = keyToReport.getAlgorithm();
+			String msg = isCert
+					? SshdText.get().knownHostsRevokedCertificateMsg
+					: SshdText.get().knownHostsRevokedKeyMsg;
 			askUser(provider, uri, null, //
-					format(SshdText.get().knownHostsRevokedKeyMsg,
-							remote.getHostString(), path),
+					format(msg, remote.getHostString(), path),
 					format(SshdText.get().knownHostsKeyFingerprints,
 							keyAlgorithm),
 					md5, sha256);
@@ -593,7 +671,7 @@ public class OpenSshServerKeyDatabase
 				if (rawEntries == null || rawEntries.isEmpty()) {
 					return Collections.emptyList();
 				}
-				List<HostEntryPair> newEntries = new LinkedList<>();
+				List<HostEntryPair> newEntries = new ArrayList<>();
 				for (KnownHostEntry entry : rawEntries) {
 					AuthorizedKeyEntry keyPart = entry.getKeyEntry();
 					if (keyPart == null) {
@@ -601,7 +679,7 @@ public class OpenSshServerKeyDatabase
 					}
 					try {
 						PublicKey serverKey = keyPart.resolvePublicKey(null,
-								PublicKeyEntryResolver.IGNORING);
+								PublicKeyEntryResolver.UNSUPPORTED);
 						if (serverKey == null) {
 							LOG.warn(format(
 									SshdText.get().knownHostsUnknownKeyType,
@@ -632,7 +710,7 @@ public class OpenSshServerKeyDatabase
 
 	private SshdSocketAddress toSshdSocketAddress(@NonNull String address) {
 		String host = null;
-		int port = 0;
+		int port = SshConstants.DEFAULT_PORT;
 		if (HostPatternsHolder.NON_STANDARD_PORT_PATTERN_ENCLOSURE_START_DELIM == address
 				.charAt(0)) {
 			int end = address.indexOf(
@@ -672,12 +750,23 @@ public class OpenSshServerKeyDatabase
 		if (address != null) {
 			candidates.add(address);
 		}
-		return candidates;
+		List<SshdSocketAddress> result = new ArrayList<>();
+		result.addAll(candidates);
+		if (!remoteAddress.isUnresolved()) {
+			SshdSocketAddress ip = new SshdSocketAddress(
+					remoteAddress.getAddress().getHostAddress(),
+					remoteAddress.getPort());
+			if (candidates.add(ip)) {
+				result.add(ip);
+			}
+		}
+		return result;
 	}
 
 	private String createHostKeyLine(Collection<SshdSocketAddress> patterns,
 			PublicKey key, Configuration config) throws Exception {
 		StringBuilder result = new StringBuilder();
+		Set<String> knownNames = new HashSet<>();
 		if (config.getHashKnownHosts()) {
 			// SHA1 is the only algorithm for host name hashing known to OpenSSH
 			// or to Apache MINA sshd.
@@ -687,10 +776,10 @@ public class OpenSshServerKeyDatabase
 				prng = new SecureRandom();
 			}
 			byte[] salt = new byte[mac.getDefaultBlockSize()];
-			for (SshdSocketAddress address : patterns) {
-				if (result.length() > 0) {
-					result.append(',');
-				}
+			// For hashed hostnames, only one hashed pattern is allowed per
+			// https://man.openbsd.org/sshd.8#SSH_KNOWN_HOSTS_FILE_FORMAT
+			if (!patterns.isEmpty()) {
+				SshdSocketAddress address = patterns.iterator().next();
 				prng.nextBytes(salt);
 				KnownHostHashValue.append(result, digester, salt,
 						KnownHostHashValue.calculateHashValue(
@@ -699,6 +788,10 @@ public class OpenSshServerKeyDatabase
 			}
 		} else {
 			for (SshdSocketAddress address : patterns) {
+				String tgt = address.getHostName() + ':' + address.getPort();
+				if (!knownNames.add(tgt)) {
+					continue;
+				}
 				if (result.length() > 0) {
 					result.append(',');
 				}

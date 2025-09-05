@@ -28,6 +28,7 @@ import org.eclipse.jgit.lib.BatchRefUpdate;
 import org.eclipse.jgit.lib.NullProgressMonitor;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.Ref;
+import org.eclipse.jgit.lib.ReflogReader;
 import org.eclipse.jgit.revwalk.RevWalk;
 import org.eclipse.jgit.transport.ReceiveCommand;
 import org.eclipse.jgit.util.RefList;
@@ -75,19 +76,16 @@ public class DfsReftableDatabase extends DfsRefDatabase {
 		stack = null;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public boolean hasVersioning() {
 		return true;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public boolean performsAtomicTransactions() {
 		return true;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public BatchRefUpdate newBatchUpdate() {
 		DfsObjDatabase odb = getRepository().getObjectDatabase();
@@ -151,13 +149,11 @@ public class DfsReftableDatabase extends DfsRefDatabase {
 		return reftableDatabase.isNameConflicting(refName, new TreeSet<>(), new HashSet<>());
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public Ref exactRef(String name) throws IOException {
 		return reftableDatabase.exactRef(name);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public Map<String, Ref> getRefs(String prefix) throws IOException {
 		List<Ref> refs = reftableDatabase.getRefsByPrefix(prefix);
@@ -169,21 +165,23 @@ public class DfsReftableDatabase extends DfsRefDatabase {
 			RefList.emptyList());
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public List<Ref> getRefsByPrefix(String prefix) throws IOException {
 
 		return reftableDatabase.getRefsByPrefix(prefix);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public List<Ref> getRefsByPrefixWithExclusions(String include, Set<String> excludes)
 			throws IOException {
 		return reftableDatabase.getRefsByPrefixWithExclusions(include, excludes);
 	}
 
-	/** {@inheritDoc} */
+	@Override
+	public ReflogReader getReflogReader(Ref ref) throws IOException {
+		return reftableDatabase.getReflogReader(ref.getName());
+	}
+
 	@Override
 	public Set<Ref> getTipsWithSha1(ObjectId id) throws IOException {
 		if (!getReftableConfig().isIndexObjects()) {
@@ -192,13 +190,11 @@ public class DfsReftableDatabase extends DfsRefDatabase {
 		return reftableDatabase.getTipsWithSha1(id);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public boolean hasFastTipsWithSha1() throws IOException {
 		return reftableDatabase.hasFastTipsWithSha1();
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public Ref peel(Ref ref) throws IOException {
 		Ref oldLeaf = ref.getLeaf();
@@ -233,7 +229,6 @@ public class DfsReftableDatabase extends DfsRefDatabase {
 		}
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	protected boolean compareAndPut(Ref oldRef, @Nullable Ref newRef)
 			throws IOException {
@@ -254,13 +249,11 @@ public class DfsReftableDatabase extends DfsRefDatabase {
 		}
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	protected boolean compareAndRemove(Ref oldRef) throws IOException {
 		return compareAndPut(oldRef, null);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	protected RefCache scanAllRefs() throws IOException {
 		throw new UnsupportedOperationException();
@@ -276,7 +269,6 @@ public class DfsReftableDatabase extends DfsRefDatabase {
 		// Unnecessary; DfsReftableBatchRefUpdate calls clearCache().
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	protected void cachePeeledState(Ref oldLeaf, Ref newLeaf) {
 		// Do not cache peeled state in reftable.

@@ -43,7 +43,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Iterator;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -126,16 +125,16 @@ public class ConfigTest {
 	@Test
 	public void test005_PutGetStringList() {
 		Config c = new Config();
-		final LinkedList<String> values = new LinkedList<>();
+		List<String> values = new ArrayList<>();
 		values.add("value1");
 		values.add("value2");
 		c.setStringList("my", null, "somename", values);
 
-		final Object[] expArr = values.toArray();
-		final String[] actArr = c.getStringList("my", null, "somename");
+		Object[] expArr = values.toArray();
+		String[] actArr = c.getStringList("my", null, "somename");
 		assertArrayEquals(expArr, actArr);
 
-		final String expText = "[my]\n\tsomename = value1\n\tsomename = value2\n";
+		String expText = "[my]\n\tsomename = value1\n\tsomename = value2\n";
 		assertEquals(expText, c.toText());
 	}
 
@@ -518,6 +517,35 @@ public class ConfigTest {
 	}
 
 	@Test
+	public void testRemoveBranchSection() throws ConfigInvalidException {
+		Config c = parse("" //
+				+ "[branch \"keep\"]\n"
+				+ "  merge = master.branch.to.keep.in.the.file\n"
+				+ "\n"
+				+ "[branch \"remove\"]\n"
+				+ "  merge = this.will.get.deleted\n"
+				+ "  remote = origin-for-some-long-gone-place\n"
+				+ "\n"
+				+ "\n"
+				+ "[core-section-not-to-remove-in-test]\n"
+				+ "  packedGitLimit = 14\n"
+				+ "\n"
+				+ "[other]\n"
+				+ "  foo = bar\n");
+		assertFalse(c.removeSection("branch", "does.not.exist"));
+		assertTrue(c.removeSection("branch", "remove"));
+		assertEquals("" //
+				+ "[branch \"keep\"]\n"
+				+ "  merge = master.branch.to.keep.in.the.file\n"
+				+ "\n"
+				+ "[core-section-not-to-remove-in-test]\n"
+				+ "  packedGitLimit = 14\n"
+				+ "\n"
+				+ "[other]\n"
+				+ "  foo = bar\n", c.toText());
+	}
+
+	@Test
 	public void testUnsetBranchSection() throws ConfigInvalidException {
 		Config c = parse("" //
 				+ "[branch \"keep\"]\n"
@@ -527,8 +555,12 @@ public class ConfigTest {
 				+ "  merge = this.will.get.deleted\n"
 				+ "  remote = origin-for-some-long-gone-place\n"
 				+ "\n"
+				+ "\n"
 				+ "[core-section-not-to-remove-in-test]\n"
-				+ "  packedGitLimit = 14\n");
+				+ "  packedGitLimit = 14\n"
+				+ "\n"
+				+ "[other]\n"
+				+ "  foo = bar\n");
 		c.unsetSection("branch", "does.not.exist");
 		c.unsetSection("branch", "remove");
 		assertEquals("" //
@@ -536,7 +568,10 @@ public class ConfigTest {
 				+ "  merge = master.branch.to.keep.in.the.file\n"
 				+ "\n"
 				+ "[core-section-not-to-remove-in-test]\n"
-				+ "  packedGitLimit = 14\n", c.toText());
+				+ "  packedGitLimit = 14\n"
+				+ "\n"
+				+ "[other]\n"
+				+ "  foo = bar\n", c.toText());
 	}
 
 	@Test
@@ -1493,7 +1528,9 @@ public class ConfigTest {
 
 		File workTree = tmp.newFolder("dummy-worktree");
 		File tempFile = tmp.newFile("testCommitTemplate-");
-		Repository repo = FileRepositoryBuilder.create(workTree);
+		Repository repo = FileRepositoryBuilder
+				.create(new File(workTree, ".git"));
+		repo.create();
 		String templateContent = "content of the template";
 		JGitTestUtil.write(tempFile, templateContent);
 		String expectedTemplatePath = tempFile.getPath();
@@ -1541,14 +1578,15 @@ public class ConfigTest {
 	@Test
 	public void testCommitTemplateEncoding()
 			throws ConfigInvalidException, IOException {
-		Config config = new Config(null);
 		File workTree = tmp.newFolder("dummy-worktree");
-		Repository repo = FileRepositoryBuilder.create(workTree);
+		Repository repo = FileRepositoryBuilder
+				.create(new File(workTree, ".git"));
+		repo.create();
 		File tempFile = tmp.newFile("testCommitTemplate-");
 		String templateContent = "content of the template";
 		JGitTestUtil.write(tempFile, templateContent);
 		String expectedTemplatePath = tempFile.getPath();
-		config = parse("[i18n]\n\tcommitEncoding = utf-8\n"
+		Config config = parse("[i18n]\n\tcommitEncoding = utf-8\n"
 				+ "[commit]\n\ttemplate = "
 				+ Config.escapeValue(expectedTemplatePath) + "\n");
 		assertEquals(templateContent,
@@ -1562,13 +1600,14 @@ public class ConfigTest {
 	@Test(expected = ConfigInvalidException.class)
 	public void testCommitTemplateWithInvalidEncoding()
 			throws ConfigInvalidException, IOException {
-		Config config = new Config(null);
 		File workTree = tmp.newFolder("dummy-worktree");
 		File tempFile = tmp.newFile("testCommitTemplate-");
-		Repository repo = FileRepositoryBuilder.create(workTree);
+		Repository repo = FileRepositoryBuilder
+				.create(new File(workTree, ".git"));
+		repo.create();
 		String templateContent = "content of the template";
 		JGitTestUtil.write(tempFile, templateContent);
-		config = parse("[i18n]\n\tcommitEncoding = invalidEcoding\n"
+		Config config = parse("[i18n]\n\tcommitEncoding = invalidEcoding\n"
 				+ "[commit]\n\ttemplate = "
 				+ Config.escapeValue(tempFile.getPath()) + "\n");
 		config.get(CommitConfig.KEY).getCommitTemplateContent(repo);
@@ -1577,15 +1616,17 @@ public class ConfigTest {
 	@Test(expected = FileNotFoundException.class)
 	public void testCommitTemplateWithInvalidPath()
 			throws ConfigInvalidException, IOException {
-		Config config = new Config(null);
 		File workTree = tmp.newFolder("dummy-worktree");
 		File tempFile = tmp.newFile("testCommitTemplate-");
-		Repository repo = FileRepositoryBuilder.create(workTree);
+		Repository repo = FileRepositoryBuilder
+				.create(new File(workTree, ".git"));
+		repo.create();
 		String templateContent = "content of the template";
 		JGitTestUtil.write(tempFile, templateContent);
 		// commit message encoding
 		String expectedTemplatePath = "~/nonExistingTemplate";
-		config = parse("[commit]\n\ttemplate = " + expectedTemplatePath + "\n");
+		Config config = parse(
+				"[commit]\n\ttemplate = " + expectedTemplatePath + "\n");
 		String templatePath = config.get(CommitConfig.KEY)
 				.getCommitTemplatePath();
 		assertEquals(expectedTemplatePath, templatePath);
@@ -1604,6 +1645,47 @@ public class ConfigTest {
 		config.setBoolean(ConfigConstants.CONFIG_CORE_SECTION, null,
 				ConfigConstants.CONFIG_COMMIT_GRAPH, false);
 		assertFalse(config.get(CoreConfig.KEY).enableCommitGraph());
+	}
+
+	@Test
+	public void testGetNoDefaultBoolean() {
+		Config config = new Config();
+		assertNull(config.getBoolean("foo", "bar"));
+		assertNull(config.getBoolean("foo", "bar", "baz"));
+	}
+
+	@Test
+	public void testGetNoDefaultEnum() {
+		Config config = new Config();
+		assertNull(config.getEnum(new TestEnum[] { TestEnum.ONE_TWO }, "foo",
+				"bar", "baz"));
+	}
+
+	@Test
+	public void testGetNoDefaultInt() {
+		Config config = new Config();
+		assertNull(config.getInt("foo", "bar"));
+		assertNull(config.getInt("foo", "bar", "baz"));
+	}
+	@Test
+	public void testGetNoDefaultIntInRange() {
+		Config config = new Config();
+		assertNull(config.getIntInRange("foo", "bar", 1, 5));
+		assertNull(config.getIntInRange("foo", "bar", "baz", 1, 5));
+	}
+
+	@Test
+	public void testGetNoDefaultLong() {
+		Config config = new Config();
+		assertNull(config.getLong("foo", "bar"));
+		assertNull(config.getLong("foo", "bar", "baz"));
+	}
+
+	@Test
+	public void testGetNoDefaultTimeUnit() {
+		Config config = new Config();
+		assertNull(config.getTimeUnit("foo", "bar", "baz",
+				TimeUnit.SECONDS));
 	}
 
 	private static void assertValueRoundTrip(String value)

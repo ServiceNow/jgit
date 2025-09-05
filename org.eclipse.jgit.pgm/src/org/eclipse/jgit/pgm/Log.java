@@ -32,13 +32,12 @@ import org.eclipse.jgit.errors.LargeObjectException;
 import org.eclipse.jgit.lib.AnyObjectId;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.GpgConfig;
-import org.eclipse.jgit.lib.GpgSignatureVerifier;
-import org.eclipse.jgit.lib.GpgSignatureVerifier.SignatureVerification;
-import org.eclipse.jgit.lib.GpgSignatureVerifierFactory;
+import org.eclipse.jgit.lib.SignatureVerifier.SignatureVerification;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.PersonIdent;
 import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.lib.Repository;
+import org.eclipse.jgit.lib.SignatureVerifiers;
 import org.eclipse.jgit.notes.NoteMap;
 import org.eclipse.jgit.pgm.internal.CLIText;
 import org.eclipse.jgit.pgm.internal.VerificationUtils;
@@ -174,22 +173,18 @@ class Log extends RevWalkTextBuiltin {
 	// END -- Options shared with Diff
 
 
-	private GpgSignatureVerifier verifier;
-
 	private GpgConfig config;
 
 	Log() {
 		dateFormatter = new GitDateFormatter(Format.DEFAULT);
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	protected void init(Repository repository, String gitDir) {
 		super.init(repository, gitDir);
 		diffFmt = new DiffFormatter(new BufferedOutputStream(outs));
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	protected void run() {
 		config = new GpgConfig(db.getConfig());
@@ -229,9 +224,6 @@ class Log extends RevWalkTextBuiltin {
 			throw die(e.getMessage(), e);
 		} finally {
 			diffFmt.close();
-			if (verifier != null) {
-				verifier.clear();
-			}
 		}
 	}
 
@@ -244,7 +236,6 @@ class Log extends RevWalkTextBuiltin {
 				NoteMap.read(argWalk.getObjectReader(), notesCommit));
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	protected void show(RevCommit c) throws Exception {
 		outw.print(CLIText.get().commitLabel);
@@ -296,28 +287,24 @@ class Log extends RevWalkTextBuiltin {
 		if (c.getRawGpgSignature() == null) {
 			return;
 		}
-		if (verifier == null) {
-			GpgSignatureVerifierFactory factory = GpgSignatureVerifierFactory
-					.getDefault();
-			if (factory == null) {
-				throw die(CLIText.get().logNoSignatureVerifier, null);
-			}
-			verifier = factory.getVerifier();
-		}
-		SignatureVerification verification = verifier.verifySignature(c,
-				config);
+		SignatureVerification verification = SignatureVerifiers.verify(db,
+				config, c);
 		if (verification == null) {
 			return;
 		}
 		VerificationUtils.writeVerification(outw, verification,
-				verifier.getName(), c.getCommitterIdent());
+				verification.verifierName(), c.getCommitterIdent());
 	}
 
 	/**
+	 * Show notes for given commit
+	 *
 	 * @param c
+	 *            given commit
 	 * @return <code>true</code> if at least one note was printed,
 	 *         <code>false</code> otherwise
 	 * @throws IOException
+	 *             if an IO error occurred
 	 */
 	private boolean showNotes(RevCommit c) throws IOException {
 		if (noteMaps == null)
@@ -344,12 +331,17 @@ class Log extends RevWalkTextBuiltin {
 
 	/**
 	 * @param c
+	 *            given commit
 	 * @param map
+	 *            note map
 	 * @param label
+	 *            label
 	 * @param emptyLine
+	 *            whether to start with an empty line
 	 * @return <code>true</code> if note was printed, <code>false</code>
 	 *         otherwise
 	 * @throws IOException
+	 *             if an IO error occurred
 	 */
 	private boolean showNotes(RevCommit c, NoteMap map, String label,
 			boolean emptyLine)

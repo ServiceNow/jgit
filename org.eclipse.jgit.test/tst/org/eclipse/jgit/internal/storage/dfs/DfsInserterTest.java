@@ -10,6 +10,8 @@
 
 package org.eclipse.jgit.internal.storage.dfs;
 
+import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_KEY_MIN_BYTES_OBJ_SIZE_INDEX;
+import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_PACK_SECTION;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertSame;
@@ -29,11 +31,16 @@ import org.eclipse.jgit.internal.storage.pack.PackExt;
 import org.eclipse.jgit.junit.JGitTestUtil;
 import org.eclipse.jgit.junit.TestRng;
 import org.eclipse.jgit.lib.AbbreviatedObjectId;
+import org.eclipse.jgit.lib.CommitBuilder;
 import org.eclipse.jgit.lib.Constants;
+import org.eclipse.jgit.lib.FileMode;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectInserter;
 import org.eclipse.jgit.lib.ObjectLoader;
 import org.eclipse.jgit.lib.ObjectReader;
+import org.eclipse.jgit.lib.PersonIdent;
+import org.eclipse.jgit.lib.TagBuilder;
+import org.eclipse.jgit.lib.TreeFormatter;
 import org.eclipse.jgit.util.IO;
 import org.eclipse.jgit.util.RawParseUtils;
 import org.junit.Before;
@@ -207,7 +214,7 @@ public class DfsInserterTest {
 	}
 
 	@Test
-	public void testNoCheckExisting() throws IOException {
+	public void testNoDuplicates() throws IOException {
 		byte[] contents = Constants.encode("foo");
 		ObjectId fooId;
 		try (ObjectInserter ins = db.newObjectInserter()) {
@@ -217,27 +224,92 @@ public class DfsInserterTest {
 		assertEquals(1, db.getObjectDatabase().listPacks().size());
 
 		try (ObjectInserter ins = db.newObjectInserter()) {
-			((DfsInserter) ins).checkExisting(false);
+			ins.insert(Constants.OBJ_BLOB, Constants.encode("bar"));
 			assertEquals(fooId, ins.insert(Constants.OBJ_BLOB, contents));
 			ins.flush();
 		}
 		assertEquals(2, db.getObjectDatabase().listPacks().size());
 
-		// Verify that we have a foo in both INSERT packs.
+		// Newer packs are first. Verify that foo is only in the second pack
 		try (DfsReader reader = new DfsReader(db.getObjectDatabase())) {
 			DfsPackFile packs[] = db.getObjectDatabase().getPacks();
-
 			assertEquals(2, packs.length);
 			DfsPackFile p1 = packs[0];
 			assertEquals(PackSource.INSERT,
 					p1.getPackDescription().getPackSource());
-			assertTrue(p1.hasObject(reader, fooId));
+			assertFalse(p1.hasObject(reader, fooId));
 
 			DfsPackFile p2 = packs[1];
 			assertEquals(PackSource.INSERT,
 					p2.getPackDescription().getPackSource());
 			assertTrue(p2.hasObject(reader, fooId));
 		}
+	}
+
+	@Test
+	public void testObjectSizePopulated() throws IOException {
+		// Blob
+		byte[] contents = Constants.encode("foo");
+
+		// Commit
+		PersonIdent person = new PersonIdent("Committer a", "jgit@eclipse.org");
+		CommitBuilder c = new CommitBuilder();
+		c.setAuthor(person);
+		c.setCommitter(person);
+		c.setTreeId(ObjectId
+				.fromString("45c4c6767a3945815371a7016532751dd558be40"));
+		c.setMessage("commit message");
+
+		// Tree
+		TreeFormatter treeBuilder = new TreeFormatter(2);
+		treeBuilder.append("filea", FileMode.REGULAR_FILE, ObjectId
+				.fromString("45c4c6767a3945815371a7016532751dd558be40"));
+		treeBuilder.append("fileb", FileMode.GITLINK, ObjectId
+				.fromString("1c458e25ca624bb8d4735bec1379a4a29ba786d0"));
+
+		// Tag
+		TagBuilder tagBuilder = new TagBuilder();
+		tagBuilder.setObjectId(
+				ObjectId.fromString("c97fe131649e80de55bd153e9a8d8629f7ca6932"),
+				Constants.OBJ_COMMIT);
+		tagBuilder.setTag("short name");
+
+		try (DfsInserter ins = (DfsInserter) db.newObjectInserter()) {
+			ObjectId aBlob = ins.insert(Constants.OBJ_BLOB, contents);
+			assertEquals(contents.length,
+					ins.objectMap.get(aBlob).getFullSize());
+
+			ObjectId aCommit = ins.insert(c);
+			assertEquals(174, ins.objectMap.get(aCommit).getFullSize());
+
+			ObjectId tree = ins.insert(treeBuilder);
+			assertEquals(66, ins.objectMap.get(tree).getFullSize());
+
+			ObjectId tag = ins.insert(tagBuilder);
+			assertEquals(76, ins.objectMap.get(tag).getFullSize());
+		}
+	}
+
+	@Test
+	public void testObjectSizeIndexOnInsert() throws IOException {
+		db.getConfig().setInt(CONFIG_PACK_SECTION, null,
+				CONFIG_KEY_MIN_BYTES_OBJ_SIZE_INDEX, 0);
+		db.getObjectDatabase().getReaderOptions().setUseObjectSizeIndex(true);
+
+		byte[] contents = Constants.encode("foo");
+		ObjectId fooId;
+		try (ObjectInserter ins = db.newObjectInserter()) {
+			fooId = ins.insert(Constants.OBJ_BLOB, contents);
+			ins.flush();
+		}
+
+		DfsReader reader = db.getObjectDatabase().newReader();
+		assertEquals(1, db.getObjectDatabase().listPacks().size());
+		DfsPackFile insertPack = db.getObjectDatabase().getPacks()[0];
+		assertEquals(PackSource.INSERT,
+				insertPack.getPackDescription().getPackSource());
+		assertTrue(insertPack.hasObjectSizeIndex(reader));
+		assertEquals(contents.length, insertPack.getIndexedObjectSize(reader, fooId));
 	}
 
 	private static String readString(ObjectLoader loader) throws IOException {

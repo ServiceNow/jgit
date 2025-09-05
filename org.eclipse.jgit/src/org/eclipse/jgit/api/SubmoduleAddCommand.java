@@ -66,6 +66,7 @@ public class SubmoduleAddCommand extends
 	 * Set the submodule name
 	 *
 	 * @param name
+	 *            name of the submodule
 	 * @return this command
 	 * @since 5.1
 	 */
@@ -117,6 +118,7 @@ public class SubmoduleAddCommand extends
 	 *
 	 * @return true if submodule exists in index, false otherwise
 	 * @throws java.io.IOException
+	 *             if an IO error occurred
 	 */
 	protected boolean submoduleExists() throws IOException {
 		TreeFilter filter = PathFilter.create(path);
@@ -174,8 +176,9 @@ public class SubmoduleAddCommand extends
 		CloneCommand clone = Git.cloneRepository();
 		configure(clone);
 		clone.setDirectory(moduleDirectory);
-		clone.setGitDir(new File(new File(repo.getDirectory(),
-				Constants.MODULES), path));
+		clone.setGitDir(new File(
+				new File(repo.getCommonDirectory(), Constants.MODULES), path));
+		clone.setRelativePaths(true);
 		clone.setURI(resolvedUri);
 		if (monitor != null)
 			clone.setProgressMonitor(monitor);

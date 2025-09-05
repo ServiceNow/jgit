@@ -88,44 +88,6 @@ import org.eclipse.jgit.util.io.TimeoutOutputStream;
  * Implements the server side of a push connection, receiving objects.
  */
 public class ReceivePack {
-	/**
-	 * Data in the first line of a request, the line itself plus capabilities.
-	 *
-	 * @deprecated Use {@link FirstCommand} instead.
-	 * @since 5.6
-	 */
-	@Deprecated
-	public static class FirstLine {
-		private final FirstCommand command;
-
-		/**
-		 * Parse the first line of a receive-pack request.
-		 *
-		 * @param line
-		 *            line from the client.
-		 */
-		public FirstLine(String line) {
-			command = FirstCommand.fromLine(line);
-		}
-
-		/** @return non-capabilities part of the line. */
-		public String getLine() {
-			return command.getLine();
-		}
-
-		/** @return capabilities parsed from the line. */
-		public Set<String> getCapabilities() {
-			Set<String> reconstructedCapabilites = new HashSet<>();
-			for (Map.Entry<String, String> e : command.getCapabilities()
-					.entrySet()) {
-				String cap = e.getValue() == null ? e.getKey()
-						: e.getKey() + "=" + e.getValue(); //$NON-NLS-1$
-				reconstructedCapabilites.add(cap);
-			}
-
-			return reconstructedCapabilites;
-		}
-	}
 
 	/** Database we write the stored objects into. */
 	private final Repository db;
@@ -460,6 +422,7 @@ public class ReceivePack {
 	 *            null, assumes the default set of additional haves from the
 	 *            repository.
 	 * @throws IOException
+	 *             if an IO error occurred
 	 */
 	public void setAdvertisedRefs(Map<String, Ref> allRefs,
 			Set<ObjectId> additionalHaves) throws IOException {
@@ -1024,6 +987,7 @@ public class ReceivePack {
 	 * Set an error handler for {@link ReceiveCommand}.
 	 *
 	 * @param receiveCommandErrorHandler
+	 *            the error handler
 	 * @since 5.7
 	 */
 	public void setReceiveCommandErrorHandler(
@@ -1212,6 +1176,7 @@ public class ReceivePack {
 	 *
 	 * @return advertised refs, or the default if not explicitly advertised.
 	 * @throws IOException
+	 *             if an IO error occurred
 	 */
 	private Map<String, Ref> getAdvertisedOrDefaultRefs() throws IOException {
 		if (refs == null)
@@ -1348,7 +1313,8 @@ public class ReceivePack {
 	/**
 	 * Receive a list of commands from the input.
 	 *
-	 * @throws java.io.IOException
+	 * @throws IOException
+	 *             if an IO error occurred
 	 */
 	private void recvCommands() throws IOException {
 		PacketLineIn pck = maxCommandBytes > 0
@@ -1936,7 +1902,8 @@ public class ReceivePack {
 	/**
 	 * Close and flush (if necessary) the underlying streams.
 	 *
-	 * @throws java.io.IOException
+	 * @throws IOException
+	 *             if an IO error occurred
 	 */
 	private void close() throws IOException {
 		if (sideBand) {
@@ -2125,8 +2092,10 @@ public class ReceivePack {
 	}
 
 	/**
+	 * Set the unpackErrorHandler
+	 *
 	 * @param unpackErrorHandler
-	 *            the unpackErrorHandler to set
+	 *            the unpackErrorHandler
 	 * @since 5.7
 	 */
 	public void setUnpackErrorHandler(UnpackErrorHandler unpackErrorHandler) {
@@ -2134,22 +2103,8 @@ public class ReceivePack {
 	}
 
 	/**
-	 * Set whether this class will report command failures as warning messages
-	 * before sending the command results.
+	 * Get the client session-id
 	 *
-	 * @param echo
-	 *            if true this class will report command failures as warning
-	 *            messages before sending the command results. This is usually
-	 *            not necessary, but may help buggy Git clients that discard the
-	 *            errors when all branches fail.
-	 * @deprecated no widely used Git versions need this any more
-	 */
-	@Deprecated
-	public void setEchoCommandFailures(boolean echo) {
-		// No-op.
-	}
-
-	/**
 	 * @return The client session-id.
 	 * @since 6.4
 	 */
@@ -2174,6 +2129,7 @@ public class ReceivePack {
 	 *            standard error channel of the command execution. For most
 	 *            other network connections this should be null.
 	 * @throws java.io.IOException
+	 *             if an IO error occurred
 	 */
 	public void receive(final InputStream input, final OutputStream output,
 			final OutputStream messages) throws IOException {
@@ -2217,6 +2173,7 @@ public class ReceivePack {
 	 *            standard error channel of the command execution. For most
 	 *            other network connections this should be null.
 	 * @throws java.io.IOException
+	 *             if an IO error occurred
 	 * @since 5.7
 	 */
 	public void receiveWithExceptionPropagation(InputStream input,

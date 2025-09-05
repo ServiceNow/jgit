@@ -60,7 +60,8 @@ public final class ConfigConstants {
 	public static final String CONFIG_KEY_PROMPT = "prompt";
 
 	/**
-	 * The "trustExitCode" key within "difftool" or "mergetool.<name>." section
+	 * The "trustExitCode" key within "difftool" or "mergetool.&lt;name&gt;."
+	 * section
 	 *
 	 * @since 6.1
 	 */
@@ -75,6 +76,13 @@ public final class ConfigConstants {
 
 	/** The "dfs" section */
 	public static final String CONFIG_DFS_SECTION = "dfs";
+
+	/**
+	 * The dfs cache subsection prefix.
+	 *
+	 * @since 7.0
+	 */
+	public static final String CONFIG_DFS_CACHE_PREFIX = "dfs.";
 
 	/**
 	 * The "receive" section
@@ -103,11 +111,18 @@ public final class ConfigConstants {
 	/** The "gc" section */
 	public static final String CONFIG_GC_SECTION = "gc";
 
+	/**
+	 * The "repack" section
+	 * @since 5.13.3
+	 */
+	public static final String CONFIG_REPACK_SECTION = "repack";
+
 	/** The "pack" section */
 	public static final String CONFIG_PACK_SECTION = "pack";
 
 	/**
 	 * The "fetch" section
+	 *
 	 * @since 3.3
 	 */
 	public static final String CONFIG_FETCH_SECTION = "fetch";
@@ -191,7 +206,36 @@ public final class ConfigConstants {
 	public static final String CONFIG_KEY_SIGNINGKEY = "signingKey";
 
 	/**
+	 * The "ssh" subsection key.
+	 *
+	 * @since 7.1
+	 */
+	public static final String CONFIG_SSH_SUBSECTION = "ssh";
+
+	/**
+	 * The "defaultKeyCommand" key.
+	 *
+	 * @since 7.1
+	 */
+	public static final String CONFIG_KEY_SSH_DEFAULT_KEY_COMMAND = "defaultKeyCommand";
+
+	/**
+	 * The "allowedSignersFile" key.
+	 *
+	 * @since 7.1
+	 */
+	public static final String CONFIG_KEY_SSH_ALLOWED_SIGNERS_FILE = "allowedSignersFile";
+
+	/**
+	 * The "revocationFile" key,
+	 *
+	 * @since 7.1
+	 */
+	public static final String CONFIG_KEY_SSH_REVOCATION_FILE = "revocationFile";
+
+	/**
 	 * The "commit" section
+	 *
 	 * @since 5.2
 	 */
 	public static final String CONFIG_COMMIT_SECTION = "commit";
@@ -324,13 +368,24 @@ public final class ConfigConstants {
 	public static final String CONFIG_KEY_DELTA_BASE_CACHE_LIMIT = "deltaBaseCacheLimit";
 
 	/**
+	 * The "packExtensions" key
+	 *
+	 * @since 7.0
+	 **/
+	public static final String CONFIG_KEY_PACK_EXTENSIONS = "packExtensions";
+
+	/**
 	 * The "symlinks" key
 	 * @since 3.3
 	 */
 	public static final String CONFIG_KEY_SYMLINKS = "symlinks";
 
-	/** The "streamFileThreshold" key */
-	public static final String CONFIG_KEY_STREAM_FILE_TRESHOLD = "streamFileThreshold";
+	/**
+	 * The "streamFileThreshold" key
+	 *
+	 * @since 6.8
+	 */
+	public static final String CONFIG_KEY_STREAM_FILE_THRESHOLD = "streamFileThreshold";
 
 	/**
 	 * The "packedGitMmap" key
@@ -362,6 +417,12 @@ public final class ConfigConstants {
 	 */
 	public static final String CONFIG_KEY_PACKED_GIT_USE_STRONGREFS = "packedgitusestrongrefs";
 
+	/**
+	 * The "packedIndexGitUseStrongRefs" key
+	 * @since 6.7
+	 */
+	public static final String CONFIG_KEY_PACKED_INDEX_GIT_USE_STRONGREFS = "packedindexgitusestrongrefs";
+
 	/** The "remote" key */
 	public static final String CONFIG_KEY_REMOTE = "remote";
 
@@ -384,6 +445,13 @@ public final class ConfigConstants {
 
 	/** The "rebase" key */
 	public static final String CONFIG_KEY_REBASE = "rebase";
+
+	/**
+	 * The "checkout" key
+	 *
+	 * @since 7.2
+	 */
+	public static final String CONFIG_KEY_CHECKOUT = "checkout";
 
 	/** The "url" key */
 	public static final String CONFIG_KEY_URL = "url";
@@ -532,9 +600,19 @@ public final class ConfigConstants {
 
 	/**
 	 * The "trustfolderstat" key in the "core" section
+	 *
 	 * @since 3.6
+	 * @deprecated use {CONFIG_KEY_TRUST_STAT} instead
 	 */
+	@Deprecated(since = "7.2", forRemoval = true)
 	public static final String CONFIG_KEY_TRUSTFOLDERSTAT = "trustfolderstat";
+
+	/**
+	 * The "trustfilestat" key in the "core"section
+	 *
+	 * @since 7.2
+	 */
+	public static final String CONFIG_KEY_TRUST_STAT = "truststat";
 
 	/**
 	 * The "supportsAtomicFileCreation" key in the "core" section
@@ -727,6 +805,13 @@ public final class ConfigConstants {
 	public static final String CONFIG_KEY_BITMAP_EXCESSIVE_BRANCH_COUNT = "bitmapexcessivebranchcount";
 
 	/**
+	 * The "pack.bitmapExcessiveBranchTipCount" key
+	 *
+	 * @since 6.9
+	 */
+	public static final String CONFIG_KEY_BITMAP_EXCESSIVE_BRANCH_TIP_COUNT = "bitmapexcessivebranchtipcount";
+
+	/**
 	 * The "pack.bitmapExcludedRefsPrefixes" key
 	 * @since 5.13.2
 	 */
@@ -843,6 +928,13 @@ public final class ConfigConstants {
 	public static final String CONFIG_KEY_MIN_BYTES_OBJ_SIZE_INDEX = "minBytesForObjSizeIndex";
 
 	/**
+	 * The "repack.packKeptObjects" key
+	 *
+	 * @since 5.13.3
+	 */
+	public static final String CONFIG_KEY_PACK_KEPT_OBJECTS = "packkeptobjects";
+
+	/**
 	 * The "feature" section
 	 *
 	 * @since 5.9
@@ -934,6 +1026,34 @@ public final class ConfigConstants {
 	public static final String CONFIG_KEY_TRUST_PACKED_REFS_STAT = "trustPackedRefsStat";
 
 	/**
+	 * The "trustLooseRefStat" key
+	 *
+	 * @since 6.9
+	 */
+	public static final String CONFIG_KEY_TRUST_LOOSE_REF_STAT = "trustLooseRefStat";
+
+	/**
+	 * The "trustLooseRefStat" key
+	 *
+	 * @since 7.2
+	 */
+	public static final String CONFIG_KEY_TRUST_PACK_STAT = "trustPackStat";
+
+	/**
+	 * The "trustLooseObjectFileStat" key
+	 *
+	 * @since 7.2
+	 */
+	public static final String CONFIG_KEY_TRUST_LOOSE_OBJECT_STAT = "trustLooseObjectStat";
+
+	/**
+	 * The "trustTablesListStat" key
+	 *
+	 * @since 7.2
+	 */
+	public static final String CONFIG_KEY_TRUST_TABLESLIST_STAT = "trustTablesListStat";
+
+	/**
 	 * The "pack.preserveOldPacks" key
 	 *
 	 * @since 5.13.2
@@ -946,4 +1066,53 @@ public final class ConfigConstants {
 	 * @since 5.13.2
 	 */
 	public static final String CONFIG_KEY_PRUNE_PRESERVED = "prunepreserved";
+
+	/**
+	 * The "commitGraph" section
+	 *
+	 * @since 6.7
+	 */
+	public static final String CONFIG_COMMIT_GRAPH_SECTION = "commitGraph";
+
+	/**
+	 * The "writeChangedPaths" key
+	 *
+	 * @since 6.7
+	 */
+	public static final String CONFIG_KEY_WRITE_CHANGED_PATHS = "writeChangedPaths";
+
+	/**
+	 * The "readChangedPaths" key
+	 *
+	 * @since 6.7
+	 */
+	public static final String CONFIG_KEY_READ_CHANGED_PATHS = "readChangedPaths";
+
+	/**
+	 * The "useObjectSizeIndex" key
+	 *
+	 * @since 7.0
+	 */
+	public static final String CONFIG_KEY_USE_OBJECT_SIZE_INDEX = "useObjectSizeIndex";
+
+	/**
+	 * The "loadRevIndexInParallel" key
+	 *
+	 * @since 7.1
+	 */
+	public static final String CONFIG_KEY_LOAD_REV_INDEX_IN_PARALLEL = "loadRevIndexInParallel";
+
+	/**
+	 * The "reftable" section
+	 *
+	 * @since 7.2
+	 */
+	public static final String CONFIG_REFTABLE_SECTION = "reftable";
+
+	/**
+	 * The "autorefresh" key
+	 *
+	 * @since 7.2
+	 */
+	public static final String CONFIG_KEY_AUTOREFRESH = "autorefresh";
 }

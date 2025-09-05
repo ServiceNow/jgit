@@ -17,7 +17,7 @@
   <parent>
     <groupId>org.eclipse.jgit</groupId>
     <artifactId>org.eclipse.jgit-parent</artifactId>
-    <version>6.6.1-snc-2</version>
+    <version>7.3.1-SNAPSHOT</version>
   </parent>
 
   <artifactId>org.eclipse.jgit.gpg.bc</artifactId>
@@ -94,7 +94,7 @@
               <target>
                 <copy file="META-INF/SOURCE-MANIFEST.MF" tofile="${source-bundle-manifest}" overwrite="true" />
                 <replace file="${source-bundle-manifest}">
-                  <replacefilter token=".qualifier" value=".${maven.build.timestamp}" />
+                  <replacefilter token=".qualifier" value=".${commit.time.version}" />
                 </replace>
               </target>
             </configuration>
@@ -161,7 +161,7 @@
                   <breakBuildOnBinaryIncompatibleModifications>false</breakBuildOnBinaryIncompatibleModifications>
                   <onlyBinaryIncompatible>false</onlyBinaryIncompatible>
                   <includeSynthetic>false</includeSynthetic>
-                  <ignoreMissingClasses>false</ignoreMissingClasses>
+                  <ignoreMissingClasses>true</ignoreMissingClasses>
                   <skipPomModules>true</skipPomModules>
               </parameter>
               <skip>false</skip>

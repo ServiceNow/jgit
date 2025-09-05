@@ -29,6 +29,7 @@ import org.eclipse.jgit.dircache.DirCacheCheckout;
 import org.eclipse.jgit.errors.IncorrectObjectTypeException;
 import org.eclipse.jgit.errors.MissingObjectException;
 import org.eclipse.jgit.internal.JGitText;
+import org.eclipse.jgit.internal.util.ShutdownHook;
 import org.eclipse.jgit.lib.AnyObjectId;
 import org.eclipse.jgit.lib.BranchConfig.BranchRebaseMode;
 import org.eclipse.jgit.lib.ConfigConstants;
@@ -66,6 +67,8 @@ public class CloneCommand extends TransportCommand<CloneCommand, Git> {
 
 	private boolean bare;
 
+	private boolean relativePaths;
+
 	private FS fs;
 
 	private String remote = Constants.DEFAULT_REMOTE_NAME;
@@ -99,6 +102,8 @@ public class CloneCommand extends TransportCommand<CloneCommand, Git> {
 	private Instant shallowSince;
 
 	private List<String> shallowExcludes = new ArrayList<>();
+
+	private ShutdownHook.Listener shutdownListener = this::cleanup;
 
 	private enum FETCH_TYPE {
 		MULTIPLE_BRANCHES, ALL_BRANCHES, MIRROR
@@ -181,12 +186,7 @@ public class CloneCommand extends TransportCommand<CloneCommand, Git> {
 		@SuppressWarnings("resource") // Closed by caller
 		Repository repository = init();
 		FetchResult fetchResult = null;
-		Thread cleanupHook = new Thread(() -> cleanup());
-		try {
-			Runtime.getRuntime().addShutdownHook(cleanupHook);
-		} catch (IllegalStateException e) {
-			// ignore - the VM is already shutting down
-		}
+		ShutdownHook.INSTANCE.register(shutdownListener);
 		try {
 			fetchResult = fetch(repository, u);
 		} catch (IOException ioe) {
@@ -210,11 +210,7 @@ public class CloneCommand extends TransportCommand<CloneCommand, Git> {
 			cleanup();
 			throw e;
 		} finally {
-			try {
-				Runtime.getRuntime().removeShutdownHook(cleanupHook);
-			} catch (IllegalStateException e) {
-				// ignore - the VM is already shutting down
-			}
+			ShutdownHook.INSTANCE.unregister(shutdownListener);
 		}
 		try {
 			checkout(repository, fetchResult);
@@ -270,6 +266,7 @@ public class CloneCommand extends TransportCommand<CloneCommand, Git> {
 	private Repository init() throws GitAPIException {
 		InitCommand command = Git.init();
 		command.setBare(bare);
+		command.setRelativeDirs(relativePaths);
 		if (fs != null) {
 			command.setFs(fs);
 		}
@@ -557,6 +554,20 @@ public class CloneCommand extends TransportCommand<CloneCommand, Git> {
 	public CloneCommand setBare(boolean bare) throws IllegalStateException {
 		validateDirs(directory, gitDir, bare);
 		this.bare = bare;
+		return this;
+	}
+
+	/**
+	 * Set whether the cloned repository shall use relative paths for GIT_DIR
+	 * and GIT_WORK_TREE
+	 *
+	 * @param relativePaths
+	 *            if true, use relative paths for GIT_DIR and GIT_WORK_TREE
+	 * @return this instance
+	 * @since 7.2
+	 */
+	public CloneCommand setRelativePaths(boolean relativePaths) {
+		this.relativePaths = relativePaths;
 		return this;
 	}
 

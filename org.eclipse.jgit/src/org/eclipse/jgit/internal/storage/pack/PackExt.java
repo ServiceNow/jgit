@@ -36,7 +36,10 @@ public enum PackExt {
 	COMMIT_GRAPH("graph"), //$NON-NLS-1$
 
 	/** An object size index. */
-	OBJECT_SIZE_INDEX("objsize"); //$NON-NLS-1$
+	OBJECT_SIZE_INDEX("objsize"), //$NON-NLS-1$
+
+	/** Multi pack index */
+	MULTI_PACK_INDEX("midx"); //$NON-NLS-1$
 
 	private final String ext;
 
@@ -80,7 +83,6 @@ public enum PackExt {
 		return String.format(".%s_tmp", ext); //$NON-NLS-1$
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public String toString() {
 		return String.format("PackExt[%s, bit=0x%s]", getExtension(), //$NON-NLS-1$

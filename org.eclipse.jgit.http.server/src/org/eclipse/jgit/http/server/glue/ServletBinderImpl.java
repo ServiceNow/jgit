@@ -13,9 +13,9 @@ package org.eclipse.jgit.http.server.glue;
 import java.util.ArrayList;
 import java.util.List;
 
-import javax.servlet.Filter;
-import javax.servlet.http.HttpServlet;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.Filter;
+import jakarta.servlet.http.HttpServlet;
+import jakarta.servlet.http.HttpServletResponse;
 
 import org.eclipse.jgit.http.server.HttpServerText;
 
@@ -28,7 +28,6 @@ abstract class ServletBinderImpl implements ServletBinder {
 		this.filters = new ArrayList<>();
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public ServletBinder through(Filter filter) {
 		if (filter == null)
@@ -37,7 +36,6 @@ abstract class ServletBinderImpl implements ServletBinder {
 		return this;
 	}
 
-	/** {@inheritDoc} */
 	@Override
 	public void with(HttpServlet servlet) {
 		if (servlet == null)
@@ -68,6 +66,10 @@ abstract class ServletBinderImpl implements ServletBinder {
 		return filters.toArray(new Filter[0]);
 	}
 
-	/** @return the pipeline that matches and executes this chain. */
+	/**
+	 * Create UrlPipeline
+	 *
+	 * @return the pipeline that matches and executes this chain.
+	 */
 	abstract UrlPipeline create();
 }
