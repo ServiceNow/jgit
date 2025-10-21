@@ -231,7 +231,7 @@ public class PatchApplier {
 						&& Objects.equals(oldFileName, error.oldFileName)
 						&& Objects.equals(hh, error.hh)
 						&& isGitConflict == error.isGitConflict;
-			}
+				}
 
 			@Override
 			public int hashCode() {

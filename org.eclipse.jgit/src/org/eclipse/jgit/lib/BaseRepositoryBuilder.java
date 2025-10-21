@@ -27,6 +27,7 @@ import static org.eclipse.jgit.lib.Constants.OBJECTS;
 
 import java.io.File;
 import java.io.IOException;
+import java.security.AccessControlException;
 import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -464,9 +465,12 @@ public class BaseRepositoryBuilder<B extends BaseRepositoryBuilder, R extends Re
 	 */
 	public B readEnvironment(SystemReader sr) {
 		if (getGitDir() == null) {
+			try {
 			String val = sr.getenv(GIT_DIR_KEY);
 			if (val != null)
 				setGitDir(new File(val));
+			} catch (AccessControlException ignored) {
+		}
 		}
 
 		if (getGitCommonDir() == null) {
@@ -477,39 +481,53 @@ public class BaseRepositoryBuilder<B extends BaseRepositoryBuilder, R extends Re
 		}
 
 		if (getObjectDirectory() == null) {
+			try {
 			String val = sr.getenv(GIT_OBJECT_DIRECTORY_KEY);
 			if (val != null)
 				setObjectDirectory(new File(val));
+			} catch (AccessControlException ignored) {
+			}
 		}
 
 		if (getAlternateObjectDirectories() == null) {
+			try {
 			String val = sr.getenv(GIT_ALTERNATE_OBJECT_DIRECTORIES_KEY);
 			if (val != null) {
 				for (String path : val.split(File.pathSeparator, -1))
 					addAlternateObjectDirectory(new File(path));
 			}
+			} catch (AccessControlException ignored) {
+			}
 		}
 
 		if (getWorkTree() == null) {
+			try {
 			String val = sr.getenv(GIT_WORK_TREE_KEY);
 			if (val != null)
 				setWorkTree(new File(val));
+			} catch (AccessControlException ignored) {
+			}
 		}
 
 		if (getIndexFile() == null) {
+			try {
 			String val = sr.getenv(GIT_INDEX_FILE_KEY);
 			if (val != null)
 				setIndexFile(new File(val));
+			} catch (AccessControlException ignored) {
+		}
 		}
 
 		if (ceilingDirectories == null) {
+			try {
 			String val = sr.getenv(GIT_CEILING_DIRECTORIES_KEY);
 			if (val != null) {
 				for (String path : val.split(File.pathSeparator, -1))
 					addCeilingDirectory(new File(path));
 			}
+			} catch (AccessControlException ignored) {
 		}
-
+		}
 		return self();
 	}
 
@@ -766,7 +784,7 @@ public class BaseRepositoryBuilder<B extends BaseRepositoryBuilder, R extends Re
 			if (commonDir != null) {
 				setObjectDirectory(safeFS().resolve(commonDir, OBJECTS));
 			}
-		}
+	}
 	}
 
 	/**

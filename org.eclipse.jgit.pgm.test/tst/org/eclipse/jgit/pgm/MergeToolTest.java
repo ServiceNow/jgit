@@ -78,8 +78,9 @@ public class MergeToolTest extends ToolTestCase {
 				+ errorReturnCode);
 	}
 
-	@Ignore
+	// Ignored for Jenkins env that does not have diff tool
 	@Test
+	@Ignore
 	public void testEmptyToolName() throws Exception {
 		assumeLinuxPlatform();
 

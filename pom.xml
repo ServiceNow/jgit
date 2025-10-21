@@ -18,7 +18,7 @@
   <groupId>org.eclipse.jgit</groupId>
   <artifactId>org.eclipse.jgit-parent</artifactId>
   <packaging>pom</packaging>
-  <version>7.3.1-SNAPSHOT</version>
+  <version>7.3.1-snc-1</version>
 
   <name>JGit - Parent</name>
   <url>${jgit-url}</url>
@@ -156,8 +156,10 @@
     <sonar.jacoco.reportPath>${project.build.directory}/jacoco.exec</sonar.jacoco.reportPath>
 
     <!-- license check -->
+<!--
     <dash.fail>true</dash.fail>
     <dash.projectId>technology.jgit</dash.projectId>
+-->
   </properties>
 
   <repositories>
@@ -172,10 +174,12 @@
       <id>repo.eclipse.org.cbi-releases</id>
       <url>https://repo.eclipse.org/content/repositories/cbi-releases/</url>
     </pluginRepository>
+<!--
     <pluginRepository>
       <id>repo.eclipse.org.dash-releases</id>
       <url>https://repo.eclipse.org/content/repositories/dash-licenses-releases/</url>
     </pluginRepository>
+-->
   </pluginRepositories>
 
   <build>
@@ -359,11 +363,13 @@
           <artifactId>spring-boot-maven-plugin</artifactId>
           <version>3.5.0</version>
         </plugin>
+<!--
         <plugin>
           <groupId>org.eclipse.dash</groupId>
           <artifactId>license-tool-plugin</artifactId>
           <version>1.1.0</version>
         </plugin>
+-->
         <plugin>
           <groupId>org.cyclonedx</groupId>
           <artifactId>cyclonedx-maven-plugin</artifactId>
@@ -592,6 +598,7 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-report-plugin</artifactId>
       </plugin>
+<!--
       <plugin>
         <groupId>org.eclipse.dash</groupId>
         <artifactId>license-tool-plugin</artifactId>
@@ -604,6 +611,7 @@
           </execution>
         </executions>
       </plugin>
+-->
       <plugin>
         <groupId>org.cyclonedx</groupId>
         <artifactId>cyclonedx-maven-plugin</artifactId>

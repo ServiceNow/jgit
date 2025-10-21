@@ -68,18 +68,22 @@ public abstract class SystemReader {
 
 	private static volatile Boolean isLinux;
 
-	private static final String GIT_TRACE_PERFORMANCE = "GIT_TRACE_PERFORMANCE"; //$NON-NLS-1$
+	//private static final String GIT_TRACE_PERFORMANCE = "GIT_TRACE_PERFORMANCE"; //$NON-NLS-1$
 
-	private static final boolean performanceTrace = initPerformanceTrace();
+	/**
+	 * Enable performance trace
+	 */
+	protected boolean performanceTrace = initPerformanceTrace();
 
 	private static boolean initPerformanceTrace() {
-		String val = System.getenv(GIT_TRACE_PERFORMANCE);
+		//Comment out for SourceControl integration
+		/*String val = System.getenv(GIT_TRACE_PERFORMANCE);
 		if (val == null) {
 			val = System.getenv(GIT_TRACE_PERFORMANCE);
 		}
 		if (val != null) {
 			return Boolean.valueOf(val).booleanValue();
-		}
+		}*/
 		return false;
 	}
 
@@ -94,7 +98,14 @@ public abstract class SystemReader {
 
 		@Override
 		public String getenv(String variable) {
-			return System.getenv(variable);
+			String envValue = null;
+			try {
+				envValue = System.getenv(variable);
+			} catch (Exception ex) {
+				// do nothing
+			}
+
+			return envValue;
 		}
 
 		@Override
@@ -110,7 +121,7 @@ public abstract class SystemReader {
 				if (configFile != null) {
 					return new FileBasedConfig(parent, configFile, fs);
 				}
-			}
+				}
 			return new FileBasedConfig(parent, null, fs) {
 				@Override
 				public void load() {
